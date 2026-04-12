@@ -1,0 +1,47 @@
+# 🔐 Environment variables (VERY IMPORTANT)
+.env
+
+# 🐍 Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 🧪 Virtual environments
+venv/
+env/
+ENV/
+scanner_env/
+
+# 📦 Build / distribution
+build/
+dist/
+*.egg-info/
+
+# 🧾 Logs
+*.log
+
+# 🧠 IDE files
+.vscode/
+.idea/
+
+# 🪟 OS files
+.DS_Store
+Thumbs.db
+
+# 📊 Jupyter (if you use later)
+.ipynb_checkpoints/
+
+# 🔑 Kite tokens / secrets (extra safety)
+*.key
+*.pem
+
+# 🚫 Temporary files
+*.tmp
+*.bak
+
+# 📁 SQLite (if added later)
+*.sqlite3
+db.sqlite3
+
+# 📦 requirements lock (optional)
+# requirements.txt  (comment this if you WANT to track it)
