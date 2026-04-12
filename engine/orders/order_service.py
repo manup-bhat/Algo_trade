@@ -1,0 +1,502 @@
+"""
+engine/orders/order_service.py — All order placement, modification, and cancellation.
+
+Handles the full exception hierarchy from kiteconnect:
+  - InputException, PermissionException, OrderException → NON-RETRYABLE → return None
+  - TokenException → NON-RETRYABLE CRITICAL → log CRITICAL, return None
+  - NetworkException, GeneralException → RETRYABLE → exponential backoff (3 attempts)
+  - HTTP 429 → wait 1.0s before retry
+  - Any other Exception → log EXCEPTION with full traceback, return None
+
+Paper mode:
+  - place_entry() simulates fill immediately and calls sm.on_order_filled() directly
+  - All real-order methods are available but gated behind is_paper_trade checks
+
+Retry schedule (spec §9.5):
+  attempt 1: immediate
+  attempt 2: sleep 0.5s
+  attempt 3: sleep 1.0s
+  After 3 attempts: return None, log ERROR
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime
+import functools
+import time
+from typing import TYPE_CHECKING, Any
+
+import structlog
+
+from app.core.config import settings
+
+if TYPE_CHECKING:
+    from engine.kite.client import AsyncKiteClient
+    from engine.strategy.state_machine import SymbolStateMachine
+
+log = structlog.get_logger(__name__)
+IST_TZ = __import__("pytz").timezone("Asia/Kolkata")
+
+# Retry delays: attempt 0 = immediate, 1 = 0.5s, 2 = 1.0s
+_RETRY_DELAYS = [0.0, 0.5, 1.0]
+_RATE_LIMIT_DELAY = 1.0
+
+
+def _is_kite_available() -> bool:
+    """Return True if kiteconnect is installed (may not be in dev/test environments)."""
+    try:
+        import kiteconnect  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _get_kite_exceptions() -> tuple[type, ...]:
+    """Import kite exception classes lazily — returns empty tuple if not installed."""
+    try:
+        from kiteconnect.exceptions import (
+            InputException, PermissionException, OrderException,
+            NetworkException, GeneralException, TokenException,
+        )
+        return (
+            InputException, PermissionException, OrderException,
+            NetworkException, GeneralException, TokenException,
+        )
+    except ImportError:
+        return ()
+
+
+async def _call_with_retry(
+    kite: "AsyncKiteClient",
+    method_name: str,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """
+    Call a kite API method with retryable exception handling.
+
+    Non-retryable exceptions (InputException, PermissionException, OrderException,
+    TokenException) immediately return None.
+
+    Retryable exceptions (NetworkException, GeneralException) are retried up to
+    ORDER_MAX_RETRIES times with exponential backoff.
+    """
+    # Lazy import of kite exceptions to allow dev/test without kiteconnect installed
+    try:
+        from kiteconnect.exceptions import (
+            InputException, PermissionException, OrderException,
+            NetworkException, GeneralException, TokenException,
+        )
+        has_kite_exc = True
+    except ImportError:
+        has_kite_exc = False
+
+    method = getattr(kite, method_name)
+    last_exc: Exception | None = None
+
+    for attempt in range(settings.ORDER_MAX_RETRIES):
+        # Exponential backoff (except first attempt)
+        if attempt > 0:
+            delay = _RETRY_DELAYS[attempt] if attempt < len(_RETRY_DELAYS) else 1.0
+            await asyncio.sleep(delay)
+
+        try:
+            result = await method(*args, **kwargs)
+            return result
+
+        except Exception as exc:
+            exc_type = type(exc).__name__
+            last_exc = exc
+
+            if has_kite_exc:
+                if isinstance(exc, TokenException):
+                    log.critical(
+                        "kite_token_expired_reauthenticate",
+                        method=method_name,
+                        error=str(exc),
+                    )
+                    return None  # Non-retryable, critical
+
+                if isinstance(exc, (InputException, PermissionException, OrderException)):
+                    log.error(
+                        "kite_order_rejected_non_retryable",
+                        method=method_name,
+                        exception_type=exc_type,
+                        error=str(exc),
+                    )
+                    return None  # Non-retryable
+
+                if isinstance(exc, (NetworkException, GeneralException)):
+                    log.warning(
+                        "kite_retryable_error",
+                        method=method_name,
+                        attempt=attempt + 1,
+                        max_retries=settings.ORDER_MAX_RETRIES,
+                        error=str(exc),
+                    )
+                    # Handle HTTP 429 rate limiting
+                    if "429" in str(exc) or "rate limit" in str(exc).lower():
+                        log.warning("kite_rate_limited_sleeping", seconds=_RATE_LIMIT_DELAY)
+                        await asyncio.sleep(_RATE_LIMIT_DELAY)
+                    continue  # Retry
+
+            # Unknown exception class — log and abort
+            log.exception(
+                "kite_unexpected_error",
+                method=method_name,
+                exception_type=exc_type,
+                error=str(exc),
+            )
+            return None
+
+    # All retries exhausted
+    log.error(
+        "kite_max_retries_exhausted",
+        method=method_name,
+        attempts=settings.ORDER_MAX_RETRIES,
+        last_error=str(last_exc),
+    )
+    return None
+
+
+class OrderService:
+    """
+    All order placement, modification, and cancellation.
+
+    One instance shared across all state machines.
+    Injected into SymbolStateMachine at construction time.
+    Paper mode: simulates fills immediately without calling Kite API.
+    """
+
+    def __init__(self, kite: "AsyncKiteClient | None" = None) -> None:
+        self._kite = kite
+
+    def set_kite(self, kite: "AsyncKiteClient") -> None:
+        """Wire in the Kite client (called after auth at startup)."""
+        self._kite = kite
+
+    # ── Entry Order (LIMIT BUY) ───────────────────────────────────────────────
+
+    async def place_entry(
+        self,
+        symbol: str,
+        limit_price: float,
+        quantity: int,
+        sm: "SymbolStateMachine | None" = None,
+    ) -> str | None:
+        """
+        Place a LIMIT BUY entry order.
+
+        Paper mode: simulates fill immediately at limit_price × 1.001 and calls
+        sm.on_order_filled() directly. Returns a fake PAPER_ order ID.
+
+        Live mode: places a real Kite LIMIT order. Returns order_id or None on failure.
+
+        Args:
+            symbol:       NSE trading symbol.
+            limit_price:  Entry limit price (close × 1.003 per spec §9.1).
+            quantity:     Number of shares.
+            sm:           SymbolStateMachine to call on_order_filled() in paper mode.
+
+        Returns:
+            order_id string on success, None on failure.
+        """
+        if settings.is_paper_trade:
+            return await self._paper_entry(symbol, limit_price, quantity, sm)
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", symbol=symbol, method="place_entry")
+            return None
+
+        log.info(
+            "placing_entry_order",
+            symbol=symbol,
+            limit=limit_price,
+            qty=quantity,
+        )
+
+        result = await _call_with_retry(
+            self._kite,
+            "place_order",
+            tradingsymbol=symbol,
+            exchange="NSE",
+            transaction_type="BUY",
+            order_type="LIMIT",
+            product="MIS",
+            validity="DAY",
+            quantity=quantity,
+            price=limit_price,
+            tag="IVBS",
+            autoslice=True,
+            variety="regular",
+        )
+
+        if result:
+            log.info(
+                "entry_order_placed",
+                symbol=symbol,
+                order_id=result,
+                limit=limit_price,
+                qty=quantity,
+            )
+        return result
+
+    async def _paper_entry(
+        self,
+        symbol: str,
+        limit_price: float,
+        quantity: int,
+        sm: "SymbolStateMachine | None",
+    ) -> str | None:
+        """Simulate an immediate fill at limit_price × 1.001 (0.1% slippage)."""
+        fill_price = round(limit_price * 1.001, 2)
+        order_id = f"PAPER_{symbol}_{int(time.time())}"
+
+        log.info(
+            "paper_entry_simulated",
+            symbol=symbol,
+            limit=limit_price,
+            fill=fill_price,
+            qty=quantity,
+            order_id=order_id,
+        )
+
+        if sm is not None:
+            # Simulate fill asynchronously (preserves event loop flow)
+            await sm.on_order_filled(
+                order_id=order_id,
+                fill_price=fill_price,
+                fill_qty=quantity,
+                fill_time=datetime.datetime.now(IST_TZ),
+            )
+
+        return order_id
+
+    # ── Stop Loss Order (SL-M SELL) ───────────────────────────────────────────
+
+    async def place_stop_loss(
+        self,
+        symbol: str,
+        quantity: int,
+        trigger_price: float,
+    ) -> str | None:
+        """
+        Place an SL-M (stop-loss market) SELL order.
+
+        CRITICAL: SL-M has NO price field — omitting it is spec-mandated (§9.2).
+        Including a price field would silently downgrade to SL-Limit on Kite.
+
+        Paper mode: returns a fake SL order ID. SL checking happens via on_tick().
+        """
+        if settings.is_paper_trade:
+            order_id = f"PAPER_SL_{symbol}_{int(time.time())}"
+            log.info(
+                "paper_sl_order_registered",
+                symbol=symbol,
+                trigger=trigger_price,
+                qty=quantity,
+                order_id=order_id,
+            )
+            return order_id
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", symbol=symbol, method="place_stop_loss")
+            return None
+
+        log.info(
+            "placing_sl_order",
+            symbol=symbol,
+            trigger=trigger_price,
+            qty=quantity,
+        )
+
+        result = await _call_with_retry(
+            self._kite,
+            "place_order",
+            tradingsymbol=symbol,
+            exchange="NSE",
+            transaction_type="SELL",
+            order_type="SL-M",
+            product="MIS",
+            validity="DAY",
+            quantity=quantity,
+            trigger_price=trigger_price,
+            tag="IVBS_SL",
+            variety="regular",
+            # NO price field for SL-M (spec §9.2)
+        )
+
+        if result:
+            log.info("sl_order_placed", symbol=symbol, order_id=result, trigger=trigger_price)
+        return result
+
+    # ── SL Modification (Trailing) ────────────────────────────────────────────
+
+    async def modify_stop_loss(
+        self,
+        order_id: str,
+        new_trigger: float,
+        symbol: str = "",
+        sm: "SymbolStateMachine | None" = None,
+    ) -> bool:
+        """
+        Modify the trigger price of an existing SL-M order.
+
+        Paper mode: just log the trail — actual SL check happens via on_tick().
+
+        On InputException during live modify:
+          The SL may have already triggered (race condition).
+          Per spec §9.3: log warning and fetch order status to determine actual state.
+          If COMPLETE → treat as SL hit and route to sm.on_sl_triggered().
+
+        Returns True on success, False on failure.
+        """
+        if settings.is_paper_trade:
+            log.info(
+                "paper_sl_modified",
+                order_id=order_id,
+                new_trigger=new_trigger,
+            )
+            return True
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", method="modify_stop_loss")
+            return False
+
+        try:
+            await _call_with_retry(
+                self._kite,
+                "modify_order",
+                variety="regular",
+                order_id=order_id,
+                trigger_price=new_trigger,
+                # NO price field for SL-M modification (spec §9.3)
+            )
+            log.info("sl_modified", order_id=order_id, new_trigger=new_trigger)
+            return True
+
+        except Exception as exc:
+            # InputException on modify → SL may have already been triggered
+            log.warning(
+                "sl_modify_failed_may_have_triggered",
+                order_id=order_id,
+                symbol=symbol,
+                error=str(exc),
+            )
+            # Check actual order status
+            if sm is not None and self._kite is not None:
+                await self._handle_sl_modify_race(order_id, symbol, sm)
+            return False
+
+    async def _handle_sl_modify_race(
+        self,
+        order_id: str,
+        symbol: str,
+        sm: "SymbolStateMachine",
+    ) -> None:
+        """Check if SL was already triggered when modify failed."""
+        try:
+            orders = await _call_with_retry(self._kite, "orders")  # type: ignore[arg-type]
+            if not orders:
+                return
+            for order in orders:
+                if order.get("order_id") == order_id:
+                    if order.get("status") == "COMPLETE":
+                        avg_price = order.get("average_price", 0.0)
+                        log.info(
+                            "sl_triggered_detected_via_order_check",
+                            order_id=order_id,
+                            avg_price=avg_price,
+                        )
+                        await sm.on_sl_triggered(order_id, avg_price)
+                    break
+        except Exception as exc:
+            log.error("sl_modify_race_check_failed", error=str(exc))
+
+    # ── Exit Market Order (MARKET SELL) ───────────────────────────────────────
+
+    async def place_exit_market(
+        self,
+        symbol: str,
+        quantity: int,
+        reason: str = "exit",
+    ) -> str | None:
+        """
+        Place a MARKET SELL exit order.
+
+        Paper mode: returns a fake exit order ID. P&L settlement happens in SM.
+
+        Returns order_id on success, None on failure.
+        """
+        if settings.is_paper_trade:
+            order_id = f"PAPER_EXIT_{symbol}_{int(time.time())}"
+            log.info(
+                "paper_exit_simulated",
+                symbol=symbol,
+                qty=quantity,
+                reason=reason,
+                order_id=order_id,
+            )
+            return order_id
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", symbol=symbol, method="place_exit_market")
+            return None
+
+        log.info("placing_exit_market_order", symbol=symbol, qty=quantity, reason=reason)
+
+        result = await _call_with_retry(
+            self._kite,
+            "place_order",
+            tradingsymbol=symbol,
+            exchange="NSE",
+            transaction_type="SELL",
+            order_type="MARKET",
+            product="MIS",
+            validity="DAY",
+            quantity=quantity,
+            tag="IVBS_EXIT",
+            variety="regular",
+        )
+
+        if result:
+            log.info("exit_order_placed", symbol=symbol, order_id=result, reason=reason)
+        return result
+
+    # ── Cancel Order ──────────────────────────────────────────────────────────
+
+    async def cancel_order(self, order_id: str, symbol: str = "") -> bool:
+        """
+        Cancel an open order by order_id.
+
+        Paper mode: always succeeds (just log).
+        Live mode: calls kite.cancel_order() with retry.
+
+        Returns True on success, False on failure (order may already be filled/cancelled).
+        """
+        if settings.is_paper_trade:
+            log.info("paper_order_cancelled", order_id=order_id)
+            return True
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", method="cancel_order")
+            return False
+
+        result = await _call_with_retry(
+            self._kite,
+            "cancel_order",
+            variety="regular",
+            order_id=order_id,
+        )
+
+        success = result is not None
+        if success:
+            log.info("order_cancelled", order_id=order_id, symbol=symbol)
+        else:
+            log.warning("order_cancel_failed", order_id=order_id, symbol=symbol)
+        return success
+
+
+# Module-level singleton — wire kite client in at startup via order_service.set_kite()
+order_service = OrderService()

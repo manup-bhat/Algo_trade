@@ -29,6 +29,9 @@ from engine.strategy.scanner import ImpactCandle
 if TYPE_CHECKING:
     from engine.store.redis_store import RedisStore
     from engine.store.db_writer import DbWriter
+    from engine.orders.order_service import OrderService
+    from engine.orders.order_tracker import OrderTracker
+    from engine.orders.fill_timeout import FillTimeoutManager
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -166,11 +169,17 @@ class SymbolStateMachine:
         instrument_token: int,
         redis_store: "RedisStore",
         db_writer: "DbWriter",
+        order_service: "OrderService | None" = None,
+        order_tracker: "OrderTracker | None" = None,
+        fill_timeout_manager: "FillTimeoutManager | None" = None,
     ) -> None:
         self.symbol = symbol
         self.instrument_token = instrument_token
         self._redis = redis_store
         self._db = db_writer
+        self._order_service = order_service
+        self._order_tracker = order_tracker
+        self._fill_timeout = fill_timeout_manager
 
         self.state: StrategyState = StrategyState.IDLE
         self.impact_candle: ImpactCandle | None = None
@@ -374,13 +383,13 @@ class SymbolStateMachine:
     async def _trigger_entry(self, entry_close: float, candle_time: datetime.datetime) -> None:
         """
         Trigger an entry order based on re-ignition signal.
-        Paper mode: simulate fill immediately.
-        Live mode: place LIMIT order via order_service (Phase 3+).
+        Paper mode: simulate fill immediately via order_service._paper_entry().
+        Live mode: place real LIMIT order via order_service.place_entry().
         """
         assert self.consolidation is not None
         assert self.impact_candle is not None
 
-        # Get tick size for SL calculation (use Redis; default 0.05)
+        # Get tick size for SL calculation (default 5 paise)
         try:
             tick_size = await self._redis.get_tick_size(self.symbol)
         except Exception:
@@ -400,7 +409,7 @@ class SymbolStateMachine:
             )
             return
 
-        # Compute quantity
+        # Compute quantity using position sizer
         try:
             capital = await self._redis.get_capital()
         except Exception:
@@ -411,57 +420,50 @@ class SymbolStateMachine:
             await self._abandon("no_capital_available")
             return
 
-        risk_amount = capital * (settings.RISK_PER_TRADE_PCT / 100)
-        quantity = max(1, int(risk_amount / risk_per_share))
+        from engine.risk.position_sizer import compute as compute_qty
+        quantity = compute_qty(capital, limit_price, stop_loss)
+        if quantity < 1:
+            await self._abandon("insufficient_capital_for_quantity")
+            return
 
         # Transition to ACTION_PENDING
         self.state = StrategyState.ACTION_PENDING
+        self._pending_order_id = None
 
-        if settings.is_paper_trade:
-            await self._paper_fill(limit_price, quantity, stop_loss, candle_time)
-        else:
-            # Phase 3+ wires real order placement here
-            log.warning(
-                "live_order_not_wired_phase2",
-                symbol=self.symbol,
-                limit_price=limit_price,
-                stop_loss=stop_loss,
-                quantity=quantity,
-            )
-            # For now, revert to MONITORING (no order placed)
+        # Get or lazy-import order_service
+        if self._order_service is None:
+            from engine.orders.order_service import order_service as _os
+            self._order_service = _os
+
+        order_id = await self._order_service.place_entry(
+            symbol=self.symbol,
+            limit_price=limit_price,
+            quantity=quantity,
+            sm=self,
+        )
+
+        if order_id is None:
+            # Order placement failed — revert to MONITORING (don't abandon)
+            log.warning("entry_order_failed_reverting_to_monitoring", symbol=self.symbol)
             self.state = StrategyState.MONITORING
+        else:
+            self._pending_order_id = order_id
+            # Register in order tracker
+            if self._order_tracker is None:
+                from engine.orders.order_tracker import order_tracker as _ot
+                self._order_tracker = _ot
+            self._order_tracker.register_entry(order_id, self.symbol)
+
+            # Start fill timeout watchdog
+            if not settings.is_paper_trade:
+                if self._fill_timeout is None:
+                    from engine.orders.fill_timeout import fill_timeout_manager as _ftm
+                    self._fill_timeout = _ftm
+                self._fill_timeout.start_timeout(order_id, self, self._order_service)
 
         await self._persist_state()
 
-    async def _paper_fill(
-        self,
-        limit_price: float,
-        quantity: int,
-        stop_loss: float,
-        candle_time: datetime.datetime,
-    ) -> None:
-        """
-        Simulate an order fill in paper trading mode.
-        Fill price = limit_price × 1.001 (0.1% slippage simulation per spec §15).
-        """
-        import time as _time
-        assert self.consolidation is not None
-
-        fill_price = round(limit_price * 1.001, 2)
-        order_id = f"PAPER_{self.symbol}_{int(_time.time())}"
-
-        log.info(
-            "paper_trade_fill",
-            symbol=self.symbol,
-            fill_price=fill_price,
-            quantity=quantity,
-            stop_loss=stop_loss,
-            order_id=order_id,
-        )
-
-        await self.on_order_filled(order_id, fill_price, quantity, datetime.datetime.now(IST_TZ))
-
-    # ── Phase 3: Order Fill ───────────────────────────────────────────────────
+    # ── Phase 3: Order Fill / Reject / Timeout ────────────────────────────────
 
     async def on_order_filled(
         self,
@@ -473,6 +475,7 @@ class SymbolStateMachine:
         """
         Called when entry order is confirmed filled (real postback or paper simulation).
         Transitions ACTION_PENDING → MANAGING.
+        Also cancels fill timeout watchdog and places SL order.
         """
         if self.state != StrategyState.ACTION_PENDING:
             log.warning(
@@ -482,6 +485,10 @@ class SymbolStateMachine:
                 order_id=order_id,
             )
             return
+
+        # Cancel fill timeout — order arrived
+        if self._fill_timeout is not None:
+            self._fill_timeout.cancel_timeout(order_id)
 
         assert self.consolidation is not None
 
@@ -498,6 +505,34 @@ class SymbolStateMachine:
         target_1r3 = round(fill_price + 3 * risk_per_share, 2)
         target_1r4 = round(fill_price + 4 * risk_per_share, 2)
 
+        # Place SL-M order immediately on fill
+        sl_order_id: str | None = None
+        if not settings.is_paper_trade and self._order_service is not None:
+            sl_order_id = await self._order_service.place_stop_loss(
+                symbol=self.symbol,
+                quantity=fill_qty,
+                trigger_price=stop_loss,
+            )
+            if sl_order_id is None:
+                log.critical(
+                    "sl_placement_failed_position_unprotected",
+                    symbol=self.symbol,
+                    fill_price=fill_price,
+                )
+                # Emergency: close position immediately
+                if self._order_service:
+                    await self._order_service.place_exit_market(
+                        self.symbol, fill_qty, reason="sl_placement_failed"
+                    )
+                self.state = StrategyState.CLOSED
+                await self._persist_state()
+                return
+            if self._order_tracker:
+                self._order_tracker.register_sl(sl_order_id, self.symbol)
+        elif settings.is_paper_trade:
+            # Paper SL is tracked internally — checked via on_tick() LTP
+            sl_order_id = f"PAPER_SL_{self.symbol}_{int(__import__('time').time())}"
+
         # Record trade in DB
         try:
             trade_id = await self._db.open_trade(
@@ -513,6 +548,7 @@ class SymbolStateMachine:
                 risk_amount=risk_amount,
                 target_1r2=target_1r2,
                 target_1r4=target_1r4,
+                sl_order_id=sl_order_id,
                 notes="PAPER_TRADE" if settings.is_paper_trade else None,
             )
         except Exception as exc:
@@ -531,6 +567,7 @@ class SymbolStateMachine:
             target_1r3=target_1r3,
             target_1r4=target_1r4,
             entry_order_id=order_id,
+            sl_order_id=sl_order_id,
         )
 
         self.state = StrategyState.MANAGING
@@ -541,6 +578,7 @@ class SymbolStateMachine:
             fill_price=fill_price,
             qty=fill_qty,
             sl=stop_loss,
+            sl_order_id=sl_order_id,
             target_1r2=target_1r2,
             target_1r4=target_1r4,
             paper=settings.is_paper_trade,
@@ -564,6 +602,70 @@ class SymbolStateMachine:
             log.warning("position_redis_save_failed", error=str(exc))
 
         await self._persist_state()
+
+    async def on_order_rejected(self, order_id: str, reason: str) -> None:
+        """
+        Called when entry order is rejected by the exchange.
+        Reverts ACTION_PENDING → MONITORING (spec §8.4: don't abandon on failure).
+        """
+        if self.state != StrategyState.ACTION_PENDING:
+            return
+        log.warning(
+            "entry_rejected_reverting_to_monitoring",
+            symbol=self.symbol,
+            order_id=order_id,
+            reason=reason,
+        )
+        if self._fill_timeout is not None:
+            self._fill_timeout.cancel_timeout(order_id)
+        self._pending_order_id = None
+        self.state = StrategyState.MONITORING
+        await self._persist_state()
+
+    async def _handle_fill_timeout(self, order_id: str) -> None:
+        """
+        Called by FillTimeoutManager when order hasn't filled within timeout.
+        Reverts ACTION_PENDING → MONITORING.
+        """
+        if self.state != StrategyState.ACTION_PENDING:
+            return
+        log.warning(
+            "fill_timeout_order_not_filled_reverting",
+            symbol=self.symbol,
+            order_id=order_id,
+            timeout_sec=settings.ORDER_FILL_TIMEOUT_SECONDS,
+        )
+        self._pending_order_id = None
+        self.state = StrategyState.MONITORING
+        await self._persist_state()
+
+    async def on_sl_triggered(self, order_id: str, avg_price: float) -> None:
+        """
+        Called when SL order is filled (postback from order_tracker or reconciliation).
+        Race-condition-safe: checks _exit_initiated flag.
+        """
+        if self.state != StrategyState.MANAGING or self.position is None:
+            return
+        if self.position.sl_order_id != order_id:
+            log.warning(
+                "sl_triggered_unknown_order",
+                symbol=self.symbol,
+                received=order_id,
+                expected=self.position.sl_order_id,
+            )
+            return
+        if self.position._exit_initiated:
+            return  # Exit sequence already running
+
+        reason = "CLOSED_TRAILSTOP" if self.position.cost_trailed else "CLOSED_STOPLOSS"
+        log.info(
+            "sl_order_triggered",
+            symbol=self.symbol,
+            order_id=order_id,
+            avg_price=avg_price,
+            reason=reason,
+        )
+        await self._close_position(avg_price, order_id, reason)
 
     # ── Phase 4: Tick Handler (MANAGING) ─────────────────────────────────────
 
@@ -684,14 +786,11 @@ class SymbolStateMachine:
         pos._exit_initiated = True
 
         gross_pnl = round((exit_price - pos.entry_price) * pos.quantity, 2)
-        # Simple transaction cost estimate for paper mode
-        # Full cost calculator wired in Phase 3
-        estimated_charges = round(
-            settings.BROKERAGE_PER_ORDER_INR * 2  # buy + sell
-            + pos.entry_price * pos.quantity * settings.STT_INTRADAY_SELL_PCT
-            + pos.entry_price * pos.quantity * settings.NSE_TXFEE_PER_LAKH_INR / 100000,
-            2,
-        )
+
+        # Phase 3: use full cost calculator
+        from engine.orders.cost_calculator import calculate as calc_charges
+        charges = calc_charges(pos.entry_price, exit_price, pos.quantity)
+        estimated_charges = charges.total
         net_pnl = round(gross_pnl - estimated_charges, 2)
 
         log.info(
@@ -727,9 +826,9 @@ class SymbolStateMachine:
                     exit_order_id=exit_order_id,
                     gross_pnl=gross_pnl,
                     net_pnl=net_pnl,
-                    brokerage=settings.BROKERAGE_PER_ORDER_INR * 2,
-                    stt=pos.entry_price * pos.quantity * settings.STT_INTRADAY_SELL_PCT,
-                    other_charges=estimated_charges - settings.BROKERAGE_PER_ORDER_INR * 2,
+                    brokerage=charges.brokerage,
+                    stt=charges.stt,
+                    other_charges=charges.nse_fee + charges.sebi_fee + charges.gst + charges.stamp_duty,
                     status=status,
                     mfe=pos.max_favorable_excursion,
                     mae=pos.max_adverse_excursion,
