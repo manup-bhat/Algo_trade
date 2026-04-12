@@ -1,0 +1,839 @@
+"""
+engine/strategy/state_machine.py — Per-symbol strategy FSM with ALL 4 bugs fixed.
+
+States: IDLE → SCAN_HIT → MONITORING → ACTION_PENDING → MANAGING → CLOSED
+
+CRITICAL BUG FIXES (see IVBS_Final_Spec.md Part 8):
+  Bug 1: Breakout level check uses PRE-UPDATE consolidation.high (snapshot before update)
+  Bug 2: Volume spike check uses PRE-UPDATE prev_volumes (snapshot before update)
+  Bug 3: Swing low uses candle wick LOW, not close
+  Bug 4: Reconnect baseline reset (in candle_builder.py — already fixed in Phase 1)
+
+All four bugs have mandatory unit test regression coverage in test_state_machine.py.
+"""
+
+from __future__ import annotations
+
+import datetime
+import enum
+import statistics
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+import pytz
+import structlog
+
+from app.core.config import settings
+from engine.strategy.scanner import ImpactCandle
+
+if TYPE_CHECKING:
+    from engine.store.redis_store import RedisStore
+    from engine.store.db_writer import DbWriter
+
+log = structlog.get_logger(__name__)
+IST_TZ = pytz.timezone("Asia/Kolkata")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# State Enum
+# ─────────────────────────────────────────────────────────────────────────────
+
+class StrategyState(str, enum.Enum):
+    IDLE = "IDLE"
+    SCAN_HIT = "SCAN_HIT"
+    MONITORING = "MONITORING"
+    ACTION_PENDING = "ACTION_PENDING"
+    MANAGING = "MANAGING"
+    CLOSED = "CLOSED"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data Classes
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class ConsolidationData:
+    """
+    Tracks the dry-up consolidation zone after an impact candle.
+
+    BUG 3 FIX: update() uses the wick LOW (candle low), not the candle close,
+    for the swing_low calculation. The SL is placed at the wick bottom because
+    institutions probe below close levels to trigger retail stops.
+    """
+    start_time: datetime.datetime
+    high: float              # Highest point in consolidation zone (breakout trigger)
+    low: float               # Lowest point in zone (informational)
+    swing_low: float         # Wick-based swing low (used for SL placement)
+    candle_count: int = 0
+    volume_readings: list[int] = field(default_factory=list)
+
+    @property
+    def breakout_trigger_price(self) -> float:
+        """Price that must be broken for re-ignition. Uses the HIGHEST of all candles."""
+        return self.high
+
+    @property
+    def avg_volume(self) -> float:
+        """Average volume of dry-up candles accumulated so far."""
+        return statistics.mean(self.volume_readings) if self.volume_readings else 0.0
+
+    def update(self, h: float, l: float, c: float, volume: int) -> None:
+        """
+        Absorb a new dry-up candle.
+
+        BUG 3 FIX: swing_low uses `l` (candle wick low), NOT `c` (close).
+        The API spec and strategy design both require wick-based swing lows.
+        """
+        self.candle_count += 1
+        self.high = max(self.high, h)
+        self.low = min(self.low, l)
+        self.swing_low = min(self.swing_low, l)   # BUG 3 FIX: wick low
+        self.volume_readings.append(volume)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "start_time": self.start_time.isoformat(),
+            "high": self.high,
+            "low": self.low,
+            "swing_low": self.swing_low,
+            "candle_count": self.candle_count,
+            "volume_readings": self.volume_readings,
+        }
+
+
+@dataclass
+class OpenPosition:
+    """State of an open MANAGING position."""
+    trade_id: int | None
+    entry_price: float
+    quantity: int
+    initial_sl: float
+    current_sl: float
+    risk_per_share: float
+    risk_amount: float
+    target_1r2: float
+    target_1r3: float
+    target_1r4: float
+    entry_order_id: str
+    sl_order_id: str | None = None
+    cost_trailed: bool = False
+    profit_locked: bool = False
+    _exit_initiated: bool = False
+    max_favorable_excursion: float | None = None
+    max_adverse_excursion: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "trade_id": self.trade_id,
+            "entry_price": self.entry_price,
+            "quantity": self.quantity,
+            "initial_sl": self.initial_sl,
+            "current_sl": self.current_sl,
+            "risk_per_share": self.risk_per_share,
+            "risk_amount": self.risk_amount,
+            "target_1r2": self.target_1r2,
+            "target_1r3": self.target_1r3,
+            "target_1r4": self.target_1r4,
+            "cost_trailed": self.cost_trailed,
+            "profit_locked": self.profit_locked,
+        }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# State Machine
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SymbolStateMachine:
+    """
+    Per-symbol strategy lifecycle manager.
+
+    One instance per scan hit. Created by coordinator when Phase 1 scanner fires.
+    Destroyed (removed from coordinator.active_state_machines) when state == CLOSED.
+
+    Thread safety: All methods are async and must be called from the asyncio event loop.
+    The coordinator guarantees this — it uses asyncio.run_coroutine_threadsafe() from
+    the KiteTicker thread.
+
+    Paper trade mode: When settings.PAPER_TRADE=True:
+      - Entry is simulated immediately at limit_price × 1.001
+      - No Kite API calls are made
+      - SL/target checks happen against live LTP in on_tick()
+    """
+
+    def __init__(
+        self,
+        symbol: str,
+        instrument_token: int,
+        redis_store: "RedisStore",
+        db_writer: "DbWriter",
+    ) -> None:
+        self.symbol = symbol
+        self.instrument_token = instrument_token
+        self._redis = redis_store
+        self._db = db_writer
+
+        self.state: StrategyState = StrategyState.IDLE
+        self.impact_candle: ImpactCandle | None = None
+        self.consolidation: ConsolidationData | None = None
+        self.position: OpenPosition | None = None
+        self._pending_order_id: str | None = None
+        self._signal_id: int | None = None
+        self._abandonment_reason: str | None = None
+
+    # ── Phase 1: Scan Hit ─────────────────────────────────────────────────────
+
+    async def on_scan_hit(self, impact_candle: ImpactCandle) -> None:
+        """
+        Called by coordinator when Phase 1 scanner fires.
+        Transitions IDLE → SCAN_HIT.
+        """
+        if self.state != StrategyState.IDLE:
+            log.warning(
+                "scan_hit_non_idle",
+                symbol=self.symbol,
+                current_state=self.state,
+            )
+            return
+
+        self.impact_candle = impact_candle
+        self.consolidation = ConsolidationData(
+            start_time=impact_candle.time,
+            high=impact_candle.high,     # Initial high = impact candle high
+            low=impact_candle.low,       # Initial low = impact candle low
+            swing_low=impact_candle.low, # Initial swing low = impact wick low
+        )
+
+        self.state = StrategyState.SCAN_HIT
+        log.info(
+            "state_scan_hit",
+            symbol=self.symbol,
+            candle_time=impact_candle.time.strftime("%H:%M"),
+            spike=f"{impact_candle.spike_multiple:.1f}x",
+            close=impact_candle.close,
+        )
+
+        # Write signal record to DB
+        try:
+            self._signal_id = await self._db.write_signal(
+                symbol=self.symbol,
+                instrument_token=self.instrument_token,
+                signal_time=impact_candle.time,
+                impact_open=impact_candle.open,
+                impact_high=impact_candle.high,
+                impact_low=impact_candle.low,
+                impact_close=impact_candle.close,
+                impact_volume=impact_candle.volume,
+                impact_turnover=impact_candle.turnover,
+                volume_sma_500=impact_candle.volume_sma_500,
+                volume_spike_multiple=impact_candle.spike_multiple,
+            )
+        except Exception as exc:
+            log.error("signal_db_write_failed", symbol=self.symbol, error=str(exc))
+
+        # Publish to Redis pub:signals for dashboard
+        try:
+            await self._redis.publish_signal({
+                "symbol": self.symbol,
+                "time": impact_candle.time.isoformat(),
+                "spike_multiple": round(impact_candle.spike_multiple, 1),
+                "close": impact_candle.close,
+                "turnover_cr": round(impact_candle.turnover / 1e7, 2),
+                "signal_id": self._signal_id,
+            })
+        except Exception as exc:
+            log.warning("signal_publish_failed", symbol=self.symbol, error=str(exc))
+
+        await self._persist_state()
+
+    # ── Phase 2: Dry-Up Monitoring ────────────────────────────────────────────
+
+    async def on_candle(
+        self,
+        o: float,
+        h: float,
+        l: float,
+        c: float,
+        volume: int,
+        candle_time: datetime.datetime,
+    ) -> None:
+        """
+        Called for every new 1-minute candle when this SM is active.
+        Handles SCAN_HIT → MONITORING and all dry-up / re-ignition logic.
+
+        This is the most critical method — all 3 spec bugs (Bug 1, 2, 3) are fixed here.
+        Step order from spec Part 8.3 must be followed EXACTLY.
+        """
+        if self.state not in (StrategyState.SCAN_HIT, StrategyState.MONITORING):
+            return
+
+        assert self.impact_candle is not None
+        assert self.consolidation is not None
+
+        # Transition SCAN_HIT → MONITORING on first candle after scan hit
+        if self.state == StrategyState.SCAN_HIT:
+            self.state = StrategyState.MONITORING
+            log.info(
+                "state_monitoring_start",
+                symbol=self.symbol,
+                candle_time=candle_time.strftime("%H:%M"),
+            )
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 1: SNAPSHOT BEFORE UPDATE (Bug 1 + Bug 2 fix)
+        # These snapshots must happen BEFORE consolidation.update()
+        # ═══════════════════════════════════════════════════════════════
+        prev_volumes = list(self.consolidation.volume_readings)  # Bug 2 fix
+        breakout_level = self.consolidation.breakout_trigger_price  # Bug 1 fix
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 2: ABANDONMENT CHECKS (on current candle)
+        # ═══════════════════════════════════════════════════════════════
+
+        # 2a. Price broke below impact candle low → abandon
+        if c < self.impact_candle.low:
+            await self._abandon("price_broke_impact_low")
+            return
+
+        # 2b. Timeout check — use total_seconds() for robustness (spec Part 8.3)
+        elapsed_minutes = (candle_time - self.impact_candle.time).total_seconds() / 60
+        if elapsed_minutes > settings.DRYUP_MAX_MINUTES:
+            await self._abandon("timeout")
+            return
+
+        # 2c. A-shape reversal check (only after minimum dry-up candles)
+        if self.consolidation.candle_count >= settings.ASHAPE_MIN_CANDLE_COUNT:
+            candle_range_pct = (h - l) / self.impact_candle.close * 100
+            is_large_red = (c < o) and (candle_range_pct > settings.ASHAPE_RED_CANDLE_PCT)
+            avg_vol = self.consolidation.avg_volume
+            volume_elevated = avg_vol > 0 and volume > (avg_vol * settings.ASHAPE_VOLUME_MULTIPLE)
+            if is_large_red and volume_elevated:
+                log.info(
+                    "abandonment_ashape",
+                    symbol=self.symbol,
+                    candle_range_pct=round(candle_range_pct, 2),
+                    volume=volume,
+                    avg_vol=round(avg_vol, 0),
+                )
+                await self._abandon("a_shape_reversal")
+                return
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 3: UPDATE CONSOLIDATION (after abandonment checks)
+        # BUG 3 FIX: update() uses wick low (l), not close (c)
+        # ═══════════════════════════════════════════════════════════════
+        self.consolidation.update(h, l, c, volume)
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 4: RE-IGNITION CHECK (using PRE-UPDATE snapshots)
+        # ═══════════════════════════════════════════════════════════════
+        # Minimum dry-up candles needed before re-ignition is valid
+        if self.consolidation.candle_count >= settings.MIN_DRYUP_CANDLES:
+            # Need at least 2 prev_volumes to form a meaningful comparison window
+            if len(prev_volumes) >= 2:
+                # Comparison window: last N dry-up candles (pre-update snapshot)
+                comparison_window = prev_volumes[-settings.REIGNITION_LOOKBACK_CANDLES:]
+                max_prev_vol = max(comparison_window)
+
+                # All four conditions must pass simultaneously
+                is_volume_spike = volume > max_prev_vol * settings.REIGNITION_VOLUME_MULTIPLE
+                is_price_breakout = c > breakout_level  # Bug 1 fix: pre-update level
+                is_green = c > o
+                now_ist = datetime.datetime.now(IST_TZ)
+                is_before_cutoff = candle_time.time() < settings.max_entry_time
+
+                if is_volume_spike and is_price_breakout and is_green and is_before_cutoff:
+                    log.info(
+                        "reignition_detected",
+                        symbol=self.symbol,
+                        candle_time=candle_time.strftime("%H:%M"),
+                        volume=volume,
+                        max_prev_vol=max_prev_vol,
+                        breakout_level=breakout_level,
+                        close=c,
+                        dry_up_candles=self.consolidation.candle_count,
+                    )
+                    await self._trigger_entry(c, candle_time)
+                    return
+
+        # ═══════════════════════════════════════════════════════════════
+        # STEP 5: PERSIST STATE
+        # ═══════════════════════════════════════════════════════════════
+        log.debug(
+            "monitoring_candle",
+            symbol=self.symbol,
+            candle_time=candle_time.strftime("%H:%M"),
+            h=h, l=l, c=c, volume=volume,
+            dryup_count=self.consolidation.candle_count,
+            breakout_level=breakout_level,
+            elapsed_min=round(elapsed_minutes, 1),
+        )
+        await self._persist_state()
+
+    # ── Phase 3: Entry Trigger ────────────────────────────────────────────────
+
+    async def _trigger_entry(self, entry_close: float, candle_time: datetime.datetime) -> None:
+        """
+        Trigger an entry order based on re-ignition signal.
+        Paper mode: simulate fill immediately.
+        Live mode: place LIMIT order via order_service (Phase 3+).
+        """
+        assert self.consolidation is not None
+        assert self.impact_candle is not None
+
+        # Get tick size for SL calculation (use Redis; default 0.05)
+        try:
+            tick_size = await self._redis.get_tick_size(self.symbol)
+        except Exception:
+            tick_size = 0.05
+
+        # SL = wick-based swing low - 1 tick (Bug 3 fix ensures swing_low is wick)
+        stop_loss = round(self.consolidation.swing_low - tick_size, 2)
+
+        # Entry price: close × (1 + ENTRY_BUFFER_PCT)
+        limit_price = round(entry_close * (1 + settings.ENTRY_BUFFER_PCT), 2)
+        risk_per_share = limit_price - stop_loss
+
+        # Pre-trade risk check
+        if risk_per_share < settings.MIN_RISK_PER_SHARE_INR:
+            await self._abandon(
+                f"risk_per_share_too_small:{risk_per_share:.2f}<{settings.MIN_RISK_PER_SHARE_INR}"
+            )
+            return
+
+        # Compute quantity
+        try:
+            capital = await self._redis.get_capital()
+        except Exception:
+            capital = 0.0
+
+        if capital <= 0:
+            log.warning("entry_skipped_no_capital", symbol=self.symbol)
+            await self._abandon("no_capital_available")
+            return
+
+        risk_amount = capital * (settings.RISK_PER_TRADE_PCT / 100)
+        quantity = max(1, int(risk_amount / risk_per_share))
+
+        # Transition to ACTION_PENDING
+        self.state = StrategyState.ACTION_PENDING
+
+        if settings.is_paper_trade:
+            await self._paper_fill(limit_price, quantity, stop_loss, candle_time)
+        else:
+            # Phase 3+ wires real order placement here
+            log.warning(
+                "live_order_not_wired_phase2",
+                symbol=self.symbol,
+                limit_price=limit_price,
+                stop_loss=stop_loss,
+                quantity=quantity,
+            )
+            # For now, revert to MONITORING (no order placed)
+            self.state = StrategyState.MONITORING
+
+        await self._persist_state()
+
+    async def _paper_fill(
+        self,
+        limit_price: float,
+        quantity: int,
+        stop_loss: float,
+        candle_time: datetime.datetime,
+    ) -> None:
+        """
+        Simulate an order fill in paper trading mode.
+        Fill price = limit_price × 1.001 (0.1% slippage simulation per spec §15).
+        """
+        import time as _time
+        assert self.consolidation is not None
+
+        fill_price = round(limit_price * 1.001, 2)
+        order_id = f"PAPER_{self.symbol}_{int(_time.time())}"
+
+        log.info(
+            "paper_trade_fill",
+            symbol=self.symbol,
+            fill_price=fill_price,
+            quantity=quantity,
+            stop_loss=stop_loss,
+            order_id=order_id,
+        )
+
+        await self.on_order_filled(order_id, fill_price, quantity, datetime.datetime.now(IST_TZ))
+
+    # ── Phase 3: Order Fill ───────────────────────────────────────────────────
+
+    async def on_order_filled(
+        self,
+        order_id: str,
+        fill_price: float,
+        fill_qty: int,
+        fill_time: datetime.datetime,
+    ) -> None:
+        """
+        Called when entry order is confirmed filled (real postback or paper simulation).
+        Transitions ACTION_PENDING → MANAGING.
+        """
+        if self.state != StrategyState.ACTION_PENDING:
+            log.warning(
+                "fill_in_wrong_state",
+                symbol=self.symbol,
+                state=self.state,
+                order_id=order_id,
+            )
+            return
+
+        assert self.consolidation is not None
+
+        # Recalculate from ACTUAL fill price (not limit price)
+        try:
+            tick_size = await self._redis.get_tick_size(self.symbol)
+        except Exception:
+            tick_size = 0.05
+
+        stop_loss = round(self.consolidation.swing_low - tick_size, 2)
+        risk_per_share = fill_price - stop_loss
+        risk_amount = risk_per_share * fill_qty
+        target_1r2 = round(fill_price + 2 * risk_per_share, 2)
+        target_1r3 = round(fill_price + 3 * risk_per_share, 2)
+        target_1r4 = round(fill_price + 4 * risk_per_share, 2)
+
+        # Record trade in DB
+        try:
+            trade_id = await self._db.open_trade(
+                signal_id=self._signal_id,
+                symbol=self.symbol,
+                instrument_token=self.instrument_token,
+                entry_order_id=order_id,
+                entry_time=fill_time,
+                entry_price=fill_price,
+                quantity=fill_qty,
+                initial_stop_loss=stop_loss,
+                risk_per_share=risk_per_share,
+                risk_amount=risk_amount,
+                target_1r2=target_1r2,
+                target_1r4=target_1r4,
+                notes="PAPER_TRADE" if settings.is_paper_trade else None,
+            )
+        except Exception as exc:
+            log.error("trade_db_write_failed", symbol=self.symbol, error=str(exc))
+            trade_id = None
+
+        self.position = OpenPosition(
+            trade_id=trade_id,
+            entry_price=fill_price,
+            quantity=fill_qty,
+            initial_sl=stop_loss,
+            current_sl=stop_loss,
+            risk_per_share=risk_per_share,
+            risk_amount=risk_amount,
+            target_1r2=target_1r2,
+            target_1r3=target_1r3,
+            target_1r4=target_1r4,
+            entry_order_id=order_id,
+        )
+
+        self.state = StrategyState.MANAGING
+
+        log.info(
+            "state_managing",
+            symbol=self.symbol,
+            fill_price=fill_price,
+            qty=fill_qty,
+            sl=stop_loss,
+            target_1r2=target_1r2,
+            target_1r4=target_1r4,
+            paper=settings.is_paper_trade,
+        )
+
+        # Update signal progression in DB
+        if self._signal_id:
+            try:
+                await self._db.update_signal_progression(
+                    self._signal_id,
+                    progressed_to_action=True,
+                    resulted_in_trade=True,
+                )
+            except Exception as exc:
+                log.warning("signal_progression_update_failed", error=str(exc))
+
+        # Save position to Redis
+        try:
+            await self._redis.set_position(self.symbol, self.position.to_dict())
+        except Exception as exc:
+            log.warning("position_redis_save_failed", error=str(exc))
+
+        await self._persist_state()
+
+    # ── Phase 4: Tick Handler (MANAGING) ─────────────────────────────────────
+
+    async def on_tick(self, ltp: float, tick_time: datetime.datetime) -> None:
+        """
+        Called for every tick while in MANAGING state.
+        Checks SL, trails at 1:2 and 1:3, exits at 1:4.
+        Paper mode: all checks against live LTP directly.
+        """
+        if self.state != StrategyState.MANAGING or self.position is None:
+            return
+
+        pos = self.position
+
+        # Update unrealized P&L in Redis for dashboard
+        unrealized = (ltp - pos.entry_price) * pos.quantity
+        try:
+            await self._redis.update_unrealized_pnl(self.symbol, unrealized)
+        except Exception:
+            pass
+
+        # Track MAE/MFE
+        if pos.max_favorable_excursion is None or unrealized > pos.max_favorable_excursion:
+            pos.max_favorable_excursion = unrealized
+        if pos.max_adverse_excursion is None or unrealized < pos.max_adverse_excursion:
+            pos.max_adverse_excursion = unrealized
+
+        # ── Paper mode SL check ───────────────────────────────────────
+        if settings.is_paper_trade and ltp <= pos.current_sl and not pos._exit_initiated:
+            reason = "CLOSED_TRAILSTOP" if pos.cost_trailed else "CLOSED_STOPLOSS"
+            log.info(
+                "paper_sl_hit",
+                symbol=self.symbol,
+                ltp=ltp,
+                current_sl=pos.current_sl,
+                reason=reason,
+            )
+            await self._close_position(ltp, None, reason)
+            return
+
+        # ── Trail at 1:2 ─────────────────────────────────────────────
+        if not pos.cost_trailed and ltp >= pos.target_1r2:
+            pos.current_sl = pos.entry_price  # Trail to breakeven
+            pos.cost_trailed = True
+            log.info(
+                "sl_trailed_to_cost",
+                symbol=self.symbol,
+                ltp=ltp,
+                new_sl=pos.entry_price,
+            )
+            try:
+                await self._redis.set_position(self.symbol, pos.to_dict())
+            except Exception:
+                pass
+
+        # ── Trail at 1:3 ─────────────────────────────────────────────
+        if pos.cost_trailed and not pos.profit_locked and ltp >= pos.target_1r3:
+            new_sl = pos.entry_price + pos.risk_per_share
+            pos.current_sl = new_sl
+            pos.profit_locked = True
+            log.info(
+                "sl_trailed_to_profit",
+                symbol=self.symbol,
+                ltp=ltp,
+                new_sl=new_sl,
+            )
+            try:
+                await self._redis.set_position(self.symbol, pos.to_dict())
+            except Exception:
+                pass
+
+        # ── Full exit at 1:4 ─────────────────────────────────────────
+        if ltp >= pos.target_1r4 and not pos._exit_initiated:
+            log.info(
+                "target_1r4_reached",
+                symbol=self.symbol,
+                ltp=ltp,
+                target=pos.target_1r4,
+            )
+            await self._close_position(ltp, None, "CLOSED_TARGET")
+
+    # ── Squareoff (3:20 PM) ───────────────────────────────────────────────────
+
+    async def force_squareoff(self) -> None:
+        """
+        Called at 3:20 PM by APScheduler for any open position.
+        Paper mode: simulate exit at current LTP.
+        """
+        if self.state == StrategyState.MANAGING and self.position is not None:
+            try:
+                ltp = await self._redis.get_last_ltp(self.symbol) or self.position.entry_price
+            except Exception:
+                ltp = self.position.entry_price
+            log.info("forced_squareoff", symbol=self.symbol, ltp=ltp)
+            await self._close_position(ltp, None, "CLOSED_TIME")
+
+        elif self.state in (StrategyState.SCAN_HIT, StrategyState.MONITORING):
+            await self._abandon("session_end_time")
+
+        elif self.state == StrategyState.ACTION_PENDING:
+            self._pending_order_id = None
+            self.state = StrategyState.CLOSED
+            log.info("squareoff_pending_cancelled", symbol=self.symbol)
+
+    # ── Internal: Close Position ──────────────────────────────────────────────
+
+    async def _close_position(
+        self,
+        exit_price: float,
+        exit_order_id: str | None,
+        reason: str,
+    ) -> None:
+        """Close an open position, compute P&L, write to DB, publish event."""
+        if self.position is None:
+            return
+
+        pos = self.position
+        pos._exit_initiated = True
+
+        gross_pnl = round((exit_price - pos.entry_price) * pos.quantity, 2)
+        # Simple transaction cost estimate for paper mode
+        # Full cost calculator wired in Phase 3
+        estimated_charges = round(
+            settings.BROKERAGE_PER_ORDER_INR * 2  # buy + sell
+            + pos.entry_price * pos.quantity * settings.STT_INTRADAY_SELL_PCT
+            + pos.entry_price * pos.quantity * settings.NSE_TXFEE_PER_LAKH_INR / 100000,
+            2,
+        )
+        net_pnl = round(gross_pnl - estimated_charges, 2)
+
+        log.info(
+            "position_closed",
+            symbol=self.symbol,
+            reason=reason,
+            exit_price=exit_price,
+            entry_price=pos.entry_price,
+            qty=pos.quantity,
+            gross_pnl=gross_pnl,
+            charges=estimated_charges,
+            net_pnl=net_pnl,
+            paper=settings.is_paper_trade,
+        )
+
+        # Update trade in DB
+        if pos.trade_id is not None:
+            try:
+                from app.models.db.trade import TradeStatus
+                status_map = {
+                    "CLOSED_TARGET": TradeStatus.CLOSED_TARGET,
+                    "CLOSED_STOPLOSS": TradeStatus.CLOSED_STOPLOSS,
+                    "CLOSED_TRAILSTOP": TradeStatus.CLOSED_TRAILSTOP,
+                    "CLOSED_TIME": TradeStatus.CLOSED_TIME,
+                    "CLOSED_MANUAL": TradeStatus.CLOSED_MANUAL,
+                    "CLOSED_ERROR": TradeStatus.CLOSED_ERROR,
+                }
+                status = status_map.get(reason, TradeStatus.CLOSED_MANUAL)
+                await self._db.close_trade(
+                    trade_id=pos.trade_id,
+                    exit_price=exit_price,
+                    exit_time=datetime.datetime.now(IST_TZ),
+                    exit_order_id=exit_order_id,
+                    gross_pnl=gross_pnl,
+                    net_pnl=net_pnl,
+                    brokerage=settings.BROKERAGE_PER_ORDER_INR * 2,
+                    stt=pos.entry_price * pos.quantity * settings.STT_INTRADAY_SELL_PCT,
+                    other_charges=estimated_charges - settings.BROKERAGE_PER_ORDER_INR * 2,
+                    status=status,
+                    mfe=pos.max_favorable_excursion,
+                    mae=pos.max_adverse_excursion,
+                )
+            except Exception as exc:
+                log.error("trade_close_db_failed", symbol=self.symbol, error=str(exc))
+
+        # Update daily P&L in Redis
+        try:
+            await self._redis.increment_daily_pnl(net_pnl)
+        except Exception:
+            pass
+
+        # Clear position from Redis
+        try:
+            await self._redis.clear_position(self.symbol)
+        except Exception:
+            pass
+
+        # Publish trade closed event
+        try:
+            await self._redis.publish_state_change({
+                "event": "trade_closed",
+                "symbol": self.symbol,
+                "reason": reason,
+                "exit_price": exit_price,
+                "net_pnl": net_pnl,
+            })
+        except Exception:
+            pass
+
+        self.position = None
+        self.state = StrategyState.CLOSED
+        await self._persist_state()
+
+    # ── Internal: Abandon ─────────────────────────────────────────────────────
+
+    async def _abandon(self, reason: str) -> None:
+        """Abandon a setup that didn't progress to a trade."""
+        self._abandonment_reason = reason
+        self.state = StrategyState.CLOSED
+
+        log.info(
+            "setup_abandoned",
+            symbol=self.symbol,
+            reason=reason,
+            state_before="MONITORING" if self.consolidation else "SCAN_HIT",
+        )
+
+        # Update signal record with abandonment reason
+        if self._signal_id:
+            try:
+                await self._db.update_signal_progression(
+                    self._signal_id,
+                    progressed_to_monitor=bool(self.consolidation and self.consolidation.candle_count > 0),
+                    abandonment_reason=reason,
+                )
+            except Exception as exc:
+                log.warning("signal_abandon_update_failed", error=str(exc))
+
+        # Publish abandonment event  
+        try:
+            await self._redis.publish_state_change({
+                "event": "setup_abandoned",
+                "symbol": self.symbol,
+                "reason": reason,
+            })
+        except Exception:
+            pass
+
+        await self._persist_state()
+
+    # ── Internal: Persist State ───────────────────────────────────────────────
+
+    async def _persist_state(self) -> None:
+        """Snapshot current SM state to Redis for dashboard polling."""
+        try:
+            data: dict[str, Any] = {
+                "symbol": self.symbol,
+                "state": self.state.value,
+                "signal_id": self._signal_id,
+            }
+            if self.impact_candle:
+                data["impact_candle_time"] = self.impact_candle.time.isoformat()
+                data["impact_close"] = self.impact_candle.close
+                data["spike_multiple"] = round(self.impact_candle.spike_multiple, 1)
+            if self.consolidation:
+                data["consolidation"] = self.consolidation.to_dict()
+            if self.position:
+                data["position"] = self.position.to_dict()
+
+            if self.state == StrategyState.CLOSED:
+                await self._redis.clear_strategy_state(self.symbol)
+            else:
+                await self._redis.set_strategy_state(self.symbol, data)
+        except Exception as exc:
+            log.warning("state_persist_failed", symbol=self.symbol, error=str(exc))
+
+    # ── Properties ────────────────────────────────────────────────────────────
+
+    @property
+    def is_active(self) -> bool:
+        """True if this SM is still alive (not CLOSED)."""
+        return self.state != StrategyState.CLOSED
+
+    def __repr__(self) -> str:
+        return f"SM({self.symbol}:{self.state.value})"
