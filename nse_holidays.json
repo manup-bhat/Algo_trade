@@ -1,0 +1,23 @@
+{
+  "description": "NSE Trading Holidays 2026. Update every January from https://www.nseindia.com/resources/exchange-communication-holidays",
+  "year": 2026,
+  "holidays": [
+    {"date": "2026-01-26", "description": "Republic Day"},
+    {"date": "2026-02-18", "description": "Mahashivratri"},
+    {"date": "2026-03-20", "description": "Holi"},
+    {"date": "2026-04-02", "description": "Ram Navami"},
+    {"date": "2026-04-03", "description": "Good Friday"},
+    {"date": "2026-04-14", "description": "Dr. Ambedkar Jayanti / Bohag Bihu"},
+    {"date": "2026-05-01", "description": "Maharashtra Day"},
+    {"date": "2026-06-04", "description": "Id-Ul-Adha (Bakri Id)"},
+    {"date": "2026-07-20", "description": "Muharram"},
+    {"date": "2026-08-15", "description": "Independence Day"},
+    {"date": "2026-08-25", "description": "Ganesh Chaturthi"},
+    {"date": "2026-09-28", "description": "Dussehra (Maha Navami)"},
+    {"date": "2026-10-02", "description": "Mahatma Gandhi Jayanti / Dussehra"},
+    {"date": "2026-10-20", "description": "Diwali Laxmi Puja (Muhurat Trading)"},
+    {"date": "2026-10-21", "description": "Diwali (Balipratipada)"},
+    {"date": "2026-11-04", "description": "Gurunanak Jayanti"},
+    {"date": "2026-12-25", "description": "Christmas"}
+  ]
+}
