@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     PAPER_TRADE: bool = False
+    AUTO_START_ENGINE_WITH_BACKEND: bool = False
+    AUTO_STOP_ENGINE_WITH_BACKEND: bool = True
+    ENGINE_RUNNER_CMD: str = ""
 
     # ── Validators ──────────────────────────────────────────────────
 

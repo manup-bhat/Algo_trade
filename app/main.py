@@ -29,21 +29,184 @@ Usage (from trading_bot/):
 
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
+import shlex
+import subprocess
+import sys
+from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-import asyncio
 import structlog
-from contextlib import asynccontextmanager
 
 log = structlog.get_logger(__name__)
 
 from app.core.config import settings
 from app.api.dashboard_router import router as dashboard_router
 from app.api.v1.routes.auth import router as auth_router
+
+_ENGINE_AUTOSTART_LOCK_KEY = "engine:autostart:backend"
+_ENGINE_AUTOSTART_LOCK_TTL_SECONDS = 60
+_engine_process: subprocess.Popen | None = None
+_engine_autostart_lock_token: str | None = None
+
+
+def _build_engine_runner_command() -> list[str]:
+    """Build the command used to launch engine.runner as a child process."""
+    if settings.ENGINE_RUNNER_CMD.strip():
+        return shlex.split(settings.ENGINE_RUNNER_CMD, posix=(os.name != "nt"))
+    return [sys.executable, "-m", "engine.runner"]
+
+
+async def _acquire_engine_autostart_lock(redis_client) -> bool:
+    """Acquire a short-lived lock to avoid duplicate engine spawns on backend restarts."""
+    global _engine_autostart_lock_token
+
+    token = uuid4().hex
+    acquired = await redis_client.set(
+        _ENGINE_AUTOSTART_LOCK_KEY,
+        token,
+        nx=True,
+        ex=_ENGINE_AUTOSTART_LOCK_TTL_SECONDS,
+    )
+    if acquired:
+        _engine_autostart_lock_token = token
+    return bool(acquired)
+
+
+async def _release_engine_autostart_lock(redis_client) -> None:
+    """Release lock only if this process owns it."""
+    global _engine_autostart_lock_token
+
+    if _engine_autostart_lock_token is None:
+        return
+
+    try:
+        current = await redis_client.get(_ENGINE_AUTOSTART_LOCK_KEY)
+        if current == _engine_autostart_lock_token:
+            await redis_client.delete(_ENGINE_AUTOSTART_LOCK_KEY)
+    except Exception as exc:
+        log.debug("engine_autostart_lock_release_failed", error=str(exc))
+    finally:
+        _engine_autostart_lock_token = None
+
+
+async def _release_engine_autostart_lock_from_pool() -> None:
+    if _engine_autostart_lock_token is None:
+        return
+    try:
+        from app.store.redis_client import get_redis
+
+        await _release_engine_autostart_lock(get_redis())
+    except Exception as exc:
+        log.debug("engine_autostart_lock_release_skipped", error=str(exc))
+
+
+async def _maybe_start_engine_subprocess() -> None:
+    """Optionally spawn engine.runner when backend starts."""
+    global _engine_process
+
+    if not settings.AUTO_START_ENGINE_WITH_BACKEND:
+        return
+
+    try:
+        from app.store.redis_client import get_redis
+        from engine.store.redis_store import RedisStore
+    except Exception as exc:
+        log.warning("engine_autostart_import_failed", error=str(exc))
+        return
+
+    redis_client = get_redis()
+    redis_store = RedisStore(redis_client)
+
+    if not await redis_store.ping():
+        log.warning(
+            "engine_autostart_skipped_redis_unreachable",
+            redis_url=settings.REDIS_URL,
+        )
+        return
+
+    if not await _acquire_engine_autostart_lock(redis_client):
+        log.info("engine_autostart_skipped_lock_held")
+        return
+
+    started = False
+    try:
+        existing_status = await redis_store.get_engine_status() or {}
+        status_name = str(existing_status.get("status", "")).upper()
+        if status_name and status_name not in {"OFFLINE", "EMERGENCY_STOP"}:
+            log.info(
+                "engine_autostart_skipped_engine_already_active",
+                status=status_name,
+            )
+            return
+
+        if _engine_process is not None and _engine_process.poll() is None:
+            log.info(
+                "engine_autostart_skipped_child_already_running",
+                pid=_engine_process.pid,
+            )
+            return
+
+        command = _build_engine_runner_command()
+        project_root = Path(__file__).resolve().parent.parent
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+        _engine_process = subprocess.Popen(
+            command,
+            cwd=str(project_root),
+            creationflags=creationflags,
+        )
+        started = True
+        log.info(
+            "engine_autostart_started",
+            pid=_engine_process.pid,
+            command=command,
+        )
+    except Exception as exc:
+        log.error("engine_autostart_failed", error=str(exc))
+    finally:
+        if not started:
+            await _release_engine_autostart_lock(redis_client)
+
+
+async def _stop_engine_subprocess() -> None:
+    """Optionally stop backend-started engine process on API shutdown."""
+    global _engine_process
+
+    proc = _engine_process
+    _engine_process = None
+    if proc is None:
+        return
+
+    if proc.poll() is not None:
+        return
+
+    if not settings.AUTO_STOP_ENGINE_WITH_BACKEND:
+        log.info(
+            "engine_autostart_leave_child_running",
+            pid=proc.pid,
+        )
+        return
+
+    log.info("engine_autostart_stopping", pid=proc.pid)
+    try:
+        proc.terminate()
+        await asyncio.to_thread(proc.wait, 15)
+    except Exception:
+        log.warning("engine_autostart_force_kill", pid=proc.pid)
+        try:
+            proc.kill()
+            await asyncio.to_thread(proc.wait, 5)
+        except Exception:
+            pass
 
 # ── Port 80 Interceptor Background Task ──────────────────────────────────────
 
@@ -81,12 +244,18 @@ async def lifespan(app: FastAPI):
         log.info("port80_listener_started", message="Listening internally for Kite OAuth callbacks")
     except Exception as exc:
         log.warning("port80_listener_failed", error=str(exc))
-        
-    yield
-    
-    if server:
-        server.close()
-        await server.wait_closed()
+
+    await _maybe_start_engine_subprocess()
+
+    try:
+        yield
+    finally:
+        await _stop_engine_subprocess()
+        await _release_engine_autostart_lock_from_pool()
+
+        if server:
+            server.close()
+            await server.wait_closed()
 
 # ── Application ───────────────────────────────────────────────────────────────
 app = FastAPI(

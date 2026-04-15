@@ -474,7 +474,10 @@ async def main() -> None:
     _redis_store = RedisStore(redis_client)
 
     if not await _redis_store.ping():
-        log.critical("redis_not_reachable", hint="docker compose up -d redis")
+        log.critical(
+            "redis_not_reachable",
+            hint="Start Redis on localhost:6379 (local service preferred) or run docker compose up -d redis",
+        )
         return
     log.info("redis_connected", url=settings.REDIS_URL)
 

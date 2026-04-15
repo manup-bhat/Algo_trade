@@ -43,7 +43,7 @@ The strategy reference for this repo is:
 
 1. Python 3.12 or newer
 2. Zerodha Kite Connect app credentials
-3. Redis running on `localhost:6379` (Docker recommended)
+3. Redis running on `localhost:6379` (local service recommended for lower RAM)
 4. Windows PowerShell (commands below are Windows-friendly)
 
 ## Setup
@@ -82,7 +82,26 @@ Edit `.env` and set at minimum:
 - `KITE_REDIRECT_URL`
 - `PAPER_TRADE=true` (recommended initially)
 
-4. Start Redis
+4. Start Redis (non-Docker path recommended)
+
+Option A (recommended): local Redis service on Windows
+
+- Install a Redis-compatible Windows service (for example Memurai).
+- Ensure it listens on `127.0.0.1:6379`.
+- Keep `.env` as:
+
+```env
+REDIS_URL=redis://localhost:6379/0
+```
+
+Quick health check:
+
+```powershell
+cd d:\volume_algo_trading\trading_bot
+.\.venv\Scripts\python.exe scripts\redis_diag.py
+```
+
+Option B (fallback): Docker Redis
 
 ```powershell
 docker compose up -d redis
@@ -96,7 +115,30 @@ docker compose up -d redis
 
 ## Run
 
-Open two terminals.
+You can run in either mode.
+
+Mode A: single command (backend auto-starts engine)
+
+Set in `.env`:
+
+```env
+AUTO_START_ENGINE_WITH_BACKEND=true
+AUTO_STOP_ENGINE_WITH_BACKEND=true
+```
+
+Then run backend (without `--reload`):
+
+```powershell
+cd d:\volume_algo_trading\trading_bot
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Notes:
+- Auto-start is skipped if Redis is unreachable.
+- Auto-start is skipped if engine appears already active in Redis state.
+- Keep `AUTO_START_ENGINE_WITH_BACKEND=false` if you prefer explicit/manual engine control.
+
+Mode B: explicit two-terminal run (existing behavior)
 
 Terminal 1: API + dashboard
 
@@ -120,7 +162,7 @@ Open dashboard:
 1. Open `GET /api/v1/auth/login`
 2. Complete Zerodha login in browser
 3. Callback stores token in `.kite_token` and Redis (`.kite_token` is gitignored)
-4. Start or resume engine
+4. Start or resume engine (automatic if `AUTO_START_ENGINE_WITH_BACKEND=true`)
 
 If your Kite redirect is `http://127.0.0.1` only, use:
 
