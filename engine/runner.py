@@ -331,7 +331,14 @@ async def job_session_end() -> None:
         except Exception as exc:
             log.warning("ws_unsubscribe_failed", error=str(exc))
 
-    # 4. Set final status
+    # 4. Persist market snapshot for after-hours dashboard
+    try:
+        symbol_count = await redis_store.persist_eod_market_snapshot()
+        log.info("eod_market_snapshot_persisted", symbol_count=symbol_count)
+    except Exception as exc:
+        log.warning("eod_market_snapshot_persist_failed", error=str(exc))
+
+    # 5. Set final status
     await redis_store.set_engine_status({
         "status": "MARKET_CLOSED",
         "timestamp": now_ist().isoformat(),

@@ -99,3 +99,34 @@ async def test_radar_reads_current_state_shape(redis_store):
     assert row["spike_multiple"] == 24.2
     assert row["breakout_level"] == 510.0
     assert row["current_price"] == 508.2
+
+
+@pytest.mark.asyncio
+async def test_market_uses_eod_snapshot_when_market_closed(redis_store, monkeypatch):
+    dashboard_router.set_dependencies(redis_store, None)
+
+    await redis_store.set_live_tick("ABC", ltp=508.2, day_open=500.0, volume=123456)
+    await redis_store.persist_eod_market_snapshot()
+    await redis_store._r.delete("livetick:ABC")
+
+    monkeypatch.setattr(dashboard_router, "_is_market_open_now", lambda: False)
+
+    data = await dashboard_router.get_market()
+
+    assert data["source"] == "eod_snapshot"
+    assert data["count"] == 1
+    assert data["ticks"][0]["symbol"] == "ABC"
+
+
+@pytest.mark.asyncio
+async def test_market_uses_live_ticks_when_market_open(redis_store, monkeypatch):
+    dashboard_router.set_dependencies(redis_store, None)
+
+    await redis_store.set_live_tick("XYZ", ltp=100.5, day_open=99.0, volume=7890)
+    monkeypatch.setattr(dashboard_router, "_is_market_open_now", lambda: True)
+
+    data = await dashboard_router.get_market()
+
+    assert data["source"] == "live_ticks"
+    assert data["count"] == 1
+    assert data["ticks"][0]["symbol"] == "XYZ"

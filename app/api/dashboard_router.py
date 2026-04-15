@@ -75,6 +75,16 @@ def _rs() -> Any | None:
     return _redis_store
 
 
+def _is_market_open_now() -> bool:
+    from app.core.config import settings
+
+    now_ist = datetime.now(IST_TZ)
+    return (
+        now_ist.weekday() < 5
+        and settings.market_open_time <= now_ist.time() <= settings.square_off_time
+    )
+
+
 # ── WebSocket pool ──────────────────────────────────────────────────────────────
 _ws_clients: set[WebSocket] = set()
 
@@ -96,10 +106,7 @@ async def broadcast(payload: dict[str, Any]) -> None:
 async def get_status():
     from app.core.config import settings
     now_ist = datetime.now(IST_TZ)
-    market_open = (
-        now_ist.weekday() < 5
-        and settings.market_open_time <= now_ist.time() <= settings.square_off_time
-    )
+    market_open = _is_market_open_now()
     base = {
         "status": "ok",
         "paper_trade": settings.PAPER_TRADE,
@@ -482,8 +489,21 @@ async def get_market():
     if rs is None:
         return {"ticks": [], "count": 0}
     try:
+        if not _is_market_open_now():
+            snapshot_ticks = await rs.load_eod_market_snapshot(limit=500)
+            if snapshot_ticks:
+                return {
+                    "ticks": snapshot_ticks,
+                    "count": len(snapshot_ticks),
+                    "source": "eod_snapshot",
+                }
+
         ticks = await rs.get_market_snapshot(limit=500)
-        return {"ticks": ticks, "count": len(ticks)}
+        return {
+            "ticks": ticks,
+            "count": len(ticks),
+            "source": "live_ticks",
+        }
     except Exception as exc:
         return {"ticks": [], "count": 0, "error": str(exc)}
 

@@ -117,6 +117,12 @@ Verify Redis port:
 Get-NetTCPConnection -LocalPort 6379 -State Listen
 ```
 
+After-hours market data behavior:
+
+- Live `livetick:*` keys are retained for 15 hours.
+- At session end, engine persists an end-of-day market snapshot.
+- `GET /api/v1/market` reads this snapshot when market is closed.
+
 Quick health check:
 
 ```powershell
