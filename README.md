@@ -94,6 +94,29 @@ Option A (recommended): local Redis service on Windows
 REDIS_URL=redis://localhost:6379/0
 ```
 
+Memurai service commands (PowerShell):
+
+```powershell
+# Enable auto-start on Windows boot
+Set-Service -Name Memurai -StartupType Automatic
+
+# Start now
+Start-Service -Name Memurai
+
+# Check status
+Get-Service -Name Memurai
+
+# Stop / restart when needed
+Stop-Service -Name Memurai
+Restart-Service -Name Memurai
+```
+
+Verify Redis port:
+
+```powershell
+Get-NetTCPConnection -LocalPort 6379 -State Listen
+```
+
 Quick health check:
 
 ```powershell
