@@ -473,3 +473,76 @@ class TestPaperTrade:
             )
 
 
+class TestLiveExitLifecycle:
+    @pytest.mark.asyncio
+    async def test_live_initiate_exit_waits_for_exit_postback(self, sm, monkeypatch):
+        """Live exit should place/register MARKET exit and wait for postback, not close immediately."""
+        from engine.orders.order_tracker import OrderTracker
+
+        monkeypatch.setattr("app.core.config.settings.PAPER_TRADE", False)
+
+        impact = make_impact()
+        await sm.on_scan_hit(impact)
+        sm.state = StrategyState.MANAGING
+        sm.position = OpenPosition(
+            trade_id=None,
+            entry_price=500.0,
+            quantity=10,
+            initial_sl=460.0,
+            current_sl=460.0,
+            risk_per_share=40.0,
+            risk_amount=400.0,
+            target_1r2=580.0,
+            target_1r3=620.0,
+            target_1r4=660.0,
+            entry_order_id="ENTRY_1",
+            sl_order_id="SL_1",
+        )
+
+        sm._order_service = AsyncMock()
+        sm._order_service.cancel_order = AsyncMock(return_value=True)
+        sm._order_service.place_exit_market = AsyncMock(return_value="EXIT_1")
+        sm._order_tracker = OrderTracker()
+        sm._close_position = AsyncMock()
+
+        await sm._initiate_exit("CLOSED_TARGET")
+
+        assert sm._close_position.call_count == 0
+        assert sm.position is not None
+        assert sm.position._exit_initiated is True
+        assert sm.position.exit_order_id == "EXIT_1"
+        assert sm.position.exit_reason == "CLOSED_TARGET"
+        assert sm._order_tracker.is_exit("EXIT_1")
+
+    @pytest.mark.asyncio
+    async def test_close_position_releases_blocked_margin(self, sm, monkeypatch):
+        """_close_position must decrement margin_tracker when position has blocked margin."""
+        from engine.risk.margin_tracker import margin_tracker
+
+        monkeypatch.setattr("app.core.config.settings.PAPER_TRADE", False)
+
+        impact = make_impact()
+        await sm.on_scan_hit(impact)
+        sm.state = StrategyState.MANAGING
+        sm.position = OpenPosition(
+            trade_id=None,
+            entry_price=500.0,
+            quantity=10,
+            initial_sl=460.0,
+            current_sl=460.0,
+            risk_per_share=40.0,
+            risk_amount=400.0,
+            target_1r2=580.0,
+            target_1r3=620.0,
+            target_1r4=660.0,
+            entry_order_id="ENTRY_1",
+            sl_order_id="SL_1",
+            margin_blocked=12345.0,
+        )
+
+        with patch.object(margin_tracker, "decrement", new_callable=AsyncMock) as mock_dec:
+            await sm._close_position(510.0, "EXIT_1", "CLOSED_TARGET")
+
+        mock_dec.assert_called_once_with(12345.0, sm._redis)
+
+

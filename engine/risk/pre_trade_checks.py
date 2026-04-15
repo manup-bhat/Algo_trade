@@ -18,6 +18,7 @@ Check order:
 
 from __future__ import annotations
 
+import datetime
 from typing import TYPE_CHECKING
 
 import pytz
@@ -81,7 +82,6 @@ class PreTradeChecks:
             return False, "market_closed"
 
         # ── Check 4: Entry cutoff ─────────────────────────────────────
-        import datetime
         now_ist = datetime.datetime.now(IST_TZ)
         if now_ist.time() >= settings.max_entry_time:
             return False, "after_entry_cutoff"

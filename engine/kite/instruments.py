@@ -153,10 +153,8 @@ async def load_instruments_async(kite_client: object) -> list[dict]:
     Fetch the NSE instrument dump asynchronously.
     kite_client must expose an async `instruments(exchange)` method.
     """
-    loop = asyncio.get_event_loop()
-    raw: list[dict] = await loop.run_in_executor(
-        None, lambda: kite_client.instruments("NSE")  # type: ignore[attr-defined]
-    )
+    # AsyncKiteClient.instruments() is already async (uses run_in_executor internally)
+    raw: list[dict] = await kite_client.instruments("NSE")  # type: ignore[attr-defined]
     return raw
 
 

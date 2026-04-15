@@ -14,6 +14,7 @@ All four bugs have mandatory unit test regression coverage in test_state_machine
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import enum
 import statistics
@@ -99,6 +100,7 @@ class ConsolidationData:
             "high": self.high,
             "low": self.low,
             "swing_low": self.swing_low,
+            "breakout_trigger_price": self.breakout_trigger_price,
             "candle_count": self.candle_count,
             "volume_readings": self.volume_readings,
         }
@@ -119,6 +121,9 @@ class OpenPosition:
     target_1r4: float
     entry_order_id: str
     sl_order_id: str | None = None
+    margin_blocked: float = 0.0
+    exit_order_id: str | None = None
+    exit_reason: str | None = None
     cost_trailed: bool = False
     profit_locked: bool = False
     _exit_initiated: bool = False
@@ -137,6 +142,9 @@ class OpenPosition:
             "target_1r2": self.target_1r2,
             "target_1r3": self.target_1r3,
             "target_1r4": self.target_1r4,
+            "margin_blocked": self.margin_blocked,
+            "exit_order_id": self.exit_order_id,
+            "exit_reason": self.exit_reason,
             "cost_trailed": self.cost_trailed,
             "profit_locked": self.profit_locked,
         }
@@ -244,10 +252,14 @@ class SymbolStateMachine:
             await self._redis.publish_signal({
                 "symbol": self.symbol,
                 "time": impact_candle.time.isoformat(),
+                "signal_time": impact_candle.time.isoformat(),
                 "spike_multiple": round(impact_candle.spike_multiple, 1),
                 "close": impact_candle.close,
+                "impact_high": impact_candle.high,
+                "impact_low": impact_candle.low,
                 "turnover_cr": round(impact_candle.turnover / 1e7, 2),
                 "signal_id": self._signal_id,
+                "state": StrategyState.SCAN_HIT.value,
             })
         except Exception as exc:
             log.warning("signal_publish_failed", symbol=self.symbol, error=str(exc))
@@ -426,6 +438,30 @@ class SymbolStateMachine:
             await self._abandon("insufficient_capital_for_quantity")
             return
 
+        # Run all 9 pre-trade checks before placing order (spec §8.4)
+        from engine.risk.pre_trade_checks import pre_trade_checks
+        from engine.kite.client import AsyncKiteClient
+
+        # Lazy get builder — coordinator stores it; SM accesses via _candle_builder
+        builder = getattr(self, "_candle_builder", None)
+        if builder is None:
+            log.warning("pre_trade_no_builder", symbol=self.symbol)
+        kite_client: AsyncKiteClient | None = getattr(self, "_kite", None)
+
+        if builder is not None:  # only run if builder is wired (prod + integration tests)
+            ok, reason = await pre_trade_checks.run(
+                symbol=self.symbol,
+                limit_price=limit_price,
+                stop_loss=stop_loss,
+                candle_builder=builder,
+                redis_store=self._redis,
+                kite=kite_client,
+            )
+            if not ok:
+                log.info("pre_trade_check_failed", symbol=self.symbol, reason=reason)
+                await self._abandon(f"pre_trade_failed:{reason}")
+                return
+
         # Transition to ACTION_PENDING
         self.state = StrategyState.ACTION_PENDING
         self._pending_order_id = None
@@ -461,7 +497,48 @@ class SymbolStateMachine:
                     self._fill_timeout = _ftm
                 self._fill_timeout.start_timeout(order_id, self, self._order_service)
 
+                # 5-second widen task (spec §8.5)
+                asyncio.create_task(
+                    self._maybe_widen_limit(order_id, limit_price),
+                    name=f"widen_{order_id}",
+                )
+
         await self._persist_state()
+
+    async def _maybe_widen_limit(self, order_id: str, original_limit: float) -> None:
+        """
+        After ENTRY_WIDEN_AFTER_SECONDS, if still ACTION_PENDING and price is not
+        too far away, widen the limit by another ENTRY_BUFFER_PCT (spec §8.5).
+        """
+        await asyncio.sleep(settings.ENTRY_WIDEN_AFTER_SECONDS)
+
+        if self.state != StrategyState.ACTION_PENDING:
+            return  # Already filled or timed out
+        if self._order_service is None:
+            return
+
+        try:
+            current_ltp = await self._redis.get_last_ltp(self.symbol)
+            if current_ltp and current_ltp > original_limit * (1 + settings.ENTRY_ABANDON_PCT):
+                # Price ran too far — abandon rather than chase
+                log.warning(
+                    "entry_price_moved_away_abandoning",
+                    symbol=self.symbol,
+                    ltp=current_ltp,
+                    limit=original_limit,
+                )
+                await self._order_service.cancel_order(order_id, symbol=self.symbol)
+                await self._handle_fill_timeout(order_id)  # Reverts to MONITORING
+                return
+
+            new_limit = round(original_limit * (1 + settings.ENTRY_BUFFER_PCT), 2)
+            await self._order_service._kite.modify_order(
+                order_id=order_id,
+                price=new_limit,
+            ) if (self._order_service and self._order_service._kite) else None
+            log.info("entry_limit_widened", order_id=order_id, new_limit=new_limit)
+        except Exception as exc:
+            log.warning("entry_widen_failed", order_id=order_id, error=str(exc))
 
     # ── Phase 3: Order Fill / Reject / Timeout ────────────────────────────────
 
@@ -507,6 +584,7 @@ class SymbolStateMachine:
 
         # Place SL-M order immediately on fill
         sl_order_id: str | None = None
+        margin_blocked = 0.0
         if not settings.is_paper_trade and self._order_service is not None:
             sl_order_id = await self._order_service.place_stop_loss(
                 symbol=self.symbol,
@@ -529,6 +607,35 @@ class SymbolStateMachine:
                 return
             if self._order_tracker:
                 self._order_tracker.register_sl(sl_order_id, self.symbol)
+
+            # Reserve blocked margin after a confirmed live entry fill.
+            kite = getattr(self, "_kite", None)
+            if kite is not None:
+                try:
+                    order_params = [{
+                        "exchange": "NSE",
+                        "tradingsymbol": self.symbol,
+                        "transaction_type": "BUY",
+                        "variety": "regular",
+                        "product": "MIS",
+                        "order_type": "LIMIT",
+                        "quantity": fill_qty,
+                        "price": fill_price,
+                    }]
+                    margin_resp = await kite.order_margins(order_params)
+                    margin_blocked = float(
+                        margin_resp[0].get("initial", {}).get("total", 0.0)
+                    )
+                    if margin_blocked > 0:
+                        from engine.risk.margin_tracker import margin_tracker
+
+                        await margin_tracker.increment(margin_blocked, self._redis)
+                except Exception as exc:
+                    log.warning(
+                        "margin_block_increment_failed",
+                        symbol=self.symbol,
+                        error=str(exc),
+                    )
         elif settings.is_paper_trade:
             # Paper SL is tracked internally — checked via on_tick() LTP
             sl_order_id = f"PAPER_SL_{self.symbol}_{int(__import__('time').time())}"
@@ -568,6 +675,7 @@ class SymbolStateMachine:
             target_1r4=target_1r4,
             entry_order_id=order_id,
             sl_order_id=sl_order_id,
+            margin_blocked=margin_blocked,
         )
 
         self.state = StrategyState.MANAGING
@@ -706,22 +814,35 @@ class SymbolStateMachine:
             await self._close_position(ltp, None, reason)
             return
 
-        # ── Trail at 1:2 ─────────────────────────────────────────────
+        # ── Trail at 1:2 ──────────────────────────────────────────────
         if not pos.cost_trailed and ltp >= pos.target_1r2:
-            pos.current_sl = pos.entry_price  # Trail to breakeven
+            new_sl = pos.entry_price
+            pos.current_sl = new_sl
             pos.cost_trailed = True
             log.info(
                 "sl_trailed_to_cost",
                 symbol=self.symbol,
                 ltp=ltp,
-                new_sl=pos.entry_price,
+                new_sl=new_sl,
             )
+            # Live mode: modify the actual SL-M order at the exchange
+            if not settings.is_paper_trade and self._order_service and pos.sl_order_id:
+                success = await self._order_service.modify_stop_loss(
+                    pos.sl_order_id, new_trigger=new_sl, symbol=self.symbol, sm=self
+                )
+                if not success:
+                    log.warning("sl_trail_modify_failed_cost", symbol=self.symbol)
             try:
                 await self._redis.set_position(self.symbol, pos.to_dict())
+                await self._redis.publish_state_change({
+                    "event": "sl_trailed_to_cost",
+                    "symbol": self.symbol,
+                    "new_sl": new_sl,
+                })
             except Exception:
                 pass
 
-        # ── Trail at 1:3 ─────────────────────────────────────────────
+        # ── Trail at 1:3 ──────────────────────────────────────────────
         if pos.cost_trailed and not pos.profit_locked and ltp >= pos.target_1r3:
             new_sl = pos.entry_price + pos.risk_per_share
             pos.current_sl = new_sl
@@ -732,8 +853,20 @@ class SymbolStateMachine:
                 ltp=ltp,
                 new_sl=new_sl,
             )
+            # Live mode: modify the actual SL-M order at the exchange
+            if not settings.is_paper_trade and self._order_service and pos.sl_order_id:
+                success = await self._order_service.modify_stop_loss(
+                    pos.sl_order_id, new_trigger=new_sl, symbol=self.symbol, sm=self
+                )
+                if not success:
+                    log.warning("sl_trail_modify_failed_profit", symbol=self.symbol)
             try:
                 await self._redis.set_position(self.symbol, pos.to_dict())
+                await self._redis.publish_state_change({
+                    "event": "sl_trailed_to_profit",
+                    "symbol": self.symbol,
+                    "new_sl": new_sl,
+                })
             except Exception:
                 pass
 
@@ -745,30 +878,127 @@ class SymbolStateMachine:
                 ltp=ltp,
                 target=pos.target_1r4,
             )
-            await self._close_position(ltp, None, "CLOSED_TARGET")
+            if settings.is_paper_trade:
+                # Paper: close directly — no Redis lock needed
+                await self._close_position(ltp, None, "CLOSED_TARGET")
+            else:
+                # Live: race-safe exit with SL cancel + market sell
+                await self._initiate_exit("CLOSED_TARGET")
 
     # ── Squareoff (3:20 PM) ───────────────────────────────────────────────────
 
     async def force_squareoff(self) -> None:
         """
         Called at 3:20 PM by APScheduler for any open position.
+        Live mode: uses _initiate_exit() (cancel SL + place MARKET sell).
         Paper mode: simulate exit at current LTP.
         """
         if self.state == StrategyState.MANAGING and self.position is not None:
-            try:
-                ltp = await self._redis.get_last_ltp(self.symbol) or self.position.entry_price
-            except Exception:
-                ltp = self.position.entry_price
-            log.info("forced_squareoff", symbol=self.symbol, ltp=ltp)
-            await self._close_position(ltp, None, "CLOSED_TIME")
+            if settings.is_paper_trade:
+                try:
+                    ltp = await self._redis.get_last_ltp(self.symbol) or self.position.entry_price
+                except Exception:
+                    ltp = self.position.entry_price
+                log.info("forced_squareoff", symbol=self.symbol, ltp=ltp)
+                await self._close_position(ltp, None, "CLOSED_TIME")
+            else:
+                log.info("forced_squareoff_live", symbol=self.symbol)
+                await self._initiate_exit("CLOSED_TIME")
 
         elif self.state in (StrategyState.SCAN_HIT, StrategyState.MONITORING):
             await self._abandon("session_end_time")
 
         elif self.state == StrategyState.ACTION_PENDING:
+            if self._pending_order_id and self._order_service:
+                await self._order_service.cancel_order(self._pending_order_id, symbol=self.symbol)
             self._pending_order_id = None
             self.state = StrategyState.CLOSED
+            await self._persist_state()
             log.info("squareoff_pending_cancelled", symbol=self.symbol)
+
+    # ── Internal: Race-safe Exit ──────────────────────────────────────────────
+
+    async def _initiate_exit(self, reason: str) -> None:
+        """
+        Race-condition-safe exit sequence (spec §8.8).
+        1. Acquire Redis NX lock (auto-expires in 10s on crash)
+        2. Set _exit_initiated = True
+        3. Cancel SL order
+        4. Wait EXIT_SL_CANCEL_DELAY_MS
+        5. If state already CLOSED (SL triggered during wait) → release lock, return
+        6. Place MARKET exit
+        7. Register exit order and wait for postback/reconciliation to close
+
+        Paper mode: skips SL cancel + market order (uses _close_position directly).
+        """
+        if self.position is None or self.position._exit_initiated:
+            return
+
+        if settings.is_paper_trade:
+            # Paper: close directly
+            try:
+                ltp = await self._redis.get_last_ltp(self.symbol) or self.position.entry_price
+            except Exception:
+                ltp = self.position.entry_price
+            await self._close_position(ltp, None, reason)
+            return
+
+        # Live: acquire exit lock atomically
+        lock_acquired = await self._redis.acquire_symbol_lock(self.symbol)
+        if not lock_acquired:
+            log.warning("exit_lock_contention", symbol=self.symbol, reason=reason)
+            return  # Another exit already running for this symbol
+
+        try:
+            self.position._exit_initiated = True
+            pos = self.position
+
+            # Cancel SL order first
+            if pos.sl_order_id and self._order_service:
+                await self._order_service.cancel_order(pos.sl_order_id, symbol=self.symbol)
+
+            # Wait for cancel to propagate
+            await asyncio.sleep(settings.EXIT_SL_CANCEL_DELAY_MS / 1000)
+
+            # Guard: SL may have triggered during the wait
+            if self.state == StrategyState.CLOSED:
+                log.info("exit_sl_triggered_during_cancel_wait", symbol=self.symbol)
+                return
+
+            # Place market exit
+            if self._order_service:
+                exit_order_id = await self._order_service.place_exit_market(
+                    symbol=self.symbol,
+                    quantity=pos.quantity,
+                    reason=reason,
+                )
+            else:
+                exit_order_id = None
+
+            if exit_order_id is None:
+                log.critical(
+                    "exit_order_placement_failed",
+                    symbol=self.symbol,
+                    reason=reason,
+                )
+                # Allow retry paths (reconciliation/next trigger) if order placement failed.
+                self.position._exit_initiated = False
+                return
+
+            pos.exit_order_id = exit_order_id
+            pos.exit_reason = reason
+            if self._order_tracker is not None:
+                self._order_tracker.register_exit(exit_order_id, self.symbol, reason)
+
+            log.info(
+                "exit_order_placed_waiting_fill",
+                symbol=self.symbol,
+                order_id=exit_order_id,
+                reason=reason,
+            )
+            await self._persist_state()
+        finally:
+            await self._redis.release_symbol_lock(self.symbol)
 
     # ── Internal: Close Position ──────────────────────────────────────────────
 
@@ -841,6 +1071,20 @@ class SymbolStateMachine:
             await self._redis.increment_daily_pnl(net_pnl)
         except Exception:
             pass
+
+        # Release blocked margin for this position.
+        if pos.margin_blocked > 0:
+            try:
+                from engine.risk.margin_tracker import margin_tracker
+
+                await margin_tracker.decrement(pos.margin_blocked, self._redis)
+            except Exception as exc:
+                log.warning(
+                    "margin_block_decrement_failed",
+                    symbol=self.symbol,
+                    blocked=pos.margin_blocked,
+                    error=str(exc),
+                )
 
         # Clear position from Redis
         try:
@@ -915,6 +1159,14 @@ class SymbolStateMachine:
                 data["impact_candle_time"] = self.impact_candle.time.isoformat()
                 data["impact_close"] = self.impact_candle.close
                 data["spike_multiple"] = round(self.impact_candle.spike_multiple, 1)
+                data["impact_candle"] = {
+                    "time": self.impact_candle.time.isoformat(),
+                    "close": self.impact_candle.close,
+                    "high": self.impact_candle.high,
+                    "low": self.impact_candle.low,
+                    "spike_multiple": round(self.impact_candle.spike_multiple, 1),
+                    "turnover_cr": round(self.impact_candle.turnover / 1e7, 2),
+                }
             if self.consolidation:
                 data["consolidation"] = self.consolidation.to_dict()
             if self.position:

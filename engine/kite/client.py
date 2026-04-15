@@ -91,3 +91,19 @@ class AsyncKiteClient:
     def set_access_token(self, token: str) -> None:
         """Synchronous — safe to call before event loop starts."""
         self._kite.set_access_token(token)
+
+    async def get_available_balance(self) -> float:
+        """
+        Return live available cash balance for the equity segment.
+        Used by pre_trade_checks (checks 7 + 8) and margin_tracker.
+        """
+        m = await self.margins("equity")
+        return float(m.get("available", {}).get("live_balance", 0.0))
+
+    async def get_net_equity(self) -> float:
+        """
+        Return net equity value (total capital) for position sizing.
+        Fetched at 9:00 AM and stored in Redis engine:capital.
+        """
+        m = await self.margins("equity")
+        return float(m.get("net", 0.0))

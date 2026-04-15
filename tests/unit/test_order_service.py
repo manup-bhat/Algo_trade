@@ -345,6 +345,81 @@ class TestOrderTracker:
         ot.register_sl("S1", "C")
         assert ot.monitored_order_count == 3
 
+    def test_register_exit_and_is_exit(self):
+        from engine.orders.order_tracker import OrderTracker
+
+        ot = OrderTracker()
+        ot.register_exit("X1", "RELIANCE", "CLOSED_TARGET")
+
+        assert ot.is_exit("X1")
+        assert ot.monitored_order_count == 1
+
+    @pytest.mark.asyncio
+    async def test_exit_complete_postback_routes_to_close(self):
+        from types import SimpleNamespace
+        from engine.orders.order_tracker import OrderTracker
+
+        ot = OrderTracker()
+        ot.register_exit("EXIT_1", "RELIANCE", "CLOSED_TARGET")
+
+        sm = AsyncMock()
+        sm._close_position = AsyncMock()
+        sm.position = SimpleNamespace(quantity=10)
+        coordinator = SimpleNamespace(
+            active_state_machines={"RELIANCE": sm},
+            _order_service=AsyncMock(),
+        )
+        db_writer = AsyncMock()
+
+        await ot.on_postback(
+            {
+                "order_id": "EXIT_1",
+                "status": "COMPLETE",
+                "tradingsymbol": "RELIANCE",
+                "average_price": 512.25,
+            },
+            coordinator,
+            db_writer,
+        )
+
+        sm._close_position.assert_called_once_with(512.25, "EXIT_1", "CLOSED_TARGET")
+
+    @pytest.mark.asyncio
+    async def test_exit_rejected_postback_retries_market_exit(self):
+        from types import SimpleNamespace
+        from engine.orders.order_tracker import OrderTracker
+
+        ot = OrderTracker()
+        ot.register_exit("EXIT_BAD", "RELIANCE", "CLOSED_TIME")
+
+        sm = AsyncMock()
+        sm.position = SimpleNamespace(quantity=7)
+        order_service = AsyncMock()
+        order_service.place_exit_market = AsyncMock(return_value="EXIT_RETRY_1")
+        coordinator = SimpleNamespace(
+            active_state_machines={"RELIANCE": sm},
+            _order_service=order_service,
+        )
+        db_writer = AsyncMock()
+
+        await ot.on_postback(
+            {
+                "order_id": "EXIT_BAD",
+                "status": "REJECTED",
+                "tradingsymbol": "RELIANCE",
+                "status_message": "RMS reject",
+            },
+            coordinator,
+            db_writer,
+        )
+
+        order_service.place_exit_market.assert_called_once_with(
+            symbol="RELIANCE",
+            quantity=7,
+            reason="CLOSED_TIME",
+        )
+        assert ot.is_exit("EXIT_RETRY_1")
+
 
 class TestCostCalculator:
     """Cost calculator math verification (spec §19.1)."""

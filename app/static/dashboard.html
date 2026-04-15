@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IVBS Engine — Institutional Volume Breakout Scanner</title>
+  <meta name="description" content="Real-time trading dashboard for IVBS Engine — NSE equity volume breakout scanner">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0A0E1A;
+      --panel:   #111827;
+      --card:    #151D2E;
+      --border:  #1F2937;
+      --header:  #0D1117;
+      --teal:    #00D4AA;
+      --amber:   #F59E0B;
+      --red:     #EF4444;
+      --blue:    #3B82F6;
+      --purple:  #8B5CF6;
+      --green:   #10B981;
+      --neutral: #6B7280;
+      --text1:   #F9FAFB;
+      --text2:   #9CA3AF;
+      --text3:   #4B5563;
+      --mono:    'IBM Plex Mono', monospace;
+      --sans:    'Inter', system-ui, sans-serif;
+      --h:       48px;
+    }
+
+    html, body {
+      height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text1);
+      font-family: var(--sans); font-size: 13px;
+    }
+
+    /* HEADER */
+    #header {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: var(--h); background: var(--header);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 14px; gap: 16px; z-index: 100;
+    }
+    #logo .name { font-weight: 700; font-size: 14px; color: var(--teal); letter-spacing: 0.05em; }
+    #logo .sub  { font-size: 9px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; }
+    #header-center { flex: 1; display: flex; align-items: center; justify-content: center; gap: 14px; }
+    #market-badge {
+      padding: 3px 10px; border-radius: 99px; font-weight: 700;
+      font-size: 11px; letter-spacing: 0.08em; font-family: var(--mono);
+    }
+    #ws-indicator { display: flex; align-items: center; gap: 5px; }
+    #ws-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--neutral);
+      transition: background 0.3s;
+    }
+    #ws-dot.live { background: var(--teal); box-shadow: 0 0 6px var(--teal); animation: pulse 2s infinite; }
+    #ws-dot.dead { background: var(--red); }
+    #ws-label { font-size: 11px; color: var(--text2); font-family: var(--mono); }
+    #clock { font-family: var(--mono); font-size: 13px; color: var(--text1); font-weight: 500; min-width: 80px; text-align: center; }
+    #header-right { display: flex; align-items: center; gap: 12px; }
+    #cb-badge { padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; font-family: var(--mono); }
+    #pnl-display { font-family: var(--mono); font-size: 18px; font-weight: 700; min-width: 120px; text-align: right; }
+    #pnl-pct { font-family: var(--mono); font-size: 11px; color: var(--text2); min-width: 60px; }
+    #btn-estop {
+      background: rgba(239,68,68,0.15); border: 1px solid var(--red);
+      color: var(--red); padding: 5px 14px; border-radius: 4px;
+      font-weight: 700; font-size: 12px; cursor: pointer; font-family: var(--sans);
+    }
+    #btn-estop:hover { background: rgba(239,68,68,0.3); }
+
+    /* WS Banner */
+    #ws-banner {
+      display: none; position: fixed; top: var(--h); left: 0; right: 0; z-index: 99;
+      background: rgba(239,68,68,0.1); border-bottom: 1px solid rgba(239,68,68,0.3);
+      padding: 5px 14px; text-align: center; font-size: 11px; color: #FECACA;
+    }
+
+    /* LAYOUT */
+    #layout {
+      position: fixed; top: var(--h); left: 0; right: 0; bottom: 0;
+      display: flex; overflow: hidden;
+    }
+
+    /* COLUMNS */
+    #left-col {
+      width: 220px; min-width: 220px; background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
+    }
+    #mid-col { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+    #right-col {
+      width: 290px; min-width: 290px; background: var(--panel);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
+    }
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* SHARED SECTION STYLES */
+    .section { border-bottom: 1px solid var(--border); padding: 10px 12px; }
+    .section-title {
+      font-size: 10px; font-weight: 700; color: var(--text3);
+      text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;
+    }
+    .kv { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+    .kv .k { font-size: 11px; color: var(--text2); }
+    .kv .v { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+
+    /* Stat grid */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .stat-box { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; }
+    .stat-box .sl { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+    .stat-box .sv { font-family: var(--mono); font-size: 15px; font-weight: 700; }
+
+    /* Position row */
+    .pos-row { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; margin-bottom: 6px; }
+    .pos-symbol { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--teal); }
+    .pos-details { display: flex; justify-content: space-between; margin-top: 4px; }
+    .pos-entry { font-size: 11px; color: var(--text2); }
+    .pos-pnl { font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .pos-levels { font-size: 10px; color: var(--text3); margin-top: 3px; }
+    .pos-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+    .pos-bar-fill { height: 100%; background: var(--teal); border-radius: 2px; transition: width 0.3s; }
+
+    /* Buttons */
+    .btn { width: 100%; padding: 7px; border-radius: 5px; font-weight: 700; font-size: 12px; cursor: pointer; border: none; font-family: var(--sans); transition: opacity 0.15s; }
+    .btn:active { opacity: 0.8; }
+    .btn-teal  { background: var(--teal); color: #0A0E1A; }
+    .btn-amber { background: rgba(245,158,11,0.15); border: 1px solid var(--amber); color: var(--amber); }
+    .btn-red   { background: rgba(239,68,68,0.12); border: 1px solid var(--red); color: var(--red); }
+
+    /* TABS */
+    #tab-bar {
+      display: flex; border-bottom: 1px solid var(--border);
+      background: var(--panel); flex-shrink: 0;
+    }
+    .tab-btn {
+      padding: 10px 20px; font-size: 12px; font-weight: 600; color: var(--text2);
+      cursor: pointer; border: none; border-bottom: 2px solid transparent;
+      background: none; font-family: var(--sans); transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: var(--text1); }
+    .tab-btn.active { color: var(--teal); border-bottom-color: var(--teal); }
+    .tab-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--border); color: var(--text2);
+      width: 18px; height: 16px; border-radius: 99px; font-size: 10px;
+      margin-left: 5px; font-weight: 700;
+    }
+    .tab-btn.active .tab-badge { background: rgba(0,212,170,0.15); color: var(--teal); }
+    .tab-panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+    .tab-panel.active { display: flex; }
+
+    /* TABLES */
+    .tbl-wrap { overflow-y: auto; flex: 1; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      position: sticky; top: 0; background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 10px; font-size: 10px; font-weight: 600;
+      color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em;
+      white-space: nowrap; z-index: 10;
+    }
+    th.r { text-align: right; } th.c { text-align: center; }
+    td { padding: 5px 10px; border-bottom: 1px solid rgba(31,41,55,0.6); font-size: 12px; white-space: nowrap; }
+    td.r { text-align: right; } td.c { text-align: center; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .sym  { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+    .mono { font-family: var(--mono); }
+    .dim  { color: var(--text2); }
+
+    /* LTP flash */
+    @keyframes flashG { 0%,100%{background:transparent} 30%{background:rgba(16,185,129,0.2)} }
+    @keyframes flashR { 0%,100%{background:transparent} 30%{background:rgba(239,68,68,0.18)} }
+    .flash-up   { animation: flashG 0.6s ease; }
+    .flash-down { animation: flashR 0.6s ease; }
+
+    /* Badges */
+    .badge {
+      display: inline-flex; align-items: center; padding: 2px 7px;
+      border-radius: 99px; font-size: 10px; font-weight: 700;
+      font-family: var(--mono); border: 1px solid; white-space: nowrap;
+    }
+    .badge-scan_hit   { color: var(--amber);  border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.1); }
+    .badge-monitoring { color: var(--blue);   border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.1); }
+    .badge-entered    { color: var(--teal);   border-color: rgba(0,212,170,0.5);  background: rgba(0,212,170,0.1); }
+    .badge-managing   { color: var(--green);  border-color: rgba(16,185,129,0.5); background: rgba(16,185,129,0.1); }
+    .badge-closed     { color: var(--neutral);border-color: rgba(107,114,128,0.4);background: rgba(107,114,128,0.08); }
+    .badge-abandoned  { color: var(--red);    border-color: rgba(239,68,68,0.4);  background: rgba(239,68,68,0.08); }
+    .badge-action_pending { color: var(--purple); border-color: rgba(139,92,246,0.5); background: rgba(139,92,246,0.1); }
+
+    /* Progress */
+    .prog { display: inline-block; width: 60px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; vertical-align: middle; }
+    .prog-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+
+    /* SCANNER TAB */
+    #scanner-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+    #monitoring-section { flex: 0 0 auto; max-height: 36%; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; }
+    #scanner-log-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .sub-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 12px; background: var(--panel); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sub-title { font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.1em; display: flex; align-items: center; gap: 6px; }
+    .live-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(0,212,170,0.08); border: 1px solid rgba(0,212,170,0.3);
+      padding: 2px 7px; border-radius: 99px; font-size: 10px; color: var(--teal);
+    }
+    .live-pill::before { content:''; display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--teal); animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes rowFlash { 0%{background:rgba(0,212,170,0.12)} 100%{background:transparent} }
+    .row-new { animation: rowFlash 1.5s ease; }
+
+    /* UNIVERSE TAB */
+    #universe-header { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    #uni-search { background: var(--bg); border: 1px solid var(--border); color: var(--text1); padding: 4px 10px; border-radius: 4px; font-size: 12px; width: 160px; font-family: var(--sans); }
+    #uni-search:focus { outline: none; border-color: var(--teal); }
+    .sort-btn { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; background: var(--bg); border: 1px solid var(--border); color: var(--text2); font-family: var(--sans); transition: all 0.15s; }
+    .sort-btn:hover, .sort-btn.active { background: rgba(0,212,170,0.1); border-color: var(--teal); color: var(--teal); }
+    #uni-count { margin-left: auto; font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+    /* TRADES TAB */
+    #trades-header { display: flex; align-items: center; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .trade-summary { font-size: 12px; font-family: var(--mono); color: var(--text2); }
+    .trade-summary strong { color: var(--text1); }
+
+    /* COUNTERS */
+    .counter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .counter-box { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; }
+    .counter-box .cl { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+    .counter-box .cv { font-family: var(--mono); font-size: 16px; font-weight: 700; }
+
+    /* EVENT LOG */
+    #event-log { overflow-y: auto; flex: 1; min-height: 100px; }
+    .evt-row { display: flex; gap: 6px; align-items: flex-start; padding: 5px 12px; border-bottom: 1px solid rgba(31,41,55,0.5); }
+    .evt-time { font-family: var(--mono); font-size: 10px; color: var(--text3); flex-shrink: 0; }
+    .evt-msg { font-size: 11px; color: var(--text2); line-height: 1.4; }
+
+    /* SETTINGS */
+    .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+    .settings-label { font-size: 11px; color: var(--text2); }
+    .toggle-wrap { display: flex; align-items: center; gap: 6px; }
+    .toggle { position: relative; width: 36px; height: 18px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: var(--border); border-radius: 99px; cursor: pointer; transition: 0.2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute; height: 12px; width: 12px;
+      left: 3px; top: 3px; background: var(--text3);
+      border-radius: 50%; transition: 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: rgba(0,212,170,0.25); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: var(--teal); }
+    input[type="number"].settings-input {
+      background: var(--bg); border: 1px solid var(--border);
+      color: var(--text1); padding: 4px 8px; border-radius: 4px;
+      font-size: 12px; font-family: var(--mono); width: 110px; text-align: right;
+    }
+    input[type="number"].settings-input:focus { outline: none; border-color: var(--teal); }
+    .settings-save-btn {
+      width: 100%; margin-top: 8px; padding: 6px; border-radius: 4px;
+      background: rgba(0,212,170,0.12); border: 1px solid rgba(0,212,170,0.4);
+      color: var(--teal); font-weight: 700; font-size: 12px; cursor: pointer;
+      font-family: var(--sans);
+    }
+    .settings-save-btn:hover { background: rgba(0,212,170,0.22); }
+
+    /* Auth */
+    .auth-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .empty { padding: 16px; text-align: center; color: var(--text3); font-size: 12px; }
+    .empty-icon { font-size: 20px; margin-bottom: 6px; }
+
+    #sma-warning { display: none; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.25); border-radius: 4px; padding: 6px 10px; font-size: 11px; color: var(--amber); margin: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header id="header">
+  <div id="logo">
+    <div class="name">IVBS</div>
+    <div class="sub">Inst. Volume Breakout</div>
+  </div>
+  <div id="header-center">
+    <div id="ws-indicator">
+      <div id="ws-dot"></div>
+      <span id="ws-label">Connecting…</span>
+    </div>
+    <span id="market-badge" style="background:rgba(107,114,128,0.12);border:1px solid rgba(107,114,128,0.3);color:var(--neutral);padding:3px 10px;border-radius:99px;font-weight:700;font-size:11px;font-family:var(--mono)">● MARKET —</span>
+    <span id="clock">—</span>
+  </div>
+  <div id="header-right">
+    <div id="cb-badge" style="background:rgba(107,114,128,0.1);border:1px solid rgba(107,114,128,0.3);color:var(--neutral);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700">CB —</div>
+    <div>
+      <div id="pnl-display" style="color:var(--text3)">₹ 0.00</div>
+      <div id="pnl-pct" style="text-align:right">—</div>
+    </div>
+    <button id="btn-estop" onclick="emergencyStop()">⚡ EMERGENCY STOP</button>
+  </div>
+</header>
+
+<div id="ws-banner">⚠ WebSocket disconnected — reconnecting in <span id="ws-countdown">2</span>s…</div>
+
+<!-- LAYOUT -->
+<div id="layout">
+
+  <!-- LEFT COLUMN -->
+  <aside id="left-col">
+    <div class="section">
+      <div class="section-title">Engine Status</div>
+      <div class="kv"><span class="k">Status</span><span class="v" id="l-status" style="color:var(--neutral)">—</span></div>
+      <div class="kv"><span class="k">Mode</span><span class="v" id="l-mode">—</span></div>
+      <div class="kv"><span class="k">Control</span><span class="v" id="l-control">—</span></div>
+      <div class="kv"><span class="k">Ticks</span><span class="v" id="l-ticks">—</span></div>
+      <div class="kv"><span class="k">Ready ✅</span><span class="v" id="l-ready" style="color:var(--teal)">—</span></div>
+      <div class="kv"><span class="k">Warming 🔥</span><span class="v" id="l-warming" style="color:var(--amber)">—</span></div>
+    </div>
+
+    <div id="sma-warning">⚠ SMA history not loaded — scanner blind until 500 candles warm up</div>
+
+    <div class="section">
+      <div class="section-title">Today's Session</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="sl">Scan Hits</div><div class="sv" id="l-scan-hits" style="color:var(--amber)">—</div></div>
+        <div class="stat-box"><div class="sl">Entries</div><div class="sv" id="l-entries" style="color:var(--blue)">—</div></div>
+        <div class="stat-box"><div class="sl">Wins</div><div class="sv" id="l-wins" style="color:var(--green)">—</div></div>
+        <div class="stat-box"><div class="sl">Losses</div><div class="sv" id="l-losses" style="color:var(--red)">—</div></div>
+      </div>
+      <div class="kv" style="margin-top:6px">
+        <span class="k">Win Rate</span><span class="v" id="l-winrate">—</span>
+      </div>
+      <div class="kv">
+        <span class="k">Account Equity</span>
+        <span class="v mono" id="l-equity" style="font-size:13px">—</span>
+      </div>
+      <div class="kv">
+        <span class="k">Blocked Margin</span>
+        <span class="v mono" id="l-blocked" style="font-size:12px">—</span>
+      </div>
+    </div>
+
+    <div class="section" style="flex:1">
+      <div class="section-title">Active Positions <span id="l-pos-count" style="color:var(--text3)">(0)</span></div>
+      <div id="l-positions">
+        <div class="empty"><div class="empty-icon">📊</div>No open positions</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Engine Control</div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <button class="btn btn-teal" id="btn-start" onclick="startEngine()">▶ Start Engine</button>
+        <button class="btn btn-amber" id="btn-stop" onclick="stopEngine()" style="display:none">⏹ Stop Engine</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MIDDLE COLUMN -->
+  <main id="mid-col">
+    <div id="tab-bar">
+      <button class="tab-btn active" id="ttb-scanner" onclick="switchTab('scanner')">🔬 Scanner<span class="tab-badge" id="tb-scanner">0</span></button>
+      <button class="tab-btn" id="ttb-universe" onclick="switchTab('universe')">🌐 Universe<span class="tab-badge" id="tb-universe">0</span></button>
+      <button class="tab-btn" id="ttb-trades" onclick="switchTab('trades')">📋 Trades<span class="tab-badge" id="tb-trades">0</span></button>
+    </div>
+
+    <!-- SCANNER TAB -->
+    <div class="tab-panel active" id="tab-scanner">
+      <div id="scanner-panel">
+        <div id="monitoring-section">
+          <div class="sub-header">
+            <span class="sub-title">🎯 Active Monitoring Queue <span class="tab-badge" id="mon-count">0</span></span>
+            <span class="live-pill">LIVE</span>
+          </div>
+          <div class="tbl-wrap">
+            <table><thead><tr>
+              <th>Time</th><th>Symbol</th><th class="r">Spike</th><th class="r">Turnover</th>
+              <th class="r">Current ₹</th><th class="r">Breakout ₹</th><th class="c">Candles</th><th class="c">State</th>
+            </tr></thead>
+            <tbody id="monitoring-body">
+              <tr><td colspan="8"><div class="empty"><div class="empty-icon">🎯</div>No setups in monitoring</div></td></tr>
+            </tbody></table>
+          </div>
+        </div>
+        <div id="scanner-log-section">
+          <div class="sub-header">
+            <span class="sub-title">📜 Scanner Log — Today <span class="tab-badge" id="scan-log-count">0</span></span>
+            <span class="live-pill">LIVE</span>
+          </div>
+          <div class="tbl-wrap">
+            <table><thead><tr>
+              <th style="width:52px">Time</th><th>Symbol</th>
+              <th class="r">Close ₹</th><th class="r">Spike</th><th class="r">Turnover</th>
+              <th class="r">High ₹</th><th class="r">Low ₹</th><th class="c">State</th><th class="c">Progress</th>
+            </tr></thead>
+            <tbody id="scanner-log-body">
+              <tr><td colspan="9"><div class="empty"><div class="empty-icon">🔬</div>No scan hits today</div></td></tr>
+            </tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UNIVERSE TAB -->
+    <div class="tab-panel" id="tab-universe">
+      <div id="universe-header">
+        <input id="uni-search" type="text" placeholder="Search symbol…" oninput="filterUniverse(this.value)" autocomplete="off">
+        <button class="sort-btn active" id="sort-chg-desc" onclick="sortUniverse('chg_desc')">▲▼ % Chg</button>
+        <button class="sort-btn" id="sort-vol" onclick="sortUniverse('vol')">Volume</button>
+        <button class="sort-btn" id="sort-az" onclick="sortUniverse('az')">A–Z</button>
+        <span id="uni-count">0 symbols</span>
+      </div>
+      <div class="tbl-wrap">
+        <table id="uni-table"><thead><tr>
+          <th>Symbol</th><th class="r">LTP ₹</th><th class="r">Change %</th><th class="r">Volume</th><th class="c">Scanner</th>
+        </tr></thead>
+        <tbody id="uni-body">
+          <tr><td colspan="5"><div class="empty"><div class="empty-icon">🌐</div>Waiting for tick data…</div></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+
+    <!-- TRADES TAB -->
+    <div class="tab-panel" id="tab-trades">
+      <div id="trades-header">
+        <span class="trade-summary">Today: <strong id="tr-count">0</strong> trades</span>
+        <span class="trade-summary">Net P&amp;L: <strong id="tr-pnl" style="color:var(--text2)">₹ 0.00</strong></span>
+        <span class="trade-summary">Win Rate: <strong id="tr-wr">—</strong></span>
+      </div>
+      <div class="tbl-wrap">
+        <table><thead><tr>
+          <th>Entry</th><th>Symbol</th><th class="r">Entry ₹</th><th class="r">Exit ₹</th>
+          <th class="r">Qty</th><th class="r">Gross</th><th class="r">Net P&amp;L</th><th class="c">Reason</th>
+        </tr></thead>
+        <tbody id="trades-body">
+          <tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div>No trades closed today</div></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT COLUMN -->
+  <aside id="right-col">
+
+    <!-- Auth -->
+    <div class="section">
+      <div class="section-title">Kite Authentication</div>
+      <div class="kv"><span class="k">Status</span><span id="auth-status-badge">—</span></div>
+      <div class="kv"><span class="k">User</span><span class="v" id="auth-user">—</span></div>
+      <div id="auth-actions" style="margin-top:8px">
+        <a id="auth-login-btn" href="#" target="_blank" style="display:none;text-decoration:none">
+          <button class="btn btn-teal" style="font-size:11px;padding:5px">1. Login with Zerodha →</button>
+        </a>
+        <div id="manual-token-wrap" style="display:none;margin-top:6px">
+          <input id="manual-token-input" type="text" placeholder="Paste redirect URL or request_token…"
+            style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text1);padding:4px 8px;border-radius:4px;font-size:10px">
+          <button onclick="submitManualToken()" class="btn btn-teal" style="margin-top:4px;font-size:11px;padding:5px">Submit Token</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="section">
+      <div class="section-title">Runtime Settings</div>
+      <div class="settings-row">
+        <span class="settings-label">Paper Trade Mode</span>
+        <label class="toggle">
+          <input type="checkbox" id="set-paper-trade" onchange="onSettingChange()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="settings-row" style="margin-top:4px">
+        <span class="settings-label">Max Capital (₹)</span>
+        <input type="number" class="settings-input" id="set-max-capital" placeholder="e.g. 500000" min="10000" step="10000" oninput="onSettingChange()">
+      </div>
+      <div class="settings-row" style="margin-top:4px">
+        <span class="settings-label">Daily Loss Limit</span>
+        <span class="v mono" id="set-loss-limit" style="font-size:11px;color:var(--red)">—</span>
+      </div>
+      <button class="settings-save-btn" id="settings-save-btn" onclick="saveSettings()" disabled>Save Settings</button>
+      <div id="settings-status" style="font-size:10px;color:var(--text3);margin-top:4px;text-align:center"></div>
+    </div>
+
+    <!-- Scan Activity -->
+    <div class="section">
+      <div class="section-title">Scan Activity</div>
+      <div class="counter-grid">
+        <div class="counter-box"><div class="cl">Scan Hits</div><div class="cv" id="r-scan-hits" style="color:var(--amber)">—</div></div>
+        <div class="counter-box"><div class="cl">Monitoring</div><div class="cv" id="r-monitoring" style="color:var(--blue)">—</div></div>
+        <div class="counter-box"><div class="cl">Entries</div><div class="cv" id="r-entries" style="color:var(--blue)">—</div></div>
+        <div class="counter-box"><div class="cl">Completed</div><div class="cv" id="r-completed" style="color:var(--green)">—</div></div>
+        <div class="counter-box"><div class="cl">Warmed Up</div><div class="cv" id="r-warmed" style="color:var(--teal)">—</div></div>
+        <div class="counter-box"><div class="cl">Warming</div><div class="cv" id="r-warming" style="color:var(--amber)">—</div></div>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div style="border-top:1px solid var(--border)">
+      <div style="padding:8px 12px 4px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em">
+        Event Log
+      </div>
+      <div id="event-log"></div>
+    </div>
+
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+// ── CONFIG ───────────────────────────────────────────────────────────────────
+const API = '/api/v1';
+const WS  = `ws://${location.host}/api/v1/ws`;
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+const _symMap   = new Map(); // symbol → {ltp_td, chg_td, vol_td, row}
+const _prevLtp  = new Map(); // symbol → last ltp
+const _scanRows = new Map(); // symbol → scan log <tr>
+const _monRows  = new Map(); // symbol → monitoring <tr>
+const _positions = new Map();// symbol → {entry, qty}
+let   _scanHits  = [];
+let   _ws = null;
+let   _wsBackoff = 2000;
+let   _wsActive  = false;   // true once first onopen fires
+let   _settingsDirty = false;
+
+// ── CLOCK ────────────────────────────────────────────────────────────────────
+setInterval(() => {
+  const ist = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Kolkata'}));
+  const h = String(ist.getHours()).padStart(2,'0');
+  const m = String(ist.getMinutes()).padStart(2,'0');
+  const s = String(ist.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${h}:${m}:${s} IST`;
+}, 1000);
+
+// ── FORMAT ───────────────────────────────────────────────────────────────────
+function rupee(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = Number(v);
+  return (n < 0 ? '-₹' : '₹') + Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function pct(v) {
+  if (v == null || isNaN(v)) return '—';
+  return (Number(v) >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+}
+function fmtVol(v) {
+  if (!v) return '—';
+  if (v >= 1e7) return (v/1e7).toFixed(2)+'Cr';
+  if (v >= 1e5) return (v/1e5).toFixed(1)+'L';
+  if (v >= 1e3) return (v/1e3).toFixed(1)+'K';
+  return String(v);
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
+  catch { return '—'; }
+}
+function fmtTimeShort(iso) {
+  if (!iso) return '—';
+  try { return String(iso).slice(11,16); } catch { return '—'; }
+}
+function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+function stateBadge(state) {
+  const lbl = {SCAN_HIT:'SCAN HIT',MONITORING:'MONITORING',ENTERED:'ENTERED',
+    MANAGING:'MANAGING',CLOSED:'CLOSED',ABANDONED:'ABANDONED',ACTION_PENDING:'PENDING'};
+  const cls = (state||'CLOSED').toLowerCase();
+  return `<span class="badge badge-${cls}">${lbl[state]||state||'—'}</span>`;
+}
+function progBar(state) {
+  const steps = ['SCAN_HIT','MONITORING','ENTERED','MANAGING','CLOSED'];
+  const idx = steps.indexOf(state);
+  const pct = state==='ABANDONED' ? 12 : Math.max(12,idx/(steps.length-1)*100);
+  const col = state==='ABANDONED' ? 'var(--red)' : state==='CLOSED' ? 'var(--neutral)' :
+              (state==='ENTERED'||state==='MANAGING') ? 'var(--teal)' : 'var(--blue)';
+  return `<div class="prog"><div class="prog-fill" style="width:${pct}%;background:${col}"></div></div>`;
+}
+
+// ── TABS ─────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  document.getElementById('ttb-'+name).classList.add('active');
+}
+
+// ── WEBSOCKET ────────────────────────────────────────────────────────────────
+function connectWS() {
+  const dot   = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+  const banner = document.getElementById('ws-banner');
+
+  try { if (_ws) _ws.close(); } catch {}
+  _ws = new WebSocket(WS);
+
+  _ws.onopen = () => {
+    _wsActive = true;
+    _wsBackoff = 2000;
+    dot.className = 'live';
+    label.textContent = 'Live';
+    banner.style.display = 'none';
+    addEvent('⚡', 'WebSocket connected');
+  };
+
+  _ws.onclose = () => {
+    dot.className = 'dead';
+    label.textContent = 'Reconnecting…';
+    banner.style.display = 'block';
+    addEvent('⚠', `WebSocket closed — reconnecting in ${_wsBackoff/1000}s`);
+
+    let countdown = Math.round(_wsBackoff / 1000);
+    const cEl = document.getElementById('ws-countdown');
+    if (cEl) cEl.textContent = countdown;
+    const iv = setInterval(() => {
+      countdown--;
+      if (cEl) cEl.textContent = Math.max(0, countdown);
+      if (countdown <= 0) clearInterval(iv);
+    }, 1000);
+
+    setTimeout(() => {
+      _wsBackoff = Math.min(_wsBackoff * 1.5, 30000);
+      connectWS();
+    }, _wsBackoff);
+  };
+
+  _ws.onerror = () => { /* handled by onclose */ };
+
+  _ws.onmessage = e => {
+    try { handleWsMessage(JSON.parse(e.data)); }
+    catch(err) { console.warn('WS parse error', err); }
+  };
+}
+
+// ── WS MESSAGE HANDLER ───────────────────────────────────────────────────────
+function handleWsMessage(data) {
+  const evt = data.event;
+
+  if (evt === 'snapshot' || evt === 'heartbeat') {
+    if (data.status)    updateStatus(data.status);
+    if (data.positions) updatePositions(data.positions);
+    if (data.scanner)   updateScannerLog(data.scanner);
+    if (data.radar)     updateMonitoringQueue(data.radar);
+    if (evt === 'snapshot') {
+      if (data.market) initUniverseFromTicks(data.market);
+      loadTrades();
+      loadAuth();
+      loadSettings();
+    }
+  }
+  else if (evt === 'tick_batch') {
+    applyTickBatch(data.data);
+  }
+  else if (evt === 'scan_hit') {
+    const d = data.data || data;
+    addScanHit(d);
+    addEvent('🔍', `${d.symbol} — ${Number(d.spike_multiple||0).toFixed(1)}x spike ₹${d.turnover_cr}Cr`);
+  }
+  else if (evt === 'state_change') {
+    const d = data.data || data;
+    updateScanRowState(d.symbol, d.state || d.event, d.reason);
+    if (d.event === 'trade_closed') {
+      addEvent('💰', `${d.symbol} closed — ${d.net_pnl >= 0 ? '+' : ''}₹${Number(d.net_pnl||0).toFixed(2)}`);
+      loadTrades();
+    } else if (d.event === 'setup_abandoned') {
+      addEvent('📉', `${d.symbol} abandoned — ${d.reason}`);
+    }
+  }
+  else if (evt === 'order_event') {
+    const d = data.data || data;
+    addEvent('📑', `${d.event_type||d.type||'ORDER'} ${d.symbol} @ ₹${d.price||d.avg_price||'—'}`);
+  }
+  else if (evt === 'pnl_update') {
+    const d = data.data || data;
+    if (d.daily_pnl !== undefined) updatePnl(d.daily_pnl, d.daily_pnl_pct || 0);
+  }
+  else if (evt === 'settings_updated') {
+    addEvent('⚙', `Settings updated — paper:${data.paper_trade}, max:${data.max_capital}`);
+    loadSettings();
+  }
+  else if (evt === 'emergency_stop') {
+    addEvent('🚨', 'Emergency stop activated!');
+  }
+  else if (evt === 'stop') {
+    addEvent('⏹', 'Graceful stop activated — new entries blocked');
+  }
+}
+
+// ── STATUS ───────────────────────────────────────────────────────────────────
+function updateStatus(s) {
+  updatePnl(s.daily_pnl || 0, s.daily_pnl_pct || 0);
+
+  // CB badge
+  const cb = document.getElementById('cb-badge');
+  if (s.circuit_breaker_tripped) {
+    cb.textContent = '🔴 CB TRIPPED';
+    cb.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid var(--red);color:var(--red);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700';
+  } else {
+    cb.textContent = '✅ CB OK';
+    cb.style.cssText = 'background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);color:var(--green);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700';
+  }
+
+  // Market badge
+  const mb = document.getElementById('market-badge');
+  if (s.market_open) {
+    mb.textContent = '● MARKET OPEN';
+    mb.style.cssText = 'background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.4);color:var(--green);padding:3px 10px;border-radius:99px;font-weight:700;font-size:11px;font-family:var(--mono)';
+  } else {
+    mb.textContent = '● MARKET CLOSED';
+    mb.style.cssText = 'background:rgba(107,114,128,0.12);border:1px solid rgba(107,114,128,0.3);color:var(--neutral);padding:3px 10px;border-radius:99px;font-weight:700;font-size:11px;font-family:var(--mono)';
+  }
+
+  // Left sidebar
+  const statusEl = document.getElementById('l-status');
+  const msg = s.engine_status_msg || (s.engine_running ? 'ONLINE' : 'OFFLINE');
+  statusEl.textContent = msg;
+  statusEl.style.color = s.engine_running ? (s.engine_control === 'STOP' ? 'var(--amber)' : 'var(--teal)') : 'var(--neutral)';
+
+  setText('l-mode', s.paper_trade ? 'PAPER 🟡' : 'LIVE 🔴');
+  document.getElementById('l-mode').style.color = s.paper_trade ? 'var(--amber)' : 'var(--red)';
+  setText('l-control', s.engine_control || '—');
+  setText('l-ticks', Number(s.total_ticks||0).toLocaleString('en-IN'));
+  setText('l-ready', `${s.warmed_up ?? '—'} / ${(s.warmed_up||0)+(s.warming_up||0)}`);
+  setText('l-warming', String(s.warming_up ?? '—'));
+
+  // SMA warning
+  const smaWarn = document.getElementById('sma-warning');
+  smaWarn.style.display = (s.warmed_up === 0 && s.engine_running) ? 'block' : 'none';
+
+  const equity = s.account_equity ?? 0;
+  const equityEl = document.getElementById('l-equity');
+  equityEl.textContent = rupee(equity);
+  equityEl.style.color = equity < 0 ? 'var(--red)' : equity === 0 ? 'var(--text3)' : 'var(--text1)';
+  setText('l-blocked', rupee(s.blocked_margin || 0));
+
+  // Right counters
+  setText('r-warmed', String(s.warmed_up ?? '—'));
+  setText('r-warming', String(s.warming_up ?? '—'));
+
+  // Engine control buttons
+  if (s.engine_running && s.engine_control !== 'STOP') {
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display  = 'block';
+  } else {
+    document.getElementById('btn-start').style.display = 'block';
+    document.getElementById('btn-stop').style.display  = 'none';
+  }
+}
+
+function updatePnl(pnl, pctVal) {
+  const el  = document.getElementById('pnl-display');
+  const pe  = document.getElementById('pnl-pct');
+  const sign = pnl >= 0 ? '+' : '';
+  el.textContent = sign + rupee(pnl);
+  el.style.color = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--neutral)';
+  pe.textContent = (pnl >= 0 ? '+' : '') + Number(pctVal).toFixed(2) + '%';
+  pe.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+// ── POSITIONS ────────────────────────────────────────────────────────────────
+function updatePositions(positions) {
+  const el  = document.getElementById('l-positions');
+  const cnt = document.getElementById('l-pos-count');
+  _positions.clear();
+  cnt.textContent = `(${positions.length})`;
+
+  if (!positions.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📊</div>No open positions</div>';
+    return;
+  }
+
+  el.innerHTML = positions.map(p => {
+    if (!p.entry_price || !p.quantity) return '';
+    _positions.set(p.symbol, {entry: p.entry_price, qty: p.quantity});
+    const upnl = p.unrealized_pnl || 0;
+    const col = upnl > 0 ? 'var(--green)' : upnl < 0 ? 'var(--red)' : 'var(--text2)';
+    const target = p.target_1r4 || p.entry_price;
+    const sl = p.current_sl || p.entry_price;
+    const range = target - p.entry_price;
+    const ltp = _prevLtp.get(p.symbol) || p.entry_price;
+    const prog = range > 0 ? Math.max(0, Math.min(100, (ltp - p.entry_price) / range * 100)) : 0;
+    return `
+      <div class="pos-row">
+        <div class="pos-symbol">${p.symbol}</div>
+        <div class="pos-details">
+          <span class="pos-entry">Entry: ${rupee(p.entry_price)} × ${p.quantity}</span>
+          <span class="pos-pnl" id="pos-pnl-${p.symbol}" style="color:${col}">${upnl>=0?'+':''}${rupee(upnl)}</span>
+        </div>
+        <div class="pos-levels">SL: ${rupee(p.current_sl)} | T: ${rupee(p.target_1r4)}</div>
+        <div class="pos-bar"><div class="pos-bar-fill" style="width:${prog}%"></div></div>
+      </div>`;
+  }).join('');
+}
+
+// ── TICK BATCH ───────────────────────────────────────────────────────────────
+function applyTickBatch(data) {
+  if (!data) return;
+  const pending = [];
+
+  for (const [sym, tick] of Object.entries(data)) {
+    const ltp  = tick.ltp;
+    const prev = _prevLtp.get(sym);
+    const dir  = prev == null ? 0 : ltp > prev ? 1 : ltp < prev ? -1 : 0;
+    _prevLtp.set(sym, ltp);
+
+    const row = _symMap.get(sym);
+    if (row) {
+      row.row.setAttribute('data-ltp', ltp || 0);
+      row.row.setAttribute('data-chg', tick.pct_chg || 0);
+      row.row.setAttribute('data-vol', tick.volume || 0);
+      pending.push({...row, ltp, chg: tick.pct_chg, vol: tick.volume || 0, dir});
+    } else {
+      _addUniverseRow(sym, ltp, tick.pct_chg, tick.volume || 0);
+    }
+
+    // Update position P&L
+    const pos = _positions.get(sym);
+    if (pos && ltp) {
+      const upnl = (ltp - pos.entry) * pos.qty;
+      const pnlEl = document.getElementById(`pos-pnl-${sym}`);
+      if (pnlEl) {
+        pnlEl.textContent = (upnl >= 0 ? '+' : '') + rupee(upnl);
+        pnlEl.style.color = upnl > 0 ? 'var(--green)' : upnl < 0 ? 'var(--red)' : 'var(--text2)';
+      }
+    }
+  }
+
+  requestAnimationFrame(() => {
+    for (const {ltp_td, chg_td, vol_td, ltp, chg, vol, dir} of pending) {
+      ltp_td.textContent = '₹' + Number(ltp).toFixed(2);
+      chg_td.textContent = pct(chg);
+      chg_td.style.color = (chg||0) >= 0 ? 'var(--green)' : 'var(--red)';
+      vol_td.textContent = fmtVol(vol);
+      if (dir !== 0) {
+        ltp_td.classList.remove('flash-up','flash-down');
+        void ltp_td.offsetWidth;
+        ltp_td.classList.add(dir === 1 ? 'flash-up' : 'flash-down');
+      }
+    }
+  });
+}
+
+function _addUniverseRow(sym, ltp, chg, vol) {
+  if (_symMap.has(sym)) return;
+  const tr = document.createElement('tr');
+  tr.setAttribute('data-sym', sym);
+  tr.setAttribute('data-ltp', ltp || 0);
+  tr.setAttribute('data-chg', chg || 0);
+  tr.setAttribute('data-vol', vol || 0);
+  const isHit = _scanHits.some(h => h.symbol === sym);
+  tr.innerHTML = `
+    <td class="sym">${sym}</td>
+    <td class="r mono" style="font-size:13px;font-weight:600">${ltp ? '₹'+Number(ltp).toFixed(2) : '—'}</td>
+    <td class="r mono" style="color:${(chg||0)>=0?'var(--green)':'var(--red)'}">${pct(chg)}</td>
+    <td class="r dim">${fmtVol(vol)}</td>
+    <td class="c">${isHit ? '<span class="badge badge-scan_hit">HIT</span>' : ''}</td>`;
+  const cells = tr.children;
+  _symMap.set(sym, {ltp_td:cells[1], chg_td:cells[2], vol_td:cells[3], row:tr});
+  _prevLtp.set(sym, ltp);
+  document.getElementById('uni-body').appendChild(tr);
+  setText('tb-universe', _symMap.size);
+  setText('uni-count', `${_symMap.size} symbols`);
+}
+
+function initUniverseFromTicks(ticks) {
+  if (!ticks?.length) return;
+  const body = document.getElementById('uni-body');
+  const frag = document.createDocumentFragment();
+  _symMap.clear(); body.innerHTML = '';
+
+  for (const t of ticks) {
+    const sym = t.symbol;
+    const isHit = _scanHits.some(h => h.symbol === sym);
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-sym', sym);
+    tr.setAttribute('data-ltp', t.ltp || 0);
+    tr.setAttribute('data-chg', t.pct_chg || 0);
+    tr.setAttribute('data-vol', t.volume || 0);
+    tr.innerHTML = `
+      <td class="sym">${sym}</td>
+      <td class="r mono" style="font-size:13px;font-weight:600">${t.ltp ? '₹'+Number(t.ltp).toFixed(2) : '—'}</td>
+      <td class="r mono" style="color:${(t.pct_chg||0)>=0?'var(--green)':'var(--red)'}">${pct(t.pct_chg)}</td>
+      <td class="r dim">${fmtVol(t.volume)}</td>
+      <td class="c">${isHit ? '<span class="badge badge-scan_hit">HIT</span>' : ''}</td>`;
+    const cells = tr.children;
+    _symMap.set(sym, {ltp_td:cells[1], chg_td:cells[2], vol_td:cells[3], row:tr});
+    _prevLtp.set(sym, t.ltp);
+    frag.appendChild(tr);
+  }
+  body.appendChild(frag);
+  setText('tb-universe', _symMap.size);
+  setText('uni-count', `${_symMap.size} symbols`);
+}
+
+function filterUniverse(q) {
+  const s = q.toLowerCase().trim();
+  document.querySelectorAll('#uni-body tr[data-sym]').forEach(tr => {
+    tr.style.display = !s || (tr.getAttribute('data-sym')||'').toLowerCase().includes(s) ? '' : 'none';
+  });
+}
+
+function sortUniverse(mode) {
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  const ids = {chg_desc:'sort-chg-desc', vol:'sort-vol', az:'sort-az'};
+  if (ids[mode]) document.getElementById(ids[mode]).classList.add('active');
+
+  const body = document.getElementById('uni-body');
+  const rows = Array.from(body.querySelectorAll('tr[data-sym]'));
+  rows.sort((a,b) => {
+    if (mode==='chg_desc') return Math.abs(parseFloat(b.getAttribute('data-chg')||0)) - Math.abs(parseFloat(a.getAttribute('data-chg')||0));
+    if (mode==='vol') return parseFloat(b.getAttribute('data-vol')||0) - parseFloat(a.getAttribute('data-vol')||0);
+    return (a.getAttribute('data-sym')||'').localeCompare(b.getAttribute('data-sym')||'');
+  });
+  const frag = document.createDocumentFragment();
+  rows.forEach(r => frag.appendChild(r));
+  body.appendChild(frag);
+}
+
+// ── SCANNER LOG ───────────────────────────────────────────────────────────────
+function _renderScanRow(tr, h) {
+  const state = h.state || 'SCAN_HIT';
+  const scanTime = h.signal_time || h.time;
+  tr.style.background = ['ENTERED','MANAGING','MONITORING'].includes(state) ? 'rgba(0,212,170,0.03)' : '';
+  tr.style.opacity = state === 'ABANDONED' ? '0.6' : '';
+  tr.innerHTML = `
+    <td class="dim" style="font-size:11px">${fmtTimeShort(scanTime)}</td>
+    <td class="sym">${h.symbol}</td>
+    <td class="r mono">${h.close ? '₹'+Number(h.close).toFixed(2) : '—'}</td>
+    <td class="r" style="color:var(--amber);font-weight:700;font-family:var(--mono)">${h.spike_multiple ? Number(h.spike_multiple).toFixed(1)+'x' : '—'}</td>
+    <td class="r dim mono">${h.turnover_cr ? '₹'+h.turnover_cr+'Cr' : '—'}</td>
+    <td class="r mono" style="color:var(--green);font-size:11px">${h.impact_high ? '₹'+Number(h.impact_high).toFixed(2) : '—'}</td>
+    <td class="r mono" style="color:var(--red);font-size:11px">${h.impact_low ? '₹'+Number(h.impact_low).toFixed(2) : '—'}</td>
+    <td class="c">${stateBadge(state)}</td>
+    <td class="c">${progBar(state)}</td>`;
+}
+
+function updateScannerLog(hits) {
+  if (!hits) return;
+  _scanHits = hits;
+  const body = document.getElementById('scanner-log-body');
+  if (!hits.length) {
+    body.innerHTML = '<tr><td colspan="9"><div class="empty"><div class="empty-icon">🔬</div>No scan hits today</div></td></tr>';
+    setText('scan-log-count','0'); setText('tb-scanner','0');
+    setText('r-scan-hits','0'); setText('l-scan-hits','0'); return;
+  }
+  body.innerHTML = '';
+  hits.forEach(h => {
+    const tr = document.createElement('tr');
+    _renderScanRow(tr, h);
+    body.appendChild(tr);
+    _scanRows.set(h.symbol, tr);
+  });
+  const n = hits.length;
+  setText('scan-log-count', n); setText('tb-scanner', n);
+  setText('r-scan-hits', n); setText('l-scan-hits', n);
+}
+
+function addScanHit(h) {
+  const body = document.getElementById('scanner-log-body');
+  const empty = body.querySelector('td[colspan]');
+  if (empty) body.innerHTML = '';
+  const tr = document.createElement('tr');
+  tr.classList.add('row-new');
+  _renderScanRow(tr, h);
+  body.prepend(tr);
+  _scanRows.set(h.symbol, tr);
+  _scanHits.unshift(h);
+  const n = _scanHits.length;
+  setText('scan-log-count',n); setText('tb-scanner',n);
+  setText('r-scan-hits',n); setText('l-scan-hits',n);
+  const row = _symMap.get(h.symbol);
+  if (row) row.row.querySelector('td:last-child').innerHTML = '<span class="badge badge-scan_hit">HIT</span>';
+}
+
+function updateScanRowState(symbol, state) {
+  const tr = _scanRows.get(symbol);
+  if (!tr) return;
+  const cells = tr.querySelectorAll('td');
+  if (cells[7]) cells[7].innerHTML = stateBadge(state);
+  if (cells[8]) cells[8].innerHTML = progBar(state);
+  tr.style.opacity = state === 'ABANDONED' ? '0.6' : '';
+}
+
+// ── MONITORING QUEUE ──────────────────────────────────────────────────────────
+function updateMonitoringQueue(radar) {
+  const body = document.getElementById('monitoring-body');
+  _monRows.clear();
+  if (!radar?.length) {
+    body.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="empty-icon">🎯</div>No setups in monitoring</div></td></tr>';
+    setText('mon-count','0'); setText('r-monitoring','0'); return;
+  }
+  body.innerHTML = '';
+  radar.forEach(r => {
+    const tr = document.createElement('tr');
+    const ltp = _prevLtp.get(r.symbol) || r.current_price || 0;
+    tr.innerHTML = `
+      <td class="dim" style="font-size:11px">${fmtTimeShort(r.impact_time)}</td>
+      <td class="sym">${r.symbol}</td>
+      <td class="r mono" style="color:var(--amber);font-weight:700">${r.spike_multiple ? Number(r.spike_multiple).toFixed(1)+'x' : '—'}</td>
+      <td class="r dim mono">${r.turnover_cr ? '₹'+r.turnover_cr+'Cr' : '—'}</td>
+      <td class="r mono">${ltp ? '₹'+Number(ltp).toFixed(2) : '—'}</td>
+      <td class="r mono" style="color:var(--teal)">${r.breakout_level ? '₹'+Number(r.breakout_level).toFixed(2) : '—'}</td>
+      <td class="c dim">${r.candle_count || 0}</td>
+      <td class="c">${stateBadge(r.state)}</td>`;
+    body.appendChild(tr);
+    _monRows.set(r.symbol, tr);
+  });
+  setText('mon-count', radar.length);
+  setText('r-monitoring', radar.length);
+}
+
+// ── TRADES ────────────────────────────────────────────────────────────────────
+async function loadTrades() {
+  try {
+    const data = await fetch(API+'/trades').then(r=>r.json());
+    setText('tr-count', data.count || 0);
+    setText('tb-trades', data.count || 0);
+    const netPnl = data.total_net_pnl || 0;
+    const pnlEl = document.getElementById('tr-pnl');
+    pnlEl.textContent = (netPnl>=0?'+':'') + rupee(netPnl);
+    pnlEl.style.color = netPnl>0?'var(--green)':netPnl<0?'var(--red)':'var(--text2)';
+    setText('tr-wr', data.win_rate !== undefined ? data.win_rate+'%' : '—');
+    setText('l-wins', String(data.wins||0));
+    setText('l-losses', String(data.losses||0));
+    setText('l-winrate', data.win_rate !== undefined ? data.win_rate+'%' : '—');
+    setText('l-entries', String(data.count||0));
+    setText('r-entries', String(data.count||0));
+    setText('r-completed', String(data.count||0));
+
+    const body = document.getElementById('trades-body');
+    if (!data.trades?.length) {
+      body.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="empty-icon">📋</div>No trades closed today</div></td></tr>';
+      return;
+    }
+    body.innerHTML = data.trades.map(t => {
+      const net = t.net_pnl || 0;
+      const nc = net>0?'var(--green)':net<0?'var(--red)':'var(--text2)';
+      const gc = (t.gross_pnl||0)>=0?'var(--green)':'var(--red)';
+      const bg = net>0?'rgba(16,185,129,0.04)':net<0?'rgba(239,68,68,0.04)':'';
+      return `<tr style="background:${bg}">
+        <td class="dim" style="font-size:11px">${fmtTime(t.entry_time)}</td>
+        <td class="sym">${t.symbol}</td>
+        <td class="r mono">${rupee(t.entry_price)}</td>
+        <td class="r mono">${rupee(t.exit_price)}</td>
+        <td class="r dim">${t.quantity||'—'}</td>
+        <td class="r mono" style="color:${gc}">${(t.gross_pnl||0)>=0?'+':''}${rupee(t.gross_pnl)}</td>
+        <td class="r mono" style="color:${nc};font-weight:700">${net>=0?'+':''}${rupee(net)}</td>
+        <td class="c dim" style="font-size:10px">${(t.notes||t.status||'—').slice(0,12).toUpperCase()}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.warn('loadTrades', e.message); }
+}
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+async function loadAuth() {
+  try {
+    const data = await fetch(API+'/auth/status').then(r=>r.json());
+    const badge = document.getElementById('auth-status-badge');
+    const loginBtn = document.getElementById('auth-login-btn');
+    const manualWrap = document.getElementById('manual-token-wrap');
+    if (data.status === 'TOKEN_EXISTS') {
+      badge.innerHTML = '<span class="auth-badge" style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);color:var(--green)">● AUTHENTICATED</span>';
+      document.getElementById('auth-user').textContent = data.user_name || '—';
+      loginBtn.style.display = 'none';
+      manualWrap.style.display = 'none';
+    } else {
+      badge.innerHTML = '<span class="auth-badge" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.4);color:var(--red)">● LOGIN REQUIRED</span>';
+      document.getElementById('auth-user').textContent = '—';
+      try {
+        const ld = await fetch(API+'/auth/login').then(r=>r.json());
+        document.getElementById('auth-login-btn').href = ld.login_url || '#';
+      } catch {}
+      loginBtn.style.display = 'block';
+      manualWrap.style.display = 'block';
+    }
+  } catch(e) { console.warn('loadAuth', e.message); }
+}
+
+async function submitManualToken() {
+  const inp = document.getElementById('manual-token-input').value.trim();
+  if (!inp) return;
+  let token = inp;
+  try { token = new URL(inp).searchParams.get('request_token') || inp; } catch {}
+  try {
+    const r = await fetch(`${API}/auth/callback?action=login&status=success&request_token=${token}`);
+    if (r.ok) { loadAuth(); addEvent('✅', 'Token submitted'); }
+    else addEvent('❌', 'Token rejected — may be expired');
+  } catch(e) { addEvent('❌', 'Error: '+e.message); }
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const data = await fetch(API+'/settings').then(r=>r.json());
+    document.getElementById('set-paper-trade').checked = !!data.paper_trade;
+    if (data.max_capital) document.getElementById('set-max-capital').value = data.max_capital;
+    if (data.daily_loss_limit_pct) {
+      setText('set-loss-limit', data.daily_loss_limit_pct + '% of equity');
+    }
+    _settingsDirty = false;
+    document.getElementById('settings-save-btn').disabled = true;
+    setText('settings-status', 'Loaded from engine');
+  } catch(e) { console.warn('loadSettings', e.message); }
+}
+
+function onSettingChange() {
+  _settingsDirty = true;
+  document.getElementById('settings-save-btn').disabled = false;
+  setText('settings-status', 'Unsaved changes');
+  document.getElementById('settings-status').style.color = 'var(--amber)';
+}
+
+async function saveSettings() {
+  const paperTrade = document.getElementById('set-paper-trade').checked;
+  const maxCapital = parseFloat(document.getElementById('set-max-capital').value) || null;
+  const btn = document.getElementById('settings-save-btn');
+  const statusEl = document.getElementById('settings-status');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const r = await fetch(API+'/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({paper_trade: paperTrade, max_capital: maxCapital}),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      statusEl.textContent = '✅ Saved!';
+      statusEl.style.color = 'var(--green)';
+      _settingsDirty = false;
+      addEvent('⚙', `Settings saved — paper:${paperTrade}, max:${maxCapital ? rupee(maxCapital) : 'no limit'}`);
+    } else {
+      statusEl.textContent = '❌ Failed: ' + (d.detail || 'unknown error');
+      statusEl.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    statusEl.textContent = '❌ ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btn.textContent = 'Save Settings';
+    setTimeout(() => {
+      if (!_settingsDirty) btn.disabled = true;
+    }, 2000);
+  }
+}
+
+// ── ENGINE CONTROLS ───────────────────────────────────────────────────────────
+async function startEngine() {
+  try {
+    await fetch(API+'/start', {method:'POST'});
+    addEvent('▶', 'Engine start command sent');
+  } catch(e) { addEvent('❌','Start failed: '+e.message); }
+}
+async function stopEngine() {
+  try {
+    await fetch(API+'/stop', {method:'POST'});
+    addEvent('⏹', 'Graceful stop command sent (new entries blocked)');
+  } catch(e) { addEvent('❌','Stop failed: '+e.message); }
+}
+async function emergencyStop() {
+  if (!confirm('EMERGENCY STOP — halt all trading immediately?')) return;
+  try {
+    await fetch(API+'/emergency_stop', {method:'POST'});
+    addEvent('🚨', 'Emergency stop activated');
+  } catch(e) { addEvent('❌','Emergency stop failed: '+e.message); }
+}
+
+// ── EVENT LOG ─────────────────────────────────────────────────────────────────
+const MAX_EVT = 50;
+function addEvent(icon, msg) {
+  const log = document.getElementById('event-log');
+  const t = new Date().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const div = document.createElement('div');
+  div.className = 'evt-row';
+  div.innerHTML = `<span class="evt-time">${t}</span><span class="evt-msg">${icon} ${msg}</span>`;
+  log.prepend(div);
+  while (log.children.length > MAX_EVT) log.removeChild(log.lastChild);
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────────────────
+(function init() {
+  addEvent('🚀', 'Dashboard initialising…');
+  connectWS();
+
+  // Fallback 30s REST refresh when WS is down
+  setInterval(async () => {
+    loadTrades();
+    if (!_wsActive) {
+      try {
+        const [st, pos, sc] = await Promise.all([
+          fetch(API+'/status').then(r=>r.json()),
+          fetch(API+'/positions').then(r=>r.json()),
+          fetch(API+'/scanner').then(r=>r.json()),
+        ]);
+        updateStatus(st);
+        updatePositions(pos.positions || []);
+        updateScannerLog(sc.hits || []);
+      } catch {}
+    }
+  }, 30_000);
+})();
+</script>
+</body>
+</html>

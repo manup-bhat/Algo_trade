@@ -1,4 +1,4 @@
-"""
+﻿"""
 engine/store/redis_store.py — ALL Redis operations through this single class.
 
 No other module touches Redis directly. This centralizes key naming,
@@ -28,6 +28,9 @@ _ENGINE_CAPITAL = "engine:capital"
 _ENGINE_BLOCKED_MARGIN = "engine:blocked_margin"
 _ENGINE_SCANNER_READY = "engine:scanner:ready_count"
 _ENGINE_SCANNER_WARMING = "engine:scanner:warming_count"
+_ENGINE_CONFIG_PAPER_TRADE = "engine:config:paper_trade"
+_ENGINE_CONFIG_MAX_CAPITAL = "engine:config:max_capital"
+_ENGINE_REINIT_TRIGGER    = "engine:reinit_trigger"
 
 _PUB_SIGNALS = "pub:signals"
 _PUB_ORDERS = "pub:orders"
@@ -82,6 +85,41 @@ class RedisStore:
     async def is_circuit_breaker_tripped(self) -> bool:
         val = await self._r.get(_ENGINE_CIRCUIT_BREAKER)
         return val == "true"
+
+    # ── Config Overrides ───────────────────────────────────────────────────
+
+    async def get_paper_trade_override(self) -> bool | None:
+        val = await self._r.get(_ENGINE_CONFIG_PAPER_TRADE)
+        return val == "true" if val else None
+
+    async def set_paper_trade_override(self, paper_trade: bool) -> None:
+        await self._r.set(_ENGINE_CONFIG_PAPER_TRADE, "true" if paper_trade else "false")
+
+    async def get_max_capital_override(self) -> float | None:
+        val = await self._r.get(_ENGINE_CONFIG_MAX_CAPITAL)
+        return float(val) if val else None
+
+    async def set_engine_status(self, status_data: dict[str, Any]) -> None:
+        await self._r.set(_ENGINE_STATUS, json.dumps(status_data))
+
+    async def get_engine_status(self) -> dict[str, Any] | None:
+        val = await self._r.get(_ENGINE_STATUS)
+        return json.loads(val) if val else None
+
+    async def set_max_capital_override(self, capital: float | None) -> None:
+        if capital is None:
+            await self._r.delete(_ENGINE_CONFIG_MAX_CAPITAL)
+        else:
+            await self._r.set(_ENGINE_CONFIG_MAX_CAPITAL, str(capital))
+
+    async def set_reinit_trigger(self) -> None:
+        """Signal the engine runner to call job_pre_market_setup (used after fresh login)."""
+        await self._r.set(_ENGINE_REINIT_TRIGGER, "1", ex=300)  # expires in 5 minutes
+
+    async def consume_reinit_trigger(self) -> bool:
+        """Returns True and deletes the key if a reinit was requested."""
+        val = await self._r.getdel(_ENGINE_REINIT_TRIGGER)
+        return val is not None
 
     # ── Capital & P&L ──────────────────────────────────────────────────────
 
@@ -197,7 +235,7 @@ class RedisStore:
             pos["unrealized_pnl"] = unrealized
             await self._r.set(f"position:{symbol}", json.dumps(pos))
 
-    # ── Last LTP (for entry widen logic) ──────────────────────────────────
+    # ── Last LTP (for entry widen logic + dashboard feed) ─────────────────────
 
     async def set_last_ltp(self, symbol: str, ltp: float) -> None:
         await self._r.set(f"ltp:{symbol}", str(ltp))
@@ -205,6 +243,52 @@ class RedisStore:
     async def get_last_ltp(self, symbol: str) -> float | None:
         val = await self._r.get(f"ltp:{symbol}")
         return float(val) if val else None
+
+    async def set_live_tick(self, symbol: str, ltp: float, day_open: float, volume: int) -> None:
+        """Store rich live tick data for dashboard market feed. TTL = 90 min (no stale data after close)."""
+        pct_chg = round(((ltp - day_open) / day_open * 100), 2) if day_open > 0 else 0.0
+        await self._r.set(
+            f"livetick:{symbol}",
+            json.dumps({"ltp": ltp, "open": day_open, "pct_chg": pct_chg, "volume": volume}),
+            ex=5400,  # 90 minutes
+        )
+        # Also keep legacy ltp key for backward compat
+        await self._r.set(f"ltp:{symbol}", str(ltp))
+
+    async def get_market_snapshot(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return up to `limit` symbols with their live price, change%, volume."""
+        keys = await self._r.keys("livetick:*")
+        if not keys:
+            return []
+        values = await self._r.mget(keys[:limit])
+        result = []
+        for key, val in zip(keys[:limit], values):
+            if val:
+                try:
+                    data = json.loads(val)
+                    symbol = key.split(":", 1)[1] if isinstance(key, str) else key.decode().split(":", 1)[1]
+                    result.append({"symbol": symbol, **data})
+                except Exception:
+                    pass
+        # Sort by absolute % change descending
+        result.sort(key=lambda x: abs(x.get("pct_chg", 0)), reverse=True)
+        return result
+
+    async def get_all_live_ticks(self) -> dict[str, dict[str, Any]]:
+        """Return ALL subscribed symbols' live tick data keyed by symbol. Used for 1s WS tick batch."""
+        keys = await self._r.keys("livetick:*")
+        if not keys:
+            return {}
+        values = await self._r.mget(keys)
+        result: dict[str, dict[str, Any]] = {}
+        for key, val in zip(keys, values):
+            if val:
+                try:
+                    sym = key.split(":", 1)[1] if isinstance(key, str) else key.decode().split(":", 1)[1]
+                    result[sym] = json.loads(val)
+                except Exception:
+                    pass
+        return result
 
     # ── Exit Race Condition Lock ───────────────────────────────────────────
 
@@ -232,6 +316,7 @@ class RedisStore:
             _ENGINE_SCANNER_READY: str(ready),
             _ENGINE_SCANNER_WARMING: str(warming),
         })
+
 
     # ── Pub/Sub ───────────────────────────────────────────────────────────
 

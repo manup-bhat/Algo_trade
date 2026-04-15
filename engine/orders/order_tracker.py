@@ -4,6 +4,7 @@ engine/orders/order_tracker.py — In-flight order registry and postback routing
 Maintains two registries:
   entry_order_registry: dict[order_id → symbol] for all LIMIT BUY entry orders
   sl_order_registry:    dict[order_id → symbol] for all SL-M SELL orders
+    exit_order_registry:  dict[order_id → (symbol, close_reason)] for MARKET exit orders
 
 On postback from AsyncKiteTicker.on_order_update:
   1. Identify order type by checking both registries
@@ -42,12 +43,14 @@ class OrderTracker:
     Usage:
         order_tracker.register_entry(order_id, symbol)
         order_tracker.register_sl(order_id, symbol)
+        order_tracker.register_exit(order_id, symbol, close_reason)
         await order_tracker.on_postback(postback_msg, coordinator, db_writer)
     """
 
     def __init__(self) -> None:
         self.entry_order_registry: dict[str, str] = {}  # order_id → symbol
         self.sl_order_registry: dict[str, str] = {}      # order_id → symbol
+        self.exit_order_registry: dict[str, tuple[str, str]] = {}  # order_id → (symbol, reason)
 
     # ── Registry management ────────────────────────────────────────────────
 
@@ -61,11 +64,24 @@ class OrderTracker:
         self.sl_order_registry[order_id] = symbol
         log.debug("sl_registered", order_id=order_id, symbol=symbol)
 
+    def register_exit(self, order_id: str, symbol: str, close_reason: str) -> None:
+        """Register a live exit MARKET order that should close on fill postback."""
+        self.exit_order_registry[order_id] = (symbol, close_reason)
+        log.debug(
+            "exit_registered",
+            order_id=order_id,
+            symbol=symbol,
+            close_reason=close_reason,
+        )
+
     def unregister(self, order_id: str) -> str | None:
         """Remove an order from both registries. Returns the symbol if found."""
         symbol = self.entry_order_registry.pop(order_id, None)
         if symbol is None:
             symbol = self.sl_order_registry.pop(order_id, None)
+        if symbol is None:
+            meta = self.exit_order_registry.pop(order_id, None)
+            symbol = meta[0] if meta else None
         return symbol
 
     def is_entry(self, order_id: str) -> bool:
@@ -73,6 +89,9 @@ class OrderTracker:
 
     def is_sl(self, order_id: str) -> bool:
         return order_id in self.sl_order_registry
+
+    def is_exit(self, order_id: str) -> bool:
+        return order_id in self.exit_order_registry
 
     # ── Postback routing ──────────────────────────────────────────────────
 
@@ -121,6 +140,8 @@ class OrderTracker:
             await self._handle_entry_postback(order_id, status, message, coordinator)
         elif self.is_sl(order_id):
             await self._handle_sl_postback(order_id, status, message, coordinator)
+        elif self.is_exit(order_id):
+            await self._handle_exit_postback(order_id, status, message, coordinator)
         else:
             log.debug("postback_unknown_order", order_id=order_id, status=status)
 
@@ -216,16 +237,70 @@ class OrderTracker:
             # Emergency close handled by reconciliation loop (spec §12.3)
             # SM's on_sl_triggered won't be called — reconciliation will catch this
 
+    async def _handle_exit_postback(
+        self,
+        order_id: str,
+        status: str,
+        message: dict[str, Any],
+        coordinator: "Coordinator",
+    ) -> None:
+        """Route MARKET exit postbacks to SM close path."""
+        meta = self.exit_order_registry.get(order_id)
+        if not meta:
+            return
+
+        symbol, close_reason = meta
+        sm = coordinator.active_state_machines.get(symbol)
+        if sm is None:
+            log.warning("exit_postback_sm_not_found", order_id=order_id, symbol=symbol)
+            return
+
+        if status == "COMPLETE":
+            avg_price = float(message.get("average_price", 0.0))
+            log.info(
+                "exit_filled",
+                order_id=order_id,
+                symbol=symbol,
+                avg_price=avg_price,
+                reason=close_reason,
+            )
+            await sm._close_position(avg_price, order_id, close_reason or "CLOSED_MANUAL")
+
+        elif status in ("REJECTED", "CANCELLED", "CANCELLED AMO"):
+            status_msg = message.get("status_message", "")
+            log.critical(
+                "exit_rejected_or_cancelled",
+                order_id=order_id,
+                symbol=symbol,
+                status=status,
+                reason=close_reason,
+                message=status_msg,
+            )
+
+            if coordinator._order_service is not None and sm.position is not None:
+                retry_id = await coordinator._order_service.place_exit_market(
+                    symbol=symbol,
+                    quantity=sm.position.quantity,
+                    reason=close_reason or "CLOSED_ERROR",
+                )
+                if retry_id:
+                    self.register_exit(retry_id, symbol, close_reason or "CLOSED_ERROR")
+
     # ── Diagnostics ───────────────────────────────────────────────────────
 
     @property
     def monitored_order_count(self) -> int:
-        return len(self.entry_order_registry) + len(self.sl_order_registry)
+        return (
+            len(self.entry_order_registry)
+            + len(self.sl_order_registry)
+            + len(self.exit_order_registry)
+        )
 
     def __repr__(self) -> str:
         return (
             f"OrderTracker(entry={len(self.entry_order_registry)} "
-            f"sl={len(self.sl_order_registry)})"
+            f"sl={len(self.sl_order_registry)} "
+            f"exit={len(self.exit_order_registry)})"
         )
 
 

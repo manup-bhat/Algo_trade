@@ -1,13 +1,12 @@
 """
 engine/strategy/coordinator.py — Central dispatcher for all ticks and postbacks.
 
-Phase 2 additions over Phase 1:
-  - Routes candles to scanner.evaluate() for IDLE symbols
-  - Creates SymbolStateMachine on scan hit
-  - Routes candles to active SMs for SCAN_HIT / MONITORING
-  - Routes ticks to MANAGING SMs (per-tick trailing/SL check)
-  - Cleans up CLOSED SMs
-  - Circuit breaker check integrated
+Phase 4 additions over Phase 2:
+  - inject_dependencies(): wire order_service, order_tracker, fill_timeout_manager
+    and kite_client into every new SM and into the coordinator itself
+  - on_order_postback(): real routing via order_tracker (was noop in Phase 2)
+  - orphan_check(): detect stale positions on startup (spec §12.1)
+  - reconcile_orders(): 5-minute safety net for missed WS postbacks (spec §12.2)
 """
 
 from __future__ import annotations
@@ -24,8 +23,12 @@ from engine.strategy import scanner
 from engine.strategy.state_machine import SymbolStateMachine, StrategyState
 
 if TYPE_CHECKING:
-    from engine.store.redis_store import RedisStore
+    from engine.kite.client import AsyncKiteClient
+    from engine.orders.fill_timeout import FillTimeoutManager
+    from engine.orders.order_service import OrderService
+    from engine.orders.order_tracker import OrderTracker
     from engine.store.db_writer import DbWriter
+    from engine.store.redis_store import RedisStore
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -43,6 +46,8 @@ class Coordinator:
       - Handle WS reconnect: call reset_cumulative_baseline() on all builders
       - Persist and load SMA history via RedisStore
       - Cleanup CLOSED SMs after each on_candle call
+      - Route order postbacks to the correct SM via order_tracker
+      - Orphan detection and 5-minute reconciliation
     """
 
     def __init__(self, redis_store: "RedisStore", db_writer: "DbWriter") -> None:
@@ -55,6 +60,41 @@ class Coordinator:
         self._tick_count: int = 0
         self._candle_count: int = 0
         self._signal_count: int = 0
+        self._accept_new_entries: bool = True
+
+        # Phase 4: wired via inject_dependencies()
+        self._order_service: "OrderService | None" = None
+        self._order_tracker: "OrderTracker | None" = None
+        self._fill_timeout: "FillTimeoutManager | None" = None
+        self._kite: "AsyncKiteClient | None" = None
+
+    # ── Dependency injection ─────────────────────────────────────────────────
+
+    def inject_dependencies(
+        self,
+        order_service: "OrderService",
+        order_tracker: "OrderTracker",
+        fill_timeout_manager: "FillTimeoutManager",
+        kite: "AsyncKiteClient | None" = None,
+    ) -> None:
+        """
+        Wire live-mode dependencies into the coordinator.
+        Called by runner.py after auth succeeds, before WS subscription.
+        """
+        self._order_service = order_service
+        self._order_tracker = order_tracker
+        self._fill_timeout = fill_timeout_manager
+        self._kite = kite
+        log.info(
+            "coordinator_dependencies_injected",
+            order_service=type(order_service).__name__,
+            kite_wired=kite is not None,
+        )
+
+    def set_new_entries_enabled(self, enabled: bool) -> None:
+        """Enable/disable fresh scanner-to-entry transitions (used by STOP/START control)."""
+        self._accept_new_entries = enabled
+        log.info("coordinator_new_entries_gate", enabled=enabled)
 
     # ── Setup ──────────────────────────────────────────────────────────────
 
@@ -106,6 +146,10 @@ class Coordinator:
         """
         self._tick_count += len(ticks)
 
+        # Throttle: only flush LTPs every N ticks total to avoid Redis I/O spikes
+        self._ltp_flush_counter = getattr(self, "_ltp_flush_counter", 0) + len(ticks)
+        should_flush_ltp = self._ltp_flush_counter >= 50
+
         for tick in ticks:
             token: int = tick.get("instrument_token", 0)
             symbol = self.token_to_symbol.get(token)
@@ -114,6 +158,8 @@ class Coordinator:
 
             ltp: float = tick.get("last_price", 0.0)
             cum_vol: int = tick.get("volume_traded", 0)
+            ohlc = tick.get("ohlc", {})
+            day_open = ohlc.get("open", 0.0) if ohlc else 0.0
 
             exch_ts = tick.get("exchange_timestamp")
             if exch_ts is None:
@@ -136,6 +182,16 @@ class Coordinator:
             if sm is not None and sm.state == StrategyState.MANAGING:
                 await sm.on_tick(ltp, exch_ts)
 
+            # Throttled LTP update: persist to Redis for dashboard feed
+            if should_flush_ltp and ltp > 0:
+                try:
+                    await self._redis.set_live_tick(symbol, ltp, day_open, cum_vol)
+                except Exception:
+                    pass
+
+        if should_flush_ltp:
+            self._ltp_flush_counter = 0
+
     async def _on_candle_complete(self, symbol: str, candle: Candle) -> None:
         """
         Called when a 1-minute candle is completed for a symbol.
@@ -149,6 +205,9 @@ class Coordinator:
 
         if symbol not in self.active_state_machines:
             # IDLE path: run Phase 1 scanner
+            if not self._accept_new_entries:
+                return
+
             if not mkt_calendar.is_market_open():
                 return
 
@@ -161,12 +220,7 @@ class Coordinator:
 
             if impact is not None:
                 self._signal_count += 1
-                sm = SymbolStateMachine(
-                    symbol=symbol,
-                    instrument_token=instrument_token,
-                    redis_store=self._redis,
-                    db_writer=self._db,
-                )
+                sm = self._create_sm(symbol, instrument_token)
                 self.active_state_machines[symbol] = sm
                 await sm.on_scan_hit(impact)
 
@@ -194,6 +248,24 @@ class Coordinator:
             if sm.state == StrategyState.CLOSED:
                 del self.active_state_machines[symbol]
                 log.debug("sm_cleaned_up", symbol=symbol)
+
+    def _create_sm(self, symbol: str, instrument_token: int) -> SymbolStateMachine:
+        """
+        Create a SymbolStateMachine with all Phase 4 dependencies wired.
+        """
+        sm = SymbolStateMachine(
+            symbol=symbol,
+            instrument_token=instrument_token,
+            redis_store=self._redis,
+            db_writer=self._db,
+            order_service=self._order_service,
+            order_tracker=self._order_tracker,
+            fill_timeout_manager=self._fill_timeout,
+        )
+        # Wire kite client and candle builder for pre-trade checks
+        sm._kite = self._kite  # type: ignore[attr-defined]
+        sm._candle_builder = self.candle_builders.get(symbol)  # type: ignore[attr-defined]
+        return sm
 
     # ── WebSocket Lifecycle ────────────────────────────────────────────────
 
@@ -236,9 +308,231 @@ class Coordinator:
         for s in closed:
             del self.active_state_machines[s]
 
+    # ── Order Postback Routing (Phase 4) ────────────────────────────────────
+
     async def on_order_postback(self, message: dict) -> None:
-        """Route order postback to appropriate SM (Phase 3+ wires order_tracker)."""
-        log.debug("order_postback_phase2_noop", order_id=message.get("order_id"))
+        """
+        Route order postback from KiteTicker to order_tracker.
+        order_tracker then calls the correct SM method (on_order_filled, on_sl_triggered...).
+        """
+        if self._order_tracker is None:
+            log.debug("order_postback_no_tracker", order_id=message.get("order_id"))
+            return
+
+        await self._order_tracker.on_postback(message, self, self._db)
+
+    # ── Orphan Detection (spec §12.1) ────────────────────────────────────────
+
+    async def orphan_check(self, kite: "AsyncKiteClient") -> None:
+        """
+        Run after authentication, before market open.
+        Detects stale positions from prior crashes and closes them.
+
+        1. Any Kite open position with NO Redis state → close immediately
+        2. Any Redis MANAGING state with NO Kite position → mark CLOSED_BROKER
+        """
+        log.info("orphan_check_start")
+        try:
+            positions_resp = await kite.positions()
+            day_positions: list[dict] = positions_resp.get("day", [])
+            net_positions: list[dict] = positions_resp.get("net", [])
+
+            # Build set of symbols with non-zero NSE quantity
+            kite_open: dict[str, int] = {}
+            for pos in net_positions:
+                sym = pos.get("tradingsymbol", "")
+                qty = int(pos.get("quantity", 0))
+                if qty != 0 and pos.get("exchange") == "NSE":
+                    kite_open[sym] = qty
+
+            # Check for orphans: Kite has position but no Redis state
+            for sym, qty in kite_open.items():
+                if sym not in self.active_state_machines:
+                    log.warning(
+                        "orphan_position_detected",
+                        symbol=sym,
+                        quantity=qty,
+                        action="emergency_market_sell",
+                    )
+                    if self._order_service:
+                        await self._order_service.place_exit_market(
+                            sym, abs(qty), reason="orphan_close"
+                        )
+                    # Write to DB
+                    try:
+                        await self._db.write_order_event(
+                            order_id=f"ORPHAN_{sym}",
+                            symbol=sym,
+                            event_type="ORPHAN_CLOSE",
+                            event_time=datetime.datetime.now(IST_TZ),
+                            status="ORPHAN",
+                            raw_payload={"qty": qty},
+                        )
+                    except Exception:
+                        pass
+
+            # Check for ghost: Redis MANAGING but no Kite open position
+            redis_states = await self._redis.get_all_strategy_states()
+            for sym, state_data in redis_states.items():
+                if state_data.get("state") == "MANAGING" and sym not in kite_open:
+                    log.warning(
+                        "ghost_managing_state_detected",
+                        symbol=sym,
+                        action="clearing_redis_state",
+                    )
+                    # Try to get exit price from Kite trades
+                    exit_price: float | None = None
+                    try:
+                        all_trades = await kite.trades()
+                        for t in reversed(all_trades):
+                            if t.get("tradingsymbol") == sym:
+                                exit_price = float(t.get("average_price", 0.0))
+                                break
+                    except Exception:
+                        pass
+
+                    await self._redis.clear_strategy_state(sym)
+                    await self._redis.clear_position(sym)
+                    log.info(
+                        "ghost_state_cleared",
+                        symbol=sym,
+                        recovered_exit_price=exit_price,
+                    )
+
+        except Exception as exc:
+            log.error("orphan_check_failed", error=str(exc), exc_info=True)
+
+    # ── 5-Minute Reconciliation (spec §12.2) ────────────────────────────────
+
+    async def reconcile_orders(self, kite: "AsyncKiteClient") -> None:
+        """
+        Called every 5 minutes during market hours.
+        Detects missed WS postbacks and routes them to the correct SM.
+
+        1. MANAGING SMs: check if SL was triggered silently
+        2. ACTION_PENDING SMs: check if fill arrived without postback
+        """
+        if not self.active_state_machines:
+            return
+
+        try:
+            all_orders: list[dict] = await kite.orders()
+        except Exception as exc:
+            log.warning("reconcile_orders_fetch_failed", error=str(exc))
+            return
+
+        order_map: dict[str, dict] = {o["order_id"]: o for o in all_orders}
+
+        for symbol, sm in list(self.active_state_machines.items()):
+
+            # ── MANAGING: check if SL was silently triggered ─────────────
+            if sm.state == StrategyState.MANAGING and sm.position is not None:
+                # Exit-in-progress path: reconcile MARKET exit fill/reject.
+                exit_id = sm.position.exit_order_id
+                if sm.position._exit_initiated and exit_id and exit_id in order_map:
+                    exit_order = order_map[exit_id]
+                    exit_status = exit_order.get("status", "")
+
+                    if exit_status == "COMPLETE":
+                        avg = float(exit_order.get("average_price", 0.0))
+                        reason = sm.position.exit_reason or "CLOSED_MANUAL"
+                        log.warning(
+                            "reconcile_exit_filled_missed",
+                            symbol=symbol,
+                            exit_id=exit_id,
+                            avg_price=avg,
+                            reason=reason,
+                        )
+                        await sm._close_position(avg, exit_id, reason)
+                        continue
+
+                    if exit_status in ("REJECTED", "CANCELLED", "CANCELLED AMO"):
+                        reason = sm.position.exit_reason or "CLOSED_ERROR"
+                        log.critical(
+                            "reconcile_exit_rejected_retrying",
+                            symbol=symbol,
+                            exit_id=exit_id,
+                            status=exit_status,
+                            reason=reason,
+                        )
+                        if self._order_service:
+                            retry_id = await self._order_service.place_exit_market(
+                                symbol,
+                                sm.position.quantity,
+                                reason=reason,
+                            )
+                            if retry_id:
+                                sm.position.exit_order_id = retry_id
+                                if self._order_tracker is not None:
+                                    self._order_tracker.register_exit(retry_id, symbol, reason)
+                        continue
+
+                sl_id = sm.position.sl_order_id
+                if sl_id and sl_id in order_map:
+                    sl_order = order_map[sl_id]
+                    sl_status = sl_order.get("status", "")
+
+                    if sl_status == "COMPLETE" and not sm.position._exit_initiated:
+                        avg = float(sl_order.get("average_price", 0.0))
+                        log.warning(
+                            "reconcile_sl_triggered_missed",
+                            symbol=symbol,
+                            sl_id=sl_id,
+                            avg_price=avg,
+                        )
+                        await sm.on_sl_triggered(sl_id, avg)
+
+                    elif sl_status == "REJECTED":
+                        log.critical(
+                            "reconcile_sl_rejected_emergency_close",
+                            symbol=symbol,
+                            sl_id=sl_id,
+                        )
+                        if self._order_service:
+                            await self._order_service.place_exit_market(
+                                symbol, sm.position.quantity, reason="sl_rejected"
+                            )
+
+            # ── ACTION_PENDING: check if fill was missed ──────────────────
+            elif sm.state == StrategyState.ACTION_PENDING and sm._pending_order_id:
+                entry_id = sm._pending_order_id
+                if entry_id in order_map:
+                    entry_order = order_map[entry_id]
+                    entry_status = entry_order.get("status", "")
+
+                    if entry_status == "COMPLETE":
+                        avg = float(entry_order.get("average_price", 0.0))
+                        filled = int(entry_order.get("filled_quantity", 0))
+                        fill_ts_raw = entry_order.get("exchange_update_timestamp")
+                        try:
+                            fill_ts = datetime.datetime.fromisoformat(str(fill_ts_raw)) if fill_ts_raw else datetime.datetime.now(IST_TZ)
+                        except (ValueError, TypeError):
+                            fill_ts = datetime.datetime.now(IST_TZ)
+
+                        log.warning(
+                            "reconcile_entry_filled_missed",
+                            symbol=symbol,
+                            order_id=entry_id,
+                            avg_price=avg,
+                        )
+                        await sm.on_order_filled(entry_id, avg, filled, fill_ts)
+
+                    elif entry_status in ("REJECTED", "CANCELLED"):
+                        log.warning(
+                            "reconcile_entry_rejected",
+                            symbol=symbol,
+                            order_id=entry_id,
+                            status=entry_status,
+                        )
+                        await sm.on_order_rejected(
+                            entry_id, entry_order.get("status_message", "")
+                        )
+
+            # Cleanup CLOSED SMs discovered during reconciliation.
+            if sm.state == StrategyState.CLOSED:
+                del self.active_state_machines[symbol]
+
+        log.debug("reconcile_done", active_sms=len(self.active_state_machines))
 
     # ── Diagnostics ────────────────────────────────────────────────────────
 
