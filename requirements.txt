@@ -1,0 +1,15 @@
+# Runtime dependencies for IVBS Trading Bot
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+kiteconnect>=5.0
+sqlalchemy[asyncio]>=2.0
+aiosqlite>=0.20
+alembic>=1.13
+redis[asyncio]>=5.0
+pydantic>=2.7
+pydantic-settings>=2.3
+structlog>=24.0
+apscheduler>=3.10
+pytz>=2024.1
+aiofiles>=23.0

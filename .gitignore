@@ -1,8 +1,9 @@
+# Local environment and auth secrets
 .env
+.kite_token
 *.db
 *.db-shm
 *.db-wal
-.kite_token
 __pycache__/
 *.py[cod]
 *$py.class

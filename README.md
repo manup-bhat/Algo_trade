@@ -63,6 +63,13 @@ python -m pip install --upgrade pip
 python -m pip install -e .[dev]
 ```
 
+Alternative install path using requirements.txt:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
 3. Configure environment
 
 ```powershell
@@ -112,7 +119,7 @@ Open dashboard:
 
 1. Open `GET /api/v1/auth/login`
 2. Complete Zerodha login in browser
-3. Callback stores token in `.kite_token` and Redis
+3. Callback stores token in `.kite_token` and Redis (`.kite_token` is gitignored)
 4. Start or resume engine
 
 If your Kite redirect is `http://127.0.0.1` only, use:
@@ -151,6 +158,7 @@ Current expected status in this workspace:
 - Use `PAPER_TRADE=true` until end-to-end behavior is verified in your environment.
 - Keep `DAILY_LOSS_LIMIT_PCT`, `MAX_CONCURRENT_POSITIONS`, and time cutoffs conservative.
 - Review and refresh `nse_holidays.json` regularly.
+- Keep `.kite_token` local only and never commit it.
 - Verify broker policy changes (MIS square-off, margin rules) periodically.
 
 ## License / Usage
