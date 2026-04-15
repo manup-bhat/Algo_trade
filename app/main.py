@@ -41,6 +41,7 @@ from contextlib import asynccontextmanager
 
 log = structlog.get_logger(__name__)
 
+from app.core.config import settings
 from app.api.dashboard_router import router as dashboard_router
 from app.api.v1.routes.auth import router as auth_router
 
@@ -57,7 +58,7 @@ async def handle_port80_redirect(reader: asyncio.StreamReader, writer: asyncio.S
                 path = parts[1]
                 response = (
                     "HTTP/1.1 302 Found\r\n"
-                    f"Location: http://127.0.0.1:8000/api/v1/auth/callback{path.replace('/?','?',1) if path.startswith('/?') else path}\r\n"
+                    f"Location: http://{settings.API_HOST}:{settings.API_PORT}/api/v1/auth/callback{path.replace('/?','?',1) if path.startswith('/?') else path}\r\n"
                     "Content-Length: 0\r\n"
                     "Connection: close\r\n"
                     "\r\n"
