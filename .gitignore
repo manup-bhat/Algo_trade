@@ -20,8 +20,6 @@ build/
 *.log
 *.log.*
 
-# Local data files
-nifty500.txt
 
 # Keep only final strategy spec among working analysis docs
 IVBS_Production_Analysis.md
