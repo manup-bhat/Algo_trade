@@ -36,6 +36,7 @@ import shlex
 import subprocess
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -54,6 +55,19 @@ _ENGINE_AUTOSTART_LOCK_KEY = "engine:autostart:backend"
 _ENGINE_AUTOSTART_LOCK_TTL_SECONDS = 60
 _engine_process: subprocess.Popen | None = None
 _engine_autostart_lock_token: str | None = None
+
+
+def _is_fresh_engine_status(status_payload: dict, max_age_seconds: int = 30) -> bool:
+    raw_ts = status_payload.get("timestamp")
+    if not raw_ts:
+        return False
+    try:
+        ts = datetime.fromisoformat(str(raw_ts))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts.astimezone(timezone.utc)).total_seconds() <= max_age_seconds
+    except Exception:
+        return False
 
 
 def _build_engine_runner_command() -> list[str]:
@@ -137,11 +151,23 @@ async def _maybe_start_engine_subprocess() -> None:
 
     started = False
     try:
+        heartbeat = await redis_store.get_runner_heartbeat()
+        if heartbeat:
+            log.info(
+                "engine_autostart_skipped_runner_heartbeat",
+                heartbeat=heartbeat,
+            )
+            return
+
         existing_status = await redis_store.get_engine_status() or {}
         status_name = str(existing_status.get("status", "")).upper()
-        if status_name and status_name not in {"OFFLINE", "EMERGENCY_STOP"}:
+        if (
+            status_name
+            and status_name not in {"OFFLINE", "EMERGENCY_STOP"}
+            and _is_fresh_engine_status(existing_status)
+        ):
             log.info(
-                "engine_autostart_skipped_engine_already_active",
+                "engine_autostart_skipped_fresh_engine_status",
                 status=status_name,
             )
             return
@@ -164,6 +190,10 @@ async def _maybe_start_engine_subprocess() -> None:
             cwd=str(project_root),
             creationflags=creationflags,
         )
+        await redis_store.set_engine_status({
+            "status": "STARTING",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
         started = True
         log.info(
             "engine_autostart_started",

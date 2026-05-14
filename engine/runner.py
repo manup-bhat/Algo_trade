@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import os
 import signal
 import sys
 from pathlib import Path
@@ -396,6 +397,7 @@ async def shutdown(loop: asyncio.AbstractEventLoop) -> None:
                 "status": "OFFLINE",
                 "timestamp": now_ist().isoformat(),
             })
+            await _redis_store.clear_runner_heartbeat()
         except Exception:
             pass
 
@@ -423,6 +425,12 @@ async def _poll_config() -> None:
     while True:
         try:
             if _redis_store is not None:
+                current_for_heartbeat = await _redis_store.get_engine_status() or {}
+                await _redis_store.set_runner_heartbeat(
+                    str(current_for_heartbeat.get("status", "RUNNING")),
+                    pid=os.getpid(),
+                )
+
                 override_pt = await _redis_store.get_paper_trade_override()
                 if override_pt is not None and settings.PAPER_TRADE != override_pt:
                     settings.PAPER_TRADE = override_pt
@@ -487,6 +495,7 @@ async def main() -> None:
         )
         return
     log.info("redis_connected", url=settings.REDIS_URL)
+    await _redis_store.set_runner_heartbeat("STARTING", pid=os.getpid())
 
     # ── DB Writer ─────────────────────────────────────────────────────────────
     _db_writer = DbWriter()

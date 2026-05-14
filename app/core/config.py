@@ -32,10 +32,16 @@ class Settings(BaseSettings):
     # ── Infrastructure ──────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
     DATABASE_URL: str = "sqlite+aiosqlite:///./trading.db"
+    UNIVERSE_FILE: str = "universe.txt"
 
     # ── Group A: Strategy Filter Values ────────────────────────────
     VOLUME_SPIKE_MULTIPLE: float = 20.0
     VOLUME_SMA_PERIOD: int = 500
+    HISTORICAL_WARMUP_ENABLED: bool = True
+    HISTORICAL_WARMUP_TRADING_DAYS: int = 5
+    HISTORICAL_WARMUP_CONCURRENCY: int = 3
+    HISTORICAL_WARMUP_BATCH_DELAY_SEC: float = 0.4
+    HISTORICAL_WARMUP_RECENT_CANDLES: int = 180
     MIN_TURNOVER_CRORE: float = 8.0
     MIN_PRICE: float = 50.0
     MAX_PRICE: float = 5000.0
@@ -89,9 +95,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     PAPER_TRADE: bool = False
-    AUTO_START_ENGINE_WITH_BACKEND: bool = False
+    AUTO_START_ENGINE_WITH_BACKEND: bool = True
     AUTO_STOP_ENGINE_WITH_BACKEND: bool = True
     ENGINE_RUNNER_CMD: str = ""
+    DASHBOARD_TICK_FLUSH_INTERVAL_MS: int = 250
+    DASHBOARD_WS_TICK_INTERVAL_MS: int = 500
+    DASHBOARD_WS_HEARTBEAT_INTERVAL_MS: int = 2000
 
     # ── Validators ──────────────────────────────────────────────────
 
@@ -100,6 +109,33 @@ class Settings(BaseSettings):
     def validate_min_turnover(cls, v: float) -> float:
         if v < 4.0:
             raise ValueError("MIN_TURNOVER_CRORE must be >= 4.0 (strategy safety floor)")
+        return v
+
+    @field_validator("HISTORICAL_WARMUP_TRADING_DAYS", "HISTORICAL_WARMUP_CONCURRENCY",
+                     "HISTORICAL_WARMUP_RECENT_CANDLES", "DASHBOARD_TICK_FLUSH_INTERVAL_MS",
+                     "DASHBOARD_WS_TICK_INTERVAL_MS", "DASHBOARD_WS_HEARTBEAT_INTERVAL_MS")
+    @classmethod
+    def validate_positive_int(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("value must be positive")
+        return v
+
+    @field_validator("HISTORICAL_WARMUP_BATCH_DELAY_SEC")
+    @classmethod
+    def validate_non_negative_delay(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("HISTORICAL_WARMUP_BATCH_DELAY_SEC must be >= 0")
+        return v
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def validate_debug_flag(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            normalized = v.strip().lower()
+            if normalized in {"release", "prod", "production", "false", "0", "no", "off"}:
+                return False
+            if normalized in {"debug", "dev", "development", "true", "1", "yes", "on"}:
+                return True
         return v
 
     @field_validator("MAX_ENTRY_TIME", "MARKET_OPEN_TIME", "SQUARE_OFF_TIME",

@@ -243,6 +243,11 @@ class CandleBuilder:
         return len(self._volume_history)
 
     @property
+    def current_volume(self) -> int:
+        """Volume accumulated in the currently forming one-minute candle."""
+        return self._candle_volume
+
+    @property
     def volume_history_snapshot(self) -> list[int]:
         """
         Snapshot of the current volume history for Redis persistence.
@@ -299,4 +304,3 @@ class CandleBuilder:
             f"history={self.history_size}/{self._sma_period} "
             f"warmed={self.is_warmed_up})"
         )
-

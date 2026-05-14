@@ -27,7 +27,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import pytz
@@ -85,6 +86,40 @@ def _is_market_open_now() -> bool:
     )
 
 
+def _today_ist() -> str:
+    return datetime.now(IST_TZ).date().isoformat()
+
+
+def _is_recent_status(status_payload: dict[str, Any], max_age_seconds: int = 30) -> bool:
+    raw_ts = status_payload.get("timestamp")
+    if not raw_ts:
+        return False
+    try:
+        parsed = datetime.fromisoformat(str(raw_ts))
+        if parsed.tzinfo is None:
+            parsed = IST_TZ.localize(parsed)
+        return (
+            datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)
+        ) <= timedelta(seconds=max_age_seconds)
+    except Exception:
+        return False
+
+
+def _state_phase(state: str | None) -> str:
+    normalized = (state or "SCAN_HIT").upper()
+    if normalized in {"ENTERED", "ACTION_PENDING", "PENDING"}:
+        return "ENTRY"
+    if normalized in {"MANAGING"}:
+        return "MANAGING"
+    if normalized in {"MONITORING"}:
+        return "MONITORING"
+    if normalized in {"ABANDONED"}:
+        return "ABANDONED"
+    if normalized in {"CLOSED", "CLOSED_TARGET", "CLOSED_STOPLOSS", "CLOSED_TRAILSTOP", "CLOSED_TIME"}:
+        return "CLOSED"
+    return "SCAN_HIT"
+
+
 # ── WebSocket pool ──────────────────────────────────────────────────────────────
 _ws_clients: set[WebSocket] = set()
 
@@ -120,7 +155,11 @@ async def get_status():
         "blocked_margin": 0.0,
         "warmed_up": 0,
         "warming_up": 0,
+        "total_builders": 0,
         "total_ticks": 0,
+        "total_candles": 0,
+        "active_state_machines": 0,
+        "runner_heartbeat": None,
         "timestamp": now_ist.isoformat(),
     }
 
@@ -135,6 +174,7 @@ async def get_status():
         blocked     = await rs.get_blocked_margin() or 0.0
         control     = await rs.get_engine_control() or "RUN"
         eng_status  = await rs.get_engine_status() or {}
+        heartbeat   = await rs.get_runner_heartbeat()
         if isinstance(control, bytes):
             control = control.decode()
 
@@ -146,14 +186,22 @@ async def get_status():
         # Paper trade override from Redis (runtime toggle)
         pt_override = await rs.get_paper_trade_override()
         paper_trade = pt_override if pt_override is not None else settings.PAPER_TRADE
+        status_name = str(eng_status.get("status", "OFFLINE")).upper()
+        engine_running = bool(heartbeat) or (
+            status_name not in {"", "OFFLINE", "EMERGENCY_STOP"}
+            and _is_recent_status(eng_status)
+        )
 
         return {
             **base,
             "paper_trade": paper_trade,
-            "engine_running": True,
+            "engine_running": engine_running,
             "engine_control": control,
-            "engine_status_msg": eng_status.get("status", "ONLINE"),
+            "engine_status_msg": eng_status.get("status", "ONLINE" if engine_running else "OFFLINE"),
             "total_ticks": eng_status.get("total_ticks", 0),
+            "total_candles": eng_status.get("total_candles", 0),
+            "total_builders": eng_status.get("total_builders", 0),
+            "active_state_machines": eng_status.get("active_state_machines", 0),
             "circuit_breaker_tripped": cb_tripped,
             "account_equity": capital,
             "daily_pnl": daily_pnl,
@@ -161,6 +209,7 @@ async def get_status():
             "blocked_margin": blocked,
             "warmed_up": warmed_up,
             "warming_up": warming_up,
+            "runner_heartbeat": heartbeat,
         }
     except Exception as exc:
         log.error("dashboard_status_error", error=str(exc))
@@ -200,7 +249,11 @@ async def get_positions():
             entry_price = pos.get("entry_price")
             quantity = pos.get("quantity")
             current_sl = pos.get("current_sl")
+            initial_sl = pos.get("initial_sl") or pos.get("initial_stop_loss")
+            risk_per_share = pos.get("risk_per_share")
+            risk_amount = pos.get("risk_amount")
             target_1r2 = pos.get("target_1r2")
+            target_1r3 = pos.get("target_1r3")
             target_1r4 = pos.get("target_1r4")
             cost_trailed = pos.get("cost_trailed", False)
             profit_locked = pos.get("profit_locked", False)
@@ -219,12 +272,18 @@ async def get_positions():
                 "state":          state,
                 "entry_price":    entry_price,
                 "quantity":       quantity,
+                "initial_sl":     initial_sl,
                 "current_sl":     current_sl,
+                "risk_per_share": risk_per_share,
+                "risk_amount":    risk_amount,
                 "unrealized_pnl": unrealized if unrealized is not None else 0.0,
                 "target_1r2":     target_1r2,
+                "target_1r3":     target_1r3,
                 "target_1r4":     target_1r4,
                 "cost_trailed":   cost_trailed,
                 "profit_locked":  profit_locked,
+                "entry_time":     pos.get("entry_time"),
+                "sl_order_id":    pos.get("sl_order_id"),
             })
         return {"positions": positions, "count": len(positions), "engine_running": True}
     except Exception as exc:
@@ -259,7 +318,7 @@ async def get_signals():
 async def get_scanner():
     from sqlalchemy import text
     rs = _rs()
-    today = date.today().isoformat()
+    today = _today_ist()
     rows = []
 
     try:
@@ -267,13 +326,15 @@ async def get_scanner():
         async with engine.connect() as conn:
             result = await conn.execute(text(
                 "SELECT symbol, signal_time, "
+                "  impact_candle_open AS open, "
                 "  volume_spike_multiple AS spike_multiple, "
                 "  impact_candle_close AS close, "
                 "  impact_candle_volume AS volume, "
                 "  impact_candle_turnover AS turnover_raw, "
                 "  impact_candle_high AS impact_high, "
                 "  impact_candle_low AS impact_low, "
-                "  progressed_to_monitor, abandonment_reason, created_at "
+                "  progressed_to_monitor, progressed_to_action, resulted_in_trade, "
+                "  abandonment_reason, created_at "
                 "FROM signals "
                 "WHERE date(signal_time) = :today "
                 "ORDER BY signal_time DESC LIMIT 100"
@@ -305,6 +366,11 @@ async def get_scanner():
         if "turnover_cr" not in row:
             tr = row.get("turnover_raw") or 0
             row["turnover_cr"] = round(tr / 1e7, 2) if tr else 0.0
+        if row.get("open") and row.get("close"):
+            row["change_pct"] = round(
+                (float(row["close"]) - float(row["open"])) / float(row["open"]) * 100,
+                2,
+            )
 
     return {"hits": rows, "count": len(rows)}
 
@@ -315,7 +381,7 @@ async def get_scanner():
 async def get_orders():
     try:
         from sqlalchemy import text
-        today = date.today().isoformat()
+        today = _today_ist()
         engine = _get_db_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text(
@@ -339,12 +405,14 @@ async def get_orders():
 async def get_trades():
     try:
         from sqlalchemy import text
-        today = date.today().isoformat()
+        today = _today_ist()
         engine = _get_db_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text(
                 "SELECT symbol, entry_time, entry_price, exit_time, exit_price, "
-                "  quantity, gross_pnl, net_pnl, brokerage, stt, other_charges, "
+                "  quantity, initial_stop_loss, current_stop_loss, risk_per_share, "
+                "  risk_amount, target_1r2, target_1r4, gross_pnl, net_pnl, "
+                "  brokerage, stt, other_charges, cost_trailed, profit_locked, "
                 "  status, notes "
                 "FROM trades "
                 "WHERE date(entry_time) = :today "
@@ -439,45 +507,231 @@ async def start_engine():
 # ── /settings ───────────────────────────────────────────────────────────────────
 
 class SettingsUpdate(BaseModel):
-    paper_trade: bool
+    paper_trade: bool | None = None
     max_capital: float | None = None
+    config: dict[str, Any] | None = None
+    reload_engine: bool = True
+
+
+_SECRET_SETTING_KEYS = {"KITE_API_KEY", "KITE_API_SECRET"}
+
+_SETTING_GROUPS: dict[str, list[str]] = {
+    "Kite Credentials": [
+        "KITE_API_KEY", "KITE_API_SECRET", "KITE_REDIRECT_URL", "KITE_TOKEN_PATH",
+    ],
+    "Infrastructure": ["REDIS_URL", "DATABASE_URL", "UNIVERSE_FILE"],
+    "Scanner Filters": [
+        "VOLUME_SPIKE_MULTIPLE", "VOLUME_SMA_PERIOD", "HISTORICAL_WARMUP_ENABLED",
+        "HISTORICAL_WARMUP_TRADING_DAYS", "HISTORICAL_WARMUP_CONCURRENCY",
+        "HISTORICAL_WARMUP_BATCH_DELAY_SEC", "HISTORICAL_WARMUP_RECENT_CANDLES",
+        "MIN_TURNOVER_CRORE", "MIN_PRICE", "MAX_PRICE", "REIGNITION_VOLUME_MULTIPLE",
+        "REIGNITION_LOOKBACK_CANDLES", "MIN_DRYUP_CANDLES",
+        "ASHAPE_RED_CANDLE_PCT", "ASHAPE_VOLUME_MULTIPLE", "ASHAPE_MIN_CANDLE_COUNT",
+    ],
+    "Risk Controls": [
+        "RISK_PER_TRADE_PCT", "MAX_CONCURRENT_POSITIONS", "DAILY_LOSS_LIMIT_PCT",
+        "MIN_RISK_PER_SHARE_INR", "PEAK_MARGIN_SAFETY_BUFFER_PCT",
+    ],
+    "Regulatory Values": [
+        "STT_INTRADAY_SELL_PCT", "NSE_TXFEE_PER_LAKH_INR",
+        "SEBI_TXFEE_PER_CRORE_INR", "GST_ON_BROKERAGE_PCT", "STAMP_DUTY_BUY_PCT",
+    ],
+    "Broker API": [
+        "BROKERAGE_PER_ORDER_INR", "ORDER_MAX_RETRIES", "ORDER_RETRY_BASE_DELAY_SEC",
+        "WS_MAX_RECONNECT_ATTEMPTS", "WS_RECONNECT_DELAY_SEC",
+        "MAX_WS_INSTRUMENTS", "EXIT_SL_CANCEL_DELAY_MS",
+    ],
+    "Strategy Calibration": [
+        "DRYUP_MAX_MINUTES", "MAX_ENTRY_TIME", "ENTRY_BUFFER_PCT",
+        "ENTRY_WIDEN_AFTER_SECONDS", "ENTRY_ABANDON_PCT", "ORDER_FILL_TIMEOUT_SECONDS",
+    ],
+    "Market Structure": [
+        "MARKET_OPEN_TIME", "SQUARE_OFF_TIME", "MASS_SQUAREOFF_START_TIME",
+        "SESSION_END_TIME",
+    ],
+    "Server Operations": [
+        "API_HOST", "API_PORT", "DEBUG", "LOG_LEVEL",
+        "AUTO_START_ENGINE_WITH_BACKEND", "AUTO_STOP_ENGINE_WITH_BACKEND",
+        "ENGINE_RUNNER_CMD", "DASHBOARD_TICK_FLUSH_INTERVAL_MS",
+        "DASHBOARD_WS_TICK_INTERVAL_MS", "DASHBOARD_WS_HEARTBEAT_INTERVAL_MS",
+    ],
+}
+
+_SETTING_WARNINGS = {
+    "STT_INTRADAY_SELL_PCT": "review after Union Budget",
+    "NSE_TXFEE_PER_LAKH_INR": "review annually",
+    "SEBI_TXFEE_PER_CRORE_INR": "review annually",
+    "GST_ON_BROKERAGE_PCT": "review after Union Budget",
+    "STAMP_DUTY_BUY_PCT": "review after Union Budget",
+    "BROKERAGE_PER_ORDER_INR": "review if brokerage plan changes",
+}
+
+_SETTING_DESCRIPTIONS = {
+    "UNIVERSE_FILE": "Universe source file loaded before Kite instrument filtering.",
+    "VOLUME_SPIKE_MULTIPLE": "Minimum volume multiple versus 500-period SMA for scan hits.",
+    "HISTORICAL_WARMUP_ENABLED": "Use Kite historical minute candles to pre-warm SMA builders before scanning.",
+    "HISTORICAL_WARMUP_TRADING_DAYS": "Trading sessions requested from Kite for warmup history.",
+    "HISTORICAL_WARMUP_CONCURRENCY": "Parallel Kite historical requests during warmup.",
+    "HISTORICAL_WARMUP_BATCH_DELAY_SEC": "Pause between warmup request batches to avoid broker throttling.",
+    "HISTORICAL_WARMUP_RECENT_CANDLES": "Historical candles stored per symbol for dashboard charts.",
+    "MIN_TURNOVER_CRORE": "Minimum one-minute turnover in crore required for scan hits.",
+    "RISK_PER_TRADE_PCT": "Capital risked per accepted trade.",
+    "MAX_CONCURRENT_POSITIONS": "Maximum simultaneous live positions.",
+    "DAILY_LOSS_LIMIT_PCT": "Circuit breaker loss threshold as percent of capital.",
+    "DRYUP_MAX_MINUTES": "Maximum time a setup can remain in dry-up validation.",
+    "ORDER_FILL_TIMEOUT_SECONDS": "Entry order timeout before reverting to monitoring.",
+    "AUTO_START_ENGINE_WITH_BACKEND": "Start engine.runner automatically with FastAPI.",
+    "DASHBOARD_TICK_FLUSH_INTERVAL_MS": "Minimum interval for persisting live ticks to Redis.",
+    "DASHBOARD_WS_TICK_INTERVAL_MS": "WebSocket interval for live market tick batches.",
+    "DASHBOARD_WS_HEARTBEAT_INTERVAL_MS": "WebSocket interval for status, positions, and scanner snapshots.",
+}
+
+
+def _setting_kind(value: Any) -> str:
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    return "str"
+
+
+def _coerce_setting_value(current: Any, raw: Any) -> Any:
+    if isinstance(current, bool):
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(current, int) and not isinstance(current, bool):
+        return int(raw)
+    if isinstance(current, float):
+        return float(raw)
+    return str(raw)
+
+
+def _env_format(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _write_env_updates(updates: dict[str, Any]) -> None:
+    env_path = Path(".env")
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    remaining = dict(updates)
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            out.append(line)
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key in remaining:
+            out.append(f"{key}={_env_format(remaining.pop(key))}")
+        else:
+            out.append(line)
+    for key, value in remaining.items():
+        out.append(f"{key}={_env_format(value)}")
+    env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def _settings_payload(settings: Any) -> list[dict[str, Any]]:
+    groups: list[dict[str, Any]] = []
+    all_fields = type(settings).model_fields
+    for group_name, keys in _SETTING_GROUPS.items():
+        fields = []
+        for key in keys:
+            if key not in all_fields:
+                continue
+            value = getattr(settings, key)
+            secret = key in _SECRET_SETTING_KEYS
+            fields.append({
+                "key": key,
+                "value": "********" if secret else value,
+                "kind": _setting_kind(value),
+                "editable": not secret,
+                "description": _SETTING_DESCRIPTIONS.get(key, ""),
+                "warning": _SETTING_WARNINGS.get(key),
+            })
+        groups.append({"name": group_name, "fields": fields})
+    return groups
 
 
 @router.get("/settings")
 async def get_settings():
     from app.core.config import settings
     rs = _rs()
-    if rs is None:
-        return {"paper_trade": settings.PAPER_TRADE, "max_capital": None,
-                "daily_loss_limit_pct": settings.DAILY_LOSS_LIMIT_PCT}
+    max_capital = None
     try:
-        pt_override = await rs.get_paper_trade_override()
-        paper_trade = pt_override if pt_override is not None else settings.PAPER_TRADE
-        max_capital = await rs.get_max_capital_override()
-        return {
-            "paper_trade": paper_trade,
-            "max_capital": max_capital,
-            "daily_loss_limit_pct": settings.DAILY_LOSS_LIMIT_PCT,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        if rs is not None:
+            pt_override = await rs.get_paper_trade_override()
+            max_capital = await rs.get_max_capital_override()
+        else:
+            pt_override = None
+    except Exception:
+        pt_override = None
+
+    paper_trade = pt_override if pt_override is not None else settings.PAPER_TRADE
+    return {
+        "paper_trade": paper_trade,
+        "max_capital": max_capital,
+        "daily_loss_limit_pct": settings.DAILY_LOSS_LIMIT_PCT,
+        "groups": _settings_payload(settings),
+    }
 
 
 @router.post("/settings")
 async def update_settings(payload: SettingsUpdate):
+    from app.core.config import Settings, settings
+
     rs = _rs()
-    if rs is None:
-        raise HTTPException(status_code=503, detail="Engine not running")
     try:
-        await rs.set_paper_trade_override(payload.paper_trade)
-        await rs.set_max_capital_override(payload.max_capital)
-        await broadcast({"event": "settings_updated",
-                         "paper_trade": payload.paper_trade,
-                         "max_capital": payload.max_capital,
-                         "timestamp": datetime.now(IST_TZ).isoformat()})
-        return {"status": "success", "paper_trade": payload.paper_trade,
-                "max_capital": payload.max_capital}
+        updates: dict[str, Any] = {}
+        if payload.config:
+            all_fields = type(settings).model_fields
+            for key, raw_value in payload.config.items():
+                if key not in all_fields:
+                    raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
+                if key in _SECRET_SETTING_KEYS:
+                    raise HTTPException(status_code=400, detail=f"{key} is read-only")
+                updates[key] = _coerce_setting_value(getattr(settings, key), raw_value)
+
+            candidate = {
+                key: getattr(settings, key)
+                for key in type(settings).model_fields
+            }
+            candidate.update(updates)
+            Settings.model_validate(candidate)
+            _write_env_updates(updates)
+            for key, value in updates.items():
+                setattr(settings, key, value)
+
+        if rs is not None:
+            if payload.paper_trade is not None:
+                await rs.set_paper_trade_override(payload.paper_trade)
+                settings.PAPER_TRADE = payload.paper_trade
+            if "max_capital" in payload.model_fields_set:
+                await rs.set_max_capital_override(payload.max_capital)
+            if payload.reload_engine:
+                await rs.set_reinit_trigger()
+
+        await broadcast({
+            "event": "settings_updated",
+            "paper_trade": payload.paper_trade,
+            "max_capital": payload.max_capital,
+            "updated_keys": sorted(updates.keys()),
+            "timestamp": datetime.now(IST_TZ).isoformat(),
+        })
+        return {
+            "status": "success",
+            "paper_trade": payload.paper_trade,
+            "max_capital": payload.max_capital,
+            "updated_keys": sorted(updates.keys()),
+            "reload_engine": payload.reload_engine,
+        }
     except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise exc
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -506,6 +760,324 @@ async def get_market():
         }
     except Exception as exc:
         return {"ticks": [], "count": 0, "error": str(exc)}
+
+
+# ── /universe ───────────────────────────────────────────────────────────────────
+
+@router.get("/universe")
+async def get_universe():
+    """Universe file + live tick enrichment. Never fabricates prices."""
+    from app.core.config import settings
+    from engine.market.universe import load_universe
+
+    symbols = load_universe()
+    rs = _rs()
+    ticks_by_symbol: dict[str, Any] = {}
+    states: dict[str, Any] = {}
+    token_values: list[Any] = []
+    tick_size_values: list[Any] = []
+
+    if rs is not None:
+        try:
+            ticks_by_symbol = await rs.get_all_live_ticks()
+            states = await rs.get_all_strategy_states() or {}
+            if symbols:
+                token_values = await rs._r.mget([f"token:{s}" for s in symbols])
+                tick_size_values = await rs._r.mget([f"tick_size:{s}" for s in symbols])
+        except Exception as exc:
+            log.debug("universe_enrichment_failed", error=str(exc))
+
+    rows = []
+    for idx, symbol in enumerate(symbols):
+        tick = ticks_by_symbol.get(symbol) or {}
+        state_data = states.get(symbol) or {}
+        token_raw = token_values[idx] if idx < len(token_values) else None
+        tick_size_raw = tick_size_values[idx] if idx < len(tick_size_values) else None
+        rows.append({
+            "symbol": symbol,
+            "ltp": tick.get("ltp"),
+            "open": tick.get("open"),
+            "pct_chg": tick.get("pct_chg"),
+            "volume": tick.get("volume"),
+            "minute_volume": tick.get("minute_volume"),
+            "volume_sma_500": tick.get("volume_sma_500"),
+            "relative_volume": tick.get("relative_volume"),
+            "has_tick": bool(tick),
+            "state": state_data.get("state", "IDLE"),
+            "instrument_token": int(token_raw) if token_raw else None,
+            "tick_size": float(tick_size_raw) if tick_size_raw else None,
+        })
+
+    return {
+        "symbols": rows,
+        "count": len(rows),
+        "tick_count": len(ticks_by_symbol),
+        "source_file": settings.UNIVERSE_FILE,
+        "source": "universe_file_with_live_ticks" if ticks_by_symbol else "universe_file",
+    }
+
+
+# ── /pipeline ───────────────────────────────────────────────────────────────────
+
+@router.get("/pipeline")
+async def get_pipeline():
+    """Four-phase live strategy pipeline assembled from DB + Redis state."""
+    rs = _rs()
+    scanner = await get_scanner()
+    positions = await get_positions()
+    trades = await get_trades()
+    orders = await get_orders()
+    states = await rs.get_all_strategy_states() if rs is not None else {}
+
+    latest_order_by_symbol: dict[str, dict[str, Any]] = {}
+    for order in orders.get("orders", []):
+        symbol = order.get("symbol")
+        if symbol and symbol not in latest_order_by_symbol:
+            latest_order_by_symbol[symbol] = order
+
+    columns: dict[str, list[dict[str, Any]]] = {
+        "scan_hit": [],
+        "monitoring": [],
+        "entry": [],
+        "managing": [],
+    }
+    seen: set[str] = set()
+
+    for hit in scanner.get("hits", []):
+        symbol = hit.get("symbol")
+        if not symbol:
+            continue
+        phase = _state_phase(hit.get("state"))
+        if phase in {"CLOSED", "ABANDONED"}:
+            continue
+        card = {
+            "symbol": symbol,
+            "state": hit.get("state", "SCAN_HIT"),
+            "signal_time": hit.get("signal_time"),
+            "spike_multiple": hit.get("spike_multiple"),
+            "volume": hit.get("volume"),
+            "turnover_cr": hit.get("turnover_cr"),
+            "close": hit.get("close"),
+            "impact_high": hit.get("impact_high"),
+            "impact_low": hit.get("impact_low"),
+            "abandonment_reason": hit.get("abandonment_reason"),
+        }
+        state_data = states.get(symbol) or {}
+        if state_data:
+            card["state"] = state_data.get("state", card["state"])
+            card["consolidation"] = state_data.get("consolidation")
+            card["position"] = state_data.get("position")
+            phase = _state_phase(card["state"])
+        if symbol in latest_order_by_symbol:
+            card["order"] = latest_order_by_symbol[symbol]
+
+        target_column = {
+            "SCAN_HIT": "scan_hit",
+            "MONITORING": "monitoring",
+            "ENTRY": "entry",
+            "MANAGING": "managing",
+        }.get(phase)
+        if target_column:
+            columns[target_column].append(card)
+            seen.add(symbol)
+
+    for symbol, state_data in (states or {}).items():
+        if symbol in seen:
+            continue
+        phase = _state_phase(state_data.get("state"))
+        target_column = {
+            "SCAN_HIT": "scan_hit",
+            "MONITORING": "monitoring",
+            "ENTRY": "entry",
+            "MANAGING": "managing",
+        }.get(phase)
+        if not target_column:
+            continue
+        card = {
+            "symbol": symbol,
+            "state": state_data.get("state"),
+            "signal_time": state_data.get("impact_candle_time"),
+            "spike_multiple": state_data.get("spike_multiple"),
+            "volume": (state_data.get("impact_candle") or {}).get("volume"),
+            "turnover_cr": (state_data.get("impact_candle") or {}).get("turnover_cr"),
+            "close": state_data.get("impact_close"),
+            "consolidation": state_data.get("consolidation"),
+            "position": state_data.get("position"),
+        }
+        if symbol in latest_order_by_symbol:
+            card["order"] = latest_order_by_symbol[symbol]
+        columns[target_column].append(card)
+
+    position_by_symbol = {p.get("symbol"): p for p in positions.get("positions", [])}
+    for card in columns["managing"]:
+        if card["symbol"] in position_by_symbol:
+            card["position"] = position_by_symbol[card["symbol"]]
+
+    counts = {name: len(items) for name, items in columns.items()}
+    return {
+        "columns": columns,
+        "counts": counts,
+        "summary": {
+            "signals": scanner.get("count", 0),
+            "monitored": sum(1 for h in scanner.get("hits", []) if h.get("progressed_to_monitor")),
+            "trades_entered": trades.get("count", 0) + positions.get("count", 0),
+            "wins": trades.get("wins", 0),
+            "losses": trades.get("losses", 0),
+            "net_pnl": trades.get("total_net_pnl", 0.0),
+        },
+    }
+
+
+# ── /stock/{symbol} ─────────────────────────────────────────────────────────────
+
+@router.get("/stock/{symbol}")
+async def get_stock_detail(symbol: str):
+    """Real per-symbol audit detail used by the slide-in drawer and charts."""
+    from sqlalchemy import text
+
+    sym = symbol.upper().strip()
+    if not sym.replace("-", "").replace("&", "").replace(".", "").isalnum():
+        raise HTTPException(status_code=400, detail="Invalid symbol")
+
+    rs = _rs()
+    state = await rs.get_strategy_state(sym) if rs is not None else None
+    position = await rs.get_position(sym) if rs is not None else None
+    tick = None
+    candles: list[dict[str, Any]] = []
+    if rs is not None:
+        try:
+            all_ticks = await rs.get_all_live_ticks()
+            tick = all_ticks.get(sym)
+            candles = await rs.get_recent_candles(sym, limit=180)
+        except Exception:
+            pass
+
+    signals: list[dict[str, Any]] = []
+    trades: list[dict[str, Any]] = []
+    orders: list[dict[str, Any]] = []
+    try:
+        engine = _get_db_engine()
+        async with engine.connect() as conn:
+            sig_result = await conn.execute(text(
+                "SELECT symbol, signal_time, impact_candle_open, impact_candle_high, "
+                "impact_candle_low, impact_candle_close, impact_candle_volume, "
+                "impact_candle_turnover, volume_sma_500, volume_spike_multiple, "
+                "progressed_to_monitor, progressed_to_action, resulted_in_trade, "
+                "abandonment_reason, created_at "
+                "FROM signals WHERE symbol = :symbol "
+                "ORDER BY signal_time DESC LIMIT 10"
+            ), {"symbol": sym})
+            signals = [dict(r._mapping) for r in sig_result]
+
+            trade_result = await conn.execute(text(
+                "SELECT symbol, entry_order_id, entry_time, entry_price, quantity, "
+                "initial_stop_loss, current_stop_loss, risk_per_share, risk_amount, "
+                "target_1r2, target_1r4, sl_order_id, exit_order_id, exit_time, "
+                "exit_price, gross_pnl, brokerage, stt, other_charges, net_pnl, "
+                "status, cost_trailed, profit_locked, notes "
+                "FROM trades WHERE symbol = :symbol "
+                "ORDER BY entry_time DESC LIMIT 10"
+            ), {"symbol": sym})
+            trades = [dict(r._mapping) for r in trade_result]
+
+            order_result = await conn.execute(text(
+                "SELECT order_id, trade_id, symbol, event_type, status, price, "
+                "trigger_price, quantity, filled_quantity, average_price, "
+                "status_message, event_time "
+                "FROM order_events WHERE symbol = :symbol "
+                "ORDER BY event_time DESC LIMIT 50"
+            ), {"symbol": sym})
+            orders = [dict(r._mapping) for r in order_result]
+    except Exception as exc:
+        log.debug("stock_detail_db_query_failed", symbol=sym, error=str(exc))
+
+    events: list[dict[str, Any]] = []
+    if signals:
+        sig = signals[0]
+        events.append({
+            "time": sig.get("signal_time"),
+            "type": "SCAN HIT",
+            "message": (
+                f"{round(sig.get('volume_spike_multiple') or 0, 1)}x volume spike, "
+                f"₹{round((sig.get('impact_candle_turnover') or 0) / 1e7, 2)} Cr turnover"
+            ),
+        })
+        if sig.get("progressed_to_monitor"):
+            events.append({
+                "time": sig.get("signal_time"),
+                "type": "MONITORING",
+                "message": "Dry-up validation started",
+            })
+        if sig.get("abandonment_reason"):
+            events.append({
+                "time": sig.get("created_at"),
+                "type": "ABANDONED",
+                "message": str(sig.get("abandonment_reason")),
+            })
+
+    for order in orders:
+        events.append({
+            "time": order.get("event_time"),
+            "type": f"ORDER {order.get('event_type') or ''}".strip(),
+            "message": (
+                f"{order.get('order_id')} {order.get('status') or ''} "
+                f"qty {order.get('quantity') or order.get('filled_quantity') or '-'} "
+                f"@ ₹{order.get('average_price') or order.get('price') or '-'}"
+            ),
+        })
+
+    for trade in trades:
+        events.append({
+            "time": trade.get("entry_time"),
+            "type": "TRADE ENTRY",
+            "message": (
+                f"{trade.get('quantity')} shares at ₹{trade.get('entry_price')} "
+                f"risk ₹{trade.get('risk_amount')}"
+            ),
+        })
+        if trade.get("exit_time"):
+            events.append({
+                "time": trade.get("exit_time"),
+                "type": "TRADE CLOSED",
+                "message": f"{trade.get('status')} net {trade.get('net_pnl')}",
+            })
+
+    events.sort(key=lambda e: str(e.get("time") or ""))
+
+    return {
+        "symbol": sym,
+        "company_name": sym,
+        "state": state,
+        "position": position,
+        "tick": tick,
+        "candles": candles,
+        "signals": signals,
+        "trades": trades,
+        "orders": orders,
+        "events": events,
+    }
+
+
+# ── /journal ───────────────────────────────────────────────────────────────────
+
+@router.get("/journal")
+async def get_journal():
+    from sqlalchemy import text
+
+    try:
+        engine = _get_db_engine()
+        async with engine.connect() as conn:
+            result = await conn.execute(text(
+                "SELECT trade_date, total_capital, signals_fired, setups_abandoned, "
+                "trades_taken, winning_trades, losing_trades, breakeven_trades, "
+                "gross_pnl, total_charges, net_pnl, max_drawdown, notes "
+                "FROM daily_pnl ORDER BY trade_date DESC LIMIT 30"
+            ))
+            rows = [dict(r._mapping) for r in result]
+        return {"days": rows, "count": len(rows)}
+    except Exception as exc:
+        log.debug("journal_query_failed", error=str(exc))
+        return {"days": [], "count": 0}
 
 
 # ── Radar helper ────────────────────────────────────────────────────────────────
@@ -628,13 +1200,16 @@ async def websocket_endpoint(ws: WebSocket):
             r = get_redis()
             pubsub = r.pubsub()
             await pubsub.subscribe(
-                "pub:signals", "pub:state_changes", "pub:orders", "pub:pnl"
+                "pub:signals", "pub:state_changes", "pub:orders", "pub:pnl",
+                "pub:candles", "pub:monitoring_ticks"
             )
             evt_map = {
                 "pub:signals":       "scan_hit",
                 "pub:state_changes": "state_change",
                 "pub:orders":        "order_event",
                 "pub:pnl":           "pnl_update",
+                "pub:candles":       "candle_close",
+                "pub:monitoring_ticks": "monitoring_tick",
             }
             async for msg in pubsub.listen():
                 ch = msg.get("channel", b"")

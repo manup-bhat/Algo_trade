@@ -146,7 +146,7 @@ docker compose up -d redis
 
 You can run in either mode.
 
-Mode A: single command (backend auto-starts engine)
+Mode A: single command (backend auto-starts engine, default)
 
 Set in `.env`:
 
@@ -164,7 +164,7 @@ cd d:\volume_algo_trading\trading_bot
 
 Notes:
 - Auto-start is skipped if Redis is unreachable.
-- Auto-start is skipped if engine appears already active in Redis state.
+- Auto-start is skipped if a live engine heartbeat is present, or if the Redis status was refreshed very recently.
 - Keep `AUTO_START_ENGINE_WITH_BACKEND=false` if you prefer explicit/manual engine control.
 
 Mode B: explicit two-terminal run (existing behavior)

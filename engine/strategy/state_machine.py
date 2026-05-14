@@ -1164,6 +1164,7 @@ class SymbolStateMachine:
                     "close": self.impact_candle.close,
                     "high": self.impact_candle.high,
                     "low": self.impact_candle.low,
+                    "volume": self.impact_candle.volume,
                     "spike_multiple": round(self.impact_candle.spike_multiple, 1),
                     "turnover_cr": round(self.impact_candle.turnover / 1e7, 2),
                 }

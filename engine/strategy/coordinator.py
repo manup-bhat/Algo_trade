@@ -61,6 +61,7 @@ class Coordinator:
         self._candle_count: int = 0
         self._signal_count: int = 0
         self._accept_new_entries: bool = True
+        self._monitoring_tick_sent_at: dict[str, datetime.datetime] = {}
 
         # Phase 4: wired via inject_dependencies()
         self._order_service: "OrderService | None" = None
@@ -179,18 +180,110 @@ class Coordinator:
 
             # Per-tick SM routing (MANAGING state only)
             sm = self.active_state_machines.get(symbol)
+            if sm is not None and sm.state in (
+                StrategyState.SCAN_HIT,
+                StrategyState.MONITORING,
+                StrategyState.ACTION_PENDING,
+            ):
+                await self._maybe_publish_monitoring_tick(
+                    symbol, ltp, day_open, cum_vol, builder, sm, exch_ts
+                )
             if sm is not None and sm.state == StrategyState.MANAGING:
                 await sm.on_tick(ltp, exch_ts)
 
             # Throttled LTP update: persist to Redis for dashboard feed
             if should_flush_ltp and ltp > 0:
                 try:
-                    await self._redis.set_live_tick(symbol, ltp, day_open, cum_vol)
+                    await self._redis.set_live_tick(
+                        symbol,
+                        ltp,
+                        day_open,
+                        cum_vol,
+                        minute_volume=builder.current_volume,
+                        volume_sma_500=builder.volume_sma,
+                    )
                 except Exception:
                     pass
 
         if should_flush_ltp:
             self._ltp_flush_counter = 0
+
+    async def _maybe_publish_monitoring_tick(
+        self,
+        symbol: str,
+        ltp: float,
+        day_open: float,
+        cumulative_volume: int,
+        builder: CandleBuilder,
+        sm: SymbolStateMachine,
+        exchange_ts: datetime.datetime,
+    ) -> None:
+        """Push sub-second live LTP/volume only for symbols the trader is watching."""
+        last = self._monitoring_tick_sent_at.get(symbol)
+        if last and (exchange_ts - last).total_seconds() < 1:
+            return
+        self._monitoring_tick_sent_at[symbol] = exchange_ts
+
+        con = sm.consolidation
+        volume_sma = builder.volume_sma
+        payload: dict[str, Any] = {
+            "symbol": symbol,
+            "ltp": ltp,
+            "open": day_open,
+            "pct_chg": round(((ltp - day_open) / day_open * 100), 2) if day_open > 0 else 0.0,
+            "cumulative_volume": cumulative_volume,
+            "volume_delta_1min": builder.current_volume,
+            "volume_sma_500": volume_sma,
+            "relative_volume": round(builder.current_volume / volume_sma, 2) if volume_sma else None,
+            "state": sm.state.value,
+            "timestamp": exchange_ts.isoformat(),
+        }
+        if con is not None:
+            payload.update({
+                "breakout_level": con.breakout_trigger_price,
+                "swing_low": con.swing_low,
+                "candle_count": con.candle_count,
+                "volume_readings": con.volume_readings,
+            })
+        try:
+            await self._redis.publish_monitoring_tick(payload)
+        except Exception:
+            pass
+
+    async def _publish_candle_close(
+        self,
+        symbol: str,
+        candle: Candle,
+        builder: CandleBuilder | None,
+        sm: SymbolStateMachine | None = None,
+    ) -> None:
+        """Publish a real completed candle for dashboard cells/charts."""
+        volume_sma = builder.volume_sma if builder else None
+        payload: dict[str, Any] = {
+            "symbol": symbol,
+            "timestamp": candle.timestamp.isoformat(),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+            "turnover": candle.turnover,
+            "volume_sma_500": volume_sma,
+            "spike_multiple": round(candle.volume / volume_sma, 2) if volume_sma else None,
+            "relative_volume": round(candle.volume / volume_sma, 2) if volume_sma else None,
+            "state": sm.state.value if sm else "IDLE",
+        }
+        if sm and sm.consolidation:
+            payload.update({
+                "breakout_level": sm.consolidation.breakout_trigger_price,
+                "swing_low": sm.consolidation.swing_low,
+                "candle_count": sm.consolidation.candle_count,
+                "volume_readings": sm.consolidation.volume_readings,
+            })
+        try:
+            await self._redis.publish_candle_close(payload)
+        except Exception:
+            pass
 
     async def _on_candle_complete(self, symbol: str, candle: Candle) -> None:
         """
@@ -203,16 +296,28 @@ class Coordinator:
         except Exception:
             pass
 
+        builder = self.candle_builders.get(symbol)
+        try:
+            await self._redis.append_recent_candle(
+                symbol,
+                candle,
+                volume_sma_500=builder.volume_sma if builder else None,
+            )
+        except Exception:
+            pass
+
         if symbol not in self.active_state_machines:
             # IDLE path: run Phase 1 scanner
             if not self._accept_new_entries:
+                await self._publish_candle_close(symbol, candle, builder)
                 return
 
             if not mkt_calendar.is_market_open():
+                await self._publish_candle_close(symbol, candle, builder)
                 return
 
-            builder = self.candle_builders.get(symbol)
             if builder is None:
+                await self._publish_candle_close(symbol, candle, builder)
                 return
 
             instrument_token = self.symbol_to_token.get(symbol, 0)
@@ -232,6 +337,9 @@ class Coordinator:
                         )
                     except Exception:
                         pass
+                await self._publish_candle_close(symbol, candle, builder, sm)
+            else:
+                await self._publish_candle_close(symbol, candle, builder)
         else:
             # Non-IDLE path: route to existing SM
             sm = self.active_state_machines[symbol]
@@ -243,6 +351,7 @@ class Coordinator:
                 candle.volume,
                 candle.timestamp,
             )
+            await self._publish_candle_close(symbol, candle, builder, sm)
 
             # Cleanup CLOSED SMs
             if sm.state == StrategyState.CLOSED:

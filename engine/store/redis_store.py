@@ -32,12 +32,15 @@ _ENGINE_SCANNER_WARMING = "engine:scanner:warming_count"
 _ENGINE_CONFIG_PAPER_TRADE = "engine:config:paper_trade"
 _ENGINE_CONFIG_MAX_CAPITAL = "engine:config:max_capital"
 _ENGINE_REINIT_TRIGGER    = "engine:reinit_trigger"
+_ENGINE_RUNNER_HEARTBEAT = "engine:runner:heartbeat"
 _MARKET_EOD_SNAPSHOT = "market:eod_snapshot"
 
 _PUB_SIGNALS = "pub:signals"
 _PUB_ORDERS = "pub:orders"
 _PUB_STATE_CHANGES = "pub:state_changes"
 _PUB_PNL = "pub:pnl"
+_PUB_CANDLES = "pub:candles"
+_PUB_MONITORING_TICKS = "pub:monitoring_ticks"
 
 _TTL_TOKEN = 86400       # 24 hours
 _TTL_VOLUME_SMA = 172800 # 48 hours
@@ -46,6 +49,9 @@ _TTL_LOCK = 10           # 10 seconds (auto-expires on crash)
 _TTL_EOD = 90000         # ~25 hours (survives overnight)
 _TTL_LIVE_TICK = 54000   # 15 hours
 _TTL_EOD_MARKET_SNAPSHOT = 54000  # 15 hours
+_TTL_RUNNER_HEARTBEAT = 20
+_TTL_RECENT_CANDLES = 54000
+_MAX_RECENT_CANDLES = 420
 
 
 class RedisStore:
@@ -124,6 +130,31 @@ class RedisStore:
         """Returns True and deletes the key if a reinit was requested."""
         val = await self._r.getdel(_ENGINE_REINIT_TRIGGER)
         return val is not None
+
+    async def set_runner_heartbeat(self, status: str, pid: int | None = None) -> None:
+        """Short TTL heartbeat proving an engine.runner process is currently alive."""
+        payload = {
+            "status": status,
+            "pid": pid,
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+        }
+        await self._r.set(
+            _ENGINE_RUNNER_HEARTBEAT,
+            json.dumps(payload),
+            ex=_TTL_RUNNER_HEARTBEAT,
+        )
+
+    async def get_runner_heartbeat(self) -> dict[str, Any] | None:
+        raw = await self._r.get(_ENGINE_RUNNER_HEARTBEAT)
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {"raw": raw}
+
+    async def clear_runner_heartbeat(self) -> None:
+        await self._r.delete(_ENGINE_RUNNER_HEARTBEAT)
 
     # ── Capital & P&L ──────────────────────────────────────────────────────
 
@@ -248,12 +279,31 @@ class RedisStore:
         val = await self._r.get(f"ltp:{symbol}")
         return float(val) if val else None
 
-    async def set_live_tick(self, symbol: str, ltp: float, day_open: float, volume: int) -> None:
+    async def set_live_tick(
+        self,
+        symbol: str,
+        ltp: float,
+        day_open: float,
+        volume: int,
+        minute_volume: int | None = None,
+        volume_sma_500: float | None = None,
+    ) -> None:
         """Store rich live tick data for dashboard market feed. TTL = 15 hours."""
         pct_chg = round(((ltp - day_open) / day_open * 100), 2) if day_open > 0 else 0.0
+        payload: dict[str, Any] = {
+            "ltp": ltp,
+            "open": day_open,
+            "pct_chg": pct_chg,
+            "volume": volume,
+        }
+        if minute_volume is not None:
+            payload["minute_volume"] = minute_volume
+        if volume_sma_500:
+            payload["volume_sma_500"] = volume_sma_500
+            payload["relative_volume"] = round((minute_volume or 0) / volume_sma_500, 2)
         await self._r.set(
             f"livetick:{symbol}",
-            json.dumps({"ltp": ltp, "open": day_open, "pct_chg": pct_chg, "volume": volume}),
+            json.dumps(payload),
             ex=_TTL_LIVE_TICK,
         )
         # Also keep legacy ltp key for backward compat
@@ -312,6 +362,39 @@ class RedisStore:
         except Exception:
             return []
 
+    async def append_recent_candle(
+        self,
+        symbol: str,
+        candle: Any,
+        volume_sma_500: float | None = None,
+    ) -> None:
+        """Keep a bounded per-symbol list of real completed 1-minute candles."""
+        payload = {
+            "symbol": symbol,
+            "timestamp": candle.timestamp.isoformat(),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+            "turnover": candle.turnover,
+            "volume_sma_500": volume_sma_500,
+        }
+        key = f"candles:{symbol}"
+        await self._r.rpush(key, json.dumps(payload))
+        await self._r.ltrim(key, -_MAX_RECENT_CANDLES, -1)
+        await self._r.expire(key, _TTL_RECENT_CANDLES)
+
+    async def get_recent_candles(self, symbol: str, limit: int = 120) -> list[dict[str, Any]]:
+        raw_items = await self._r.lrange(f"candles:{symbol}", -limit, -1)
+        candles: list[dict[str, Any]] = []
+        for raw in raw_items:
+            try:
+                candles.append(json.loads(raw))
+            except Exception:
+                continue
+        return candles
+
     async def get_all_live_ticks(self) -> dict[str, dict[str, Any]]:
         """Return ALL subscribed symbols' live tick data keyed by symbol. Used for 1s WS tick batch."""
         keys = await self._r.keys("livetick:*")
@@ -369,6 +452,12 @@ class RedisStore:
 
     async def publish_pnl(self, data: dict[str, Any]) -> None:
         await self._r.publish(_PUB_PNL, json.dumps(data))
+
+    async def publish_candle_close(self, data: dict[str, Any]) -> None:
+        await self._r.publish(_PUB_CANDLES, json.dumps(data))
+
+    async def publish_monitoring_tick(self, data: dict[str, Any]) -> None:
+        await self._r.publish(_PUB_MONITORING_TICKS, json.dumps(data))
 
     # ── Health Check ──────────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ sufficient for our use case (at most 10 concurrent REST calls).
 from __future__ import annotations
 
 import asyncio
+import datetime
 from typing import Any
 
 import structlog
@@ -55,6 +56,33 @@ class AsyncKiteClient:
     async def instruments(self, exchange: str = "NSE") -> list[dict]:
         return await self._loop().run_in_executor(
             None, lambda: self._kite.instruments(exchange)
+        )
+
+    async def historical_data(
+        self,
+        instrument_token: int,
+        from_date: datetime.datetime | str,
+        to_date: datetime.datetime | str,
+        interval: str = "minute",
+        continuous: bool = False,
+        oi: bool = False,
+    ) -> list[dict]:
+        """
+        Retrieve historical candles through Kite's real historical API.
+
+        The pykiteconnect client normalizes the REST array response into dicts
+        with date/open/high/low/close/volume keys.
+        """
+        return await self._loop().run_in_executor(
+            None,
+            lambda: self._kite.historical_data(
+                instrument_token,
+                from_date,
+                to_date,
+                interval,
+                continuous=continuous,
+                oi=oi,
+            ),
         )
 
     async def place_order(self, **params: Any) -> str:
