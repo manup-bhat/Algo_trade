@@ -226,16 +226,29 @@ class OrderTracker:
             await sm.on_sl_triggered(order_id, avg_price)
 
         elif status == "REJECTED":
-            # Critical: SL was rejected — position is unprotected
+            # Critical: SL was rejected — position is UNPROTECTED.
+            # DO NOT wait for the 5-minute reconciliation loop — fire immediate market sell.
             status_msg = message.get("status_message", "")
             log.critical(
-                "sl_rejected_position_unprotected",
+                "sl_rejected_position_unprotected_emergency_close",
                 order_id=order_id,
                 symbol=symbol,
                 message=status_msg,
             )
-            # Emergency close handled by reconciliation loop (spec §12.3)
-            # SM's on_sl_triggered won't be called — reconciliation will catch this
+            sm = coordinator.active_state_machines.get(symbol)
+            if sm is not None and sm.position is not None and coordinator._order_service is not None:
+                retry_id = await coordinator._order_service.place_exit_market(
+                    symbol=symbol,
+                    quantity=sm.position.quantity,
+                    reason="sl_rejected_emergency",
+                )
+                if retry_id:
+                    self.register_exit(retry_id, symbol, "sl_rejected_emergency")
+                    log.info(
+                        "sl_rejection_emergency_exit_placed",
+                        symbol=symbol,
+                        exit_order_id=retry_id,
+                    )
 
     async def _handle_exit_postback(
         self,

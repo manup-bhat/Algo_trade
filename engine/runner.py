@@ -31,7 +31,11 @@ import pytz
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Guard against repeated sys.path insertion on re-import (e.g. test runners)
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 
 from app.core.config import settings
 from app.core.logging import configure_logging
@@ -42,6 +46,7 @@ from engine.kite.client import AsyncKiteClient
 from engine.kite.instruments import InstrumentCache, load_instruments_async
 from engine.kite.ticker import AsyncKiteTicker, MODE_QUOTE
 from engine.market.calendar import is_market_open, now_ist
+from engine.market.historical_warmup import warmup_from_historical
 from engine.market.universe import load_universe
 from engine.orders.fill_timeout import fill_timeout_manager
 from engine.orders.order_service import order_service
@@ -64,15 +69,25 @@ _redis_store: RedisStore | None = None
 _db_writer: DbWriter | None = None
 _universe_tokens: list[int] = []
 _running = True
-_scanning_active = False
+_poll_config_task: asyncio.Task | None = None  # stored so it can be cancelled on shutdown
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _assert_ready() -> tuple[Coordinator, RedisStore, DbWriter]:
-    assert _coordinator is not None, "coordinator not initialized"
-    assert _redis_store is not None, "redis_store not initialized"
-    assert _db_writer is not None, "db_writer not initialized"
+    """
+    Return the three required singletons or raise RuntimeError.
+
+    Note: assert statements are stripped by Python -O (optimised mode). Using
+    an explicit RuntimeError guarantees the guard is never silently skipped in
+    production builds.
+    """
+    if _coordinator is None:
+        raise RuntimeError("coordinator not initialized")
+    if _redis_store is None:
+        raise RuntimeError("redis_store not initialized")
+    if _db_writer is None:
+        raise RuntimeError("db_writer not initialized")
     return _coordinator, _redis_store, _db_writer
 
 
@@ -187,43 +202,117 @@ async def job_pre_market_setup() -> None:
         _universe_tokens = [info.instrument_token for info in universe.values()]
         log.info("instruments_loaded", symbol_count=len(universe))
 
+        # ── Persist compact EQ instrument list to Redis for watchlist search ────
+        # The FastAPI process (dashboard_router.py) is a DIFFERENT process from
+        # the engine runner and cannot access this in-process InstrumentCache.
+        # We store a compact JSON list keyed instruments:nse:eq (TTL 8h) so
+        # the search endpoint can serve autocomplete without a Kite API call.
+        try:
+            eq_instruments = [
+                {
+                    "symbol":           instr["tradingsymbol"],
+                    "name":             instr.get("name", ""),
+                    "exchange":         instr.get("exchange", "NSE"),
+                    "instrument_token": instr["instrument_token"],
+                    "instrument_type":  instr.get("instrument_type", ""),
+                    "tick_size":        instr.get("tick_size", 0.05),
+                    "last_price":       instr.get("last_price", 0.0),
+                }
+                for instr in raw_instruments
+                if instr.get("instrument_type") == "EQ"
+                   and instr.get("exchange") == "NSE"
+                   and instr.get("segment", "") != "INDICES"
+            ]
+            eq_json = __import__("json").dumps(eq_instruments, separators=(",", ":"))
+            await redis_store._r.set(
+                "instruments:nse:eq",
+                eq_json,
+                ex=8 * 3600,  # 8 hour TTL — re-loaded on next pre-market setup
+            )
+            log.info("instruments_saved_to_redis",
+                     eq_count=len(eq_instruments),
+                     key="instruments:nse:eq")
+        except Exception as _exc:
+            log.warning("instruments_redis_save_failed", error=str(_exc))
+
+        # Seed coordinator with the loaded universe token set so that
+        # Nifty/VIX filtering in process_ticks() works from first tick.
+        # (No coordinator method needed; gate defaults to OPEN until Nifty ticks arrive.)
+
     except Exception as exc:
         log.error("instruments_load_failed", error=str(exc), exc_info=True)
         return
 
-    # ── 5. Load SMA history ──────────────────────────────────────────
+    # ── 5. Load SMA history from Redis+disk (fills from persisted data first) ──
+    #    MUST come before historical warmup so warmup only fills remaining gaps.
+    #    Previously this was step 6 (AFTER warmup) which caused warmup to be
+    #    overwritten by stale Redis data — now fixed.
     await coordinator.load_sma_histories()
 
-    # -- 6. Subscribe WebSocket --
-    loop = asyncio.get_event_loop()
+    # ── 6. Historical warmup (fetch Kite 1-min candles → fill gaps + candles) ─
+    #    Skips symbols already warmed by step 5. Stores recent candles to Redis
+    #    for the dashboard chart drawer.
+    if settings.HISTORICAL_WARMUP_ENABLED and _kite_client is not None:
+        try:
+            await warmup_from_historical(coordinator, _kite_client, redis_store=_redis_store)
+        except Exception as exc:
+            log.error("historical_warmup_failed", error=str(exc), exc_info=True)
+            # Non-fatal: engine continues; builders without warmup warm up live.
+
+    # -- 7. Subscribe WebSocket --
+    # _ticker is declared global at the function top (line: global _kite_client, _ticker, _universe_tokens).
+    # Do NOT repeat `global _ticker` inside the if-block — Python 3.12+ raises
+    # SyntaxWarning for nested global declarations and it can cause the function
+    # to treat _ticker as a local, breaking the assignment entirely.
+    #
+    # Full subscription token list:
+    #   - _universe_tokens: universe stocks in QUOTE mode (open/high/low/close/volume)
+    #   - NIFTY_INSTRUMENT_TOKEN (256265): Nifty 50 index in LTP mode — for EMA gate
+    #   - VIX_INSTRUMENT_TOKEN  (264969): India VIX  in LTP mode — for VIX turnover filter
+    nifty_token = settings.NIFTY_INSTRUMENT_TOKEN
+    vix_token   = settings.VIX_INSTRUMENT_TOKEN
+    index_tokens = [nifty_token, vix_token]
+    all_tokens = _universe_tokens + index_tokens
+
     if _ticker is None:
         _ticker_new = AsyncKiteTicker(
             api_key=settings.KITE_API_KEY,
             access_token=access_token,
-            loop=loop,
+            loop=asyncio.get_running_loop(),
             coordinator=coordinator,
         )
-        # Store tokens before start() so _on_connect subscribes once WS is open
-        if _universe_tokens:
-            _ticker_new._subscribed_tokens = _universe_tokens
+        # Store full token list before start() so _on_connect subscribes once WS is open
+        if all_tokens:
+            _ticker_new._subscribed_tokens = all_tokens
         _ticker_new.start()
-        globals()["_ticker"] = _ticker_new
-        log.info("ws_connecting_tokens_queued", token_count=len(_universe_tokens))
+        _ticker = _ticker_new  # module-level assignment; global declared at function top
+        log.info(
+            "ws_connecting_tokens_queued",
+            universe_count=len(_universe_tokens),
+            index_tokens=index_tokens,
+        )
     else:
         # Already running (reinit after re-login) - update tokens
-        if _universe_tokens:
-            globals()["_ticker"]._subscribed_tokens = _universe_tokens
+        if all_tokens:
+            _ticker._subscribed_tokens = all_tokens
             try:
-                globals()["_ticker"].subscribe(_universe_tokens)
-                globals()["_ticker"].set_mode(MODE_QUOTE, _universe_tokens)
-                log.info("ws_resubscribed", token_count=len(_universe_tokens))
+                _ticker.subscribe(all_tokens)
+                _ticker.set_mode(MODE_QUOTE, _universe_tokens)
+                # Index tokens: LTP mode is enough (no OHLCV needed)
+                from engine.kite.ticker import MODE_LTP
+                _ticker.set_mode(MODE_LTP, index_tokens)
+                log.info(
+                    "ws_resubscribed",
+                    universe_count=len(_universe_tokens),
+                    index_tokens=index_tokens,
+                )
             except AttributeError:
                 log.info("ws_subscribe_deferred_until_connect")
 
-    # ── 7. Orphan check ──────────────────────────────────────────────
+    # ── 8. Orphan check ──────────────────────────────────────────────
     await coordinator.orphan_check(_kite_client)
 
-    # ── 8. Set status ────────────────────────────────────────────────
+    # ── 9. Set status ────────────────────────────────────────────────
     await redis_store.set_engine_status({
         "status": "PRE_MARKET_READY",
         "timestamp": now_ist().isoformat(),
@@ -235,13 +324,10 @@ async def job_pre_market_setup() -> None:
 
 async def job_market_open() -> None:
     """09:15 AM IST — Reset all candle builders, activate scanner."""
-    global _scanning_active
-
     coordinator, redis_store, _ = _assert_ready()
 
     await coordinator.on_market_open()
     coordinator.set_new_entries_enabled(True)
-    _scanning_active = True
 
     await redis_store.set_engine_status({
         "status": "SCANNING",
@@ -309,18 +395,66 @@ async def job_session_end() -> None:
             daily_pnl = await redis_store.get_daily_pnl()
             capital = await redis_store.get_capital()
             stats = coordinator.get_stats()
+
+            # Compute actual trade counts from the DB instead of hardcoding zeros.
+            # Import here to avoid a circular dependency at module level.
+            import datetime as _dt
+            from sqlalchemy import func, select
+            from app.models.db.trade import Trade, TradeStatus
+            from app.store.database import get_db
+
+            today = now_ist().date()
+            win_statuses = {
+                TradeStatus.CLOSED_TARGET.value,
+                TradeStatus.CLOSED_TRAILSTOP.value,
+            }
+            loss_statuses = {
+                TradeStatus.CLOSED_STOPLOSS.value,
+                TradeStatus.CLOSED_TIME.value,
+                TradeStatus.CLOSED_MANUAL.value,
+                TradeStatus.CLOSED_BROKER.value,
+                TradeStatus.CLOSED_ERROR.value,
+            }
+
+            trades_taken = 0
+            winning_trades = 0
+            losing_trades = 0
+            total_charges = 0.0
+
+            try:
+                async with get_db() as _session:
+                    result = await _session.execute(
+                        select(Trade).where(
+                            Trade.entry_time >= _dt.datetime.combine(today, _dt.time.min),
+                            Trade.entry_time <  _dt.datetime.combine(today, _dt.time.max),
+                            Trade.status != TradeStatus.OPEN.value,
+                        )
+                    )
+                    closed_trades = result.scalars().all()
+                    trades_taken  = len(closed_trades)
+                    winning_trades  = sum(1 for t in closed_trades if t.status in win_statuses)
+                    losing_trades   = sum(1 for t in closed_trades if t.status in loss_statuses)
+                    total_charges   = sum(
+                        (t.brokerage or 0) + (t.stt or 0) + (t.other_charges or 0)
+                        for t in closed_trades
+                    )
+            except Exception as _db_exc:
+                log.warning("trade_count_query_failed", error=str(_db_exc))
+
+            breakeven_trades = max(0, trades_taken - winning_trades - losing_trades)
+
             await db_writer.write_daily_pnl(
-                trade_date=now_ist().date(),
+                trade_date=today,
                 total_capital=capital,
                 signals_fired=stats.get("total_signals", 0),
                 setups_abandoned=0,
-                trades_taken=0,
-                winning_trades=0,
-                losing_trades=0,
-                breakeven_trades=0,
+                trades_taken=trades_taken,
+                winning_trades=winning_trades,
+                losing_trades=losing_trades,
+                breakeven_trades=breakeven_trades,
                 gross_pnl=daily_pnl,
-                total_charges=0.0,
-                net_pnl=daily_pnl,
+                total_charges=total_charges,
+                net_pnl=daily_pnl - total_charges,
             )
         except Exception as exc:
             log.error("daily_pnl_write_failed", error=str(exc))
@@ -370,11 +504,20 @@ def _handle_signal(sig: int, frame: object) -> None:
     _running = False
 
 
-async def shutdown(loop: asyncio.AbstractEventLoop) -> None:
+async def shutdown() -> None:
     """Gracefully stop scheduler, ticker, persist SMA."""
-    global _ticker, _scheduler
+    global _ticker, _scheduler, _poll_config_task
 
     log.info("engine_shutting_down")
+
+    # Cancel the config-poll background task first so it cannot interfere
+    # with the cleanup below (e.g. calling set_engine_status concurrently).
+    if _poll_config_task is not None and not _poll_config_task.done():
+        _poll_config_task.cancel()
+        try:
+            await _poll_config_task
+        except asyncio.CancelledError:
+            pass
 
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
@@ -416,12 +559,22 @@ async def _emergency_stop() -> None:
             "status": "EMERGENCY_STOP",
             "timestamp": now_ist().isoformat(),
         })
+        # Clear the control key so that if the process is restarted it does not
+        # immediately re-trigger the emergency stop on the very first poll cycle.
+        await _redis_store.set_engine_control("")
 
 
 # ── Configuration Polling ─────────────────────────────────────────────────────
 
 async def _poll_config() -> None:
-    """Poll Redis for configuration overrides every 5 seconds (allows runtime adjustments without restart)."""
+    """
+    Poll Redis for configuration overrides every 5 seconds.
+
+    This loop is the heartbeat writer and runtime-config applier.
+    It runs as a stored asyncio.Task so it can be properly cancelled on shutdown.
+    Exceptions are logged at WARNING (not silently swallowed at DEBUG) so bugs
+    are visible; the loop always continues via the finally-sleep.
+    """
     while True:
         try:
             if _redis_store is not None:
@@ -431,35 +584,42 @@ async def _poll_config() -> None:
                     pid=os.getpid(),
                 )
 
+                # Reinit trigger: fired after a fresh Kite OAuth login during the day.
+                # Offload to a separate Task so the heartbeat loop is never blocked
+                # by the full pre-market setup (which can take minutes during warmup).
+                if await _redis_store.consume_reinit_trigger():
+                    log.info("reinit_trigger_received_re_running_pre_market_setup")
+                    asyncio.create_task(
+                        job_pre_market_setup(),
+                        name="reinit_pre_market_setup",
+                    )
+
                 override_pt = await _redis_store.get_paper_trade_override()
                 if override_pt is not None and settings.PAPER_TRADE != override_pt:
                     settings.PAPER_TRADE = override_pt
-                    log.info("runtime_config_updated", paper_trade=override_pt)
-
-                # Check if a fresh login just happened → re-run pre-market setup
-                if await _redis_store.consume_reinit_trigger():
-                    log.info("reinit_trigger_detected_re_running_pre_market_setup")
-                    try:
-                        await job_pre_market_setup()
-                    except Exception as exc:
-                        log.error("reinit_triggered_pre_market_setup_failed", error=str(exc))
-                    continue  # skip status update this cycle — pre_market_setup sets it
 
                 # Push heartbeat telemetry — but NEVER clobber auth failure states
                 if _coordinator is not None:
                     current = await _redis_store.get_engine_status() or {}
                     current_status = current.get("status", "")
-                    # Auth failure states must persist until user re-logs in
-                    if current_status not in ("AUTH_REQUIRED", "AUTH_EXPIRED", "KITECONNECT_MISSING"):
+                    # Auth failure states + operational states must persist
+                    _preserve_states = {
+                        "AUTH_REQUIRED", "AUTH_EXPIRED", "KITECONNECT_MISSING",
+                        "SCANNING", "STOPPING", "SQUARING_OFF", "MARKET_CLOSED",
+                        "EMERGENCY_STOP",
+                    }
+                    if current_status not in _preserve_states:
                         new_status = "ONLINE" if (_ticker is not None) else "PRE_MARKET_READY"
                         await _redis_store.set_engine_status({
                             "status": new_status,
                             "timestamp": now_ist().isoformat(),
-                            "total_ticks": _coordinator._tick_count,
                             "paper_trade": settings.is_paper_trade,
+                            **_coordinator.get_stats(),
                         })
+        except asyncio.CancelledError:
+            raise  # propagate cancellation from shutdown()
         except Exception as exc:
-            log.debug("config_poll_error", error=str(exc))
+            log.warning("config_poll_error", error=str(exc))
         await asyncio.sleep(5)
 
 
@@ -541,7 +701,8 @@ async def main() -> None:
     # Note: job_market_open() is specifically scheduled for 09:15 or triggered manually
     
     # ── Background Tasks ──────────────────────────────────────────────────────
-    asyncio.create_task(_poll_config())
+    global _poll_config_task
+    _poll_config_task = asyncio.create_task(_poll_config(), name="poll_config")
 
     # ── Engine Status ─────────────────────────────────────────────────────────
     await _redis_store.set_engine_status({
@@ -574,9 +735,16 @@ async def main() -> None:
     )
 
     # ── Signal Handlers ───────────────────────────────────────────────────────
-    loop = asyncio.get_event_loop()
+    # asyncio.get_event_loop() inside an async function is deprecated since
+    # Python 3.10. get_running_loop() is always correct here.
+    loop = asyncio.get_running_loop()  # noqa: F841 — kept for clarity / future use
     signal.signal(signal.SIGINT, _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
+    # SIGTERM is not available on Windows (raises OSError); guard to avoid a
+    # startup crash on developer machines running the engine directly.
+    try:
+        signal.signal(signal.SIGTERM, _handle_signal)
+    except (OSError, ValueError):
+        log.debug("sigterm_not_available_on_this_platform")
 
     # ── Main Control Loop ─────────────────────────────────────────────────────
     try:
@@ -592,6 +760,7 @@ async def main() -> None:
 
             if control_str == "EMERGENCY_STOP":
                 await _emergency_stop()
+                # _emergency_stop() already clears the control key.
                 break
             elif control_str == "STOP":
                 log.info("stop_command_received_graceful_mode")
@@ -601,6 +770,9 @@ async def main() -> None:
                     "status": "STOPPING",
                     "timestamp": now_ist().isoformat(),
                 })
+                # Clear the control key so this block does not re-fire every 5s
+                # and spam the log while the engine is gracefully winding down.
+                await _redis_store.set_engine_control("")
             elif control_str == "START":
                 log.info("start_command_received_firing_market_open")
                 _coordinator.set_new_entries_enabled(True)
@@ -608,7 +780,7 @@ async def main() -> None:
                 await _redis_store.set_engine_control("")
 
     finally:
-        await shutdown(loop)
+        await shutdown()
 
 
 if __name__ == "__main__":

@@ -159,8 +159,21 @@ class AsyncKiteTicker:
 
         # Re-subscribe (Kite WS doesn't persist subscriptions across reconnects)
         if self._subscribed_tokens:
+            from app.core.config import settings as _settings
+            index_tokens = [
+                _settings.NIFTY_INSTRUMENT_TOKEN,
+                _settings.VIX_INSTRUMENT_TOKEN,
+            ]
+            # Subscribe ALL tokens first
             self._ticker.subscribe(self._subscribed_tokens)
-            self._ticker.set_mode(MODE_QUOTE, self._subscribed_tokens)
+            # Universe stocks: QUOTE mode (OHLCV + LTP)
+            universe_tokens = [t for t in self._subscribed_tokens if t not in index_tokens]
+            if universe_tokens:
+                self._ticker.set_mode(MODE_QUOTE, universe_tokens)
+            # Index tokens: LTP mode only (cheaper; we only need the price)
+            live_index = [t for t in self._subscribed_tokens if t in index_tokens]
+            if live_index:
+                self._ticker.set_mode(MODE_LTP, live_index)
 
         # Bug 4 fix: reset all CandleBuilder baselines after reconnect
         self._dispatch(self._coordinator.on_websocket_connected())

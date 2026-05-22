@@ -164,7 +164,7 @@ class DbWriter:
             trade.status = status.value
             trade.max_favorable_excursion = mfe
             trade.max_adverse_excursion = mae
-            trade.updated_at = datetime.datetime.utcnow()
+            trade.updated_at = datetime.datetime.now(datetime.UTC)
         log.info(
             "trade_closed",
             trade_id=trade_id,

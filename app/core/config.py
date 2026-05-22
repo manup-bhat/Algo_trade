@@ -45,12 +45,18 @@ class Settings(BaseSettings):
     MIN_TURNOVER_CRORE: float = 8.0
     MIN_PRICE: float = 50.0
     MAX_PRICE: float = 5000.0
-    REIGNITION_VOLUME_MULTIPLE: float = 1.5
+    REIGNITION_VOLUME_MULTIPLE: float = 3.0
     REIGNITION_LOOKBACK_CANDLES: int = 3
+    # When True, re-ignition compares volume to the MEAN of all dry-up candles
+    # (not just max of last N). This is the correct institutional threshold.
+    REIGNITION_USE_AVG_VOLUME: bool = True
     MIN_DRYUP_CANDLES: int = 2
     ASHAPE_RED_CANDLE_PCT: float = 0.5
     ASHAPE_VOLUME_MULTIPLE: float = 1.5
     ASHAPE_MIN_CANDLE_COUNT: int = 2
+    # Abandon dryup if any single candle's volume exceeds this fraction of the
+    # impact candle's volume — signals institutional selling into the spike.
+    ASHAPE_IMPACT_VOLUME_PCT: float = 0.50
 
     # ── Group B: SEBI / Regulatory Values ──────────────────────────
     STT_INTRADAY_SELL_PCT: float = 0.00025
@@ -69,12 +75,26 @@ class Settings(BaseSettings):
     EXIT_SL_CANCEL_DELAY_MS: int = 500
 
     # ── Group D: Strategy Calibration Values ───────────────────────
-    DRYUP_MAX_MINUTES: int = 10
+    DRYUP_MAX_MINUTES: int = 25
     MAX_ENTRY_TIME: str = "14:00"
     ENTRY_BUFFER_PCT: float = 0.003
     ENTRY_WIDEN_AFTER_SECONDS: int = 5
     ENTRY_ABANDON_PCT: float = 0.015
     ORDER_FILL_TIMEOUT_SECONDS: int = 30
+
+    # ── Market Direction Gate ───────────────────────────────────────
+    # When enabled, new Phase 2 entries are blocked unless Nifty 50
+    # is above its rolling 20-period 5-minute EMA.
+    NIFTY_GATE_ENABLED: bool = True
+    NIFTY_EMA_PERIOD: int = 20
+    # Nifty 50 instrument token on NSE (Kite standard)
+    NIFTY_INSTRUMENT_TOKEN: int = 256265
+    # India VIX instrument token on NSE (Kite standard)
+    VIX_INSTRUMENT_TOKEN: int = 264969
+    # During high-VIX environments, raise the minimum turnover filter
+    # to exclude noise spikes from highly volatile stocks.
+    HIGH_VIX_THRESHOLD: float = 18.0
+    HIGH_VIX_TURNOVER_CRORE: float = 12.0
 
     # ── Group E: Market Structure Values ───────────────────────────
     MARKET_OPEN_TIME: str = "09:15"

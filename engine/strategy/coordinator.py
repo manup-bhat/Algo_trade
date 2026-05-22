@@ -11,6 +11,7 @@ Phase 4 additions over Phase 2:
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,8 @@ from engine.market.candle_builder import CandleBuilder, Candle
 from engine.market import calendar as mkt_calendar
 from engine.strategy import scanner
 from engine.strategy.state_machine import SymbolStateMachine, StrategyState
+from engine.store import sma_file_store
+from app.core.config import settings
 
 if TYPE_CHECKING:
     from engine.kite.client import AsyncKiteClient
@@ -61,7 +64,15 @@ class Coordinator:
         self._candle_count: int = 0
         self._signal_count: int = 0
         self._accept_new_entries: bool = True
-        self._monitoring_tick_sent_at: dict[str, datetime.datetime] = {}
+        self._monitoring_tick_sent_at: dict[str, float] = {}  # symbol → monotonic timestamp
+
+        # Market direction gate: Nifty EMA
+        # _nifty_ema tracks the rolling 20-period 5-min EWMA of Nifty 50.
+        # Updated by _update_nifty_ema() on every Nifty candle close.
+        self._nifty_ema: float | None = None
+        self._nifty_ltp: float | None = None     # latest Nifty tick
+        self._nifty_candle_builder: CandleBuilder | None = None
+        self._vix_ltp: float | None = None       # latest India VIX tick
 
         # Phase 4: wired via inject_dependencies()
         self._order_service: "OrderService | None" = None
@@ -97,6 +108,54 @@ class Coordinator:
         self._accept_new_entries = enabled
         log.info("coordinator_new_entries_gate", enabled=enabled)
 
+    # ── Market Gate: Nifty EMA ──────────────────────────────────────────────
+
+    def _update_nifty_ema(self, nifty_ltp: float) -> None:
+        """
+        Update the rolling 5-minute Nifty EMA using EWMA.
+        Called when a Nifty 50 tick is received (on each candle boundary we
+        use the LTP at candle close for a clean per-bar EMA).
+
+        EWMA: ema = alpha * price + (1 - alpha) * prev_ema
+              alpha = 2 / (period + 1)
+        """
+        period = settings.NIFTY_EMA_PERIOD
+        alpha = 2.0 / (period + 1)
+        if self._nifty_ema is None:
+            # Cold start: seed EMA with first observed price
+            self._nifty_ema = nifty_ltp
+        else:
+            self._nifty_ema = alpha * nifty_ltp + (1.0 - alpha) * self._nifty_ema
+
+        gate_open = nifty_ltp >= self._nifty_ema
+        # Push to scanner module cache (sync — no await needed)
+        scanner.update_market_gate(vix=self._vix_ltp, gate_open=gate_open)
+
+        log.debug(
+            "nifty_ema_updated",
+            nifty_ltp=round(nifty_ltp, 2),
+            nifty_ema=round(self._nifty_ema, 2),
+            gate_open=gate_open,
+            vix=self._vix_ltp,
+        )
+
+        # Persist to Redis for dashboard display and across restarts
+        asyncio.create_task(
+            self._persist_market_gate(nifty_ltp, gate_open),
+            name="persist_market_gate",
+        )
+
+    async def _persist_market_gate(self, nifty_ltp: float, gate_open: bool) -> None:
+        """Persist Nifty EMA + VIX to Redis (non-blocking — runs as a task)."""
+        try:
+            if self._nifty_ema is not None:
+                await self._redis.set_nifty_ema(self._nifty_ema)
+            await self._redis.set_nifty_ltp(nifty_ltp)
+            if self._vix_ltp is not None:
+                await self._redis.set_vix(self._vix_ltp)
+        except Exception as exc:
+            log.debug("market_gate_persist_failed", error=str(exc))
+
     # ── Setup ──────────────────────────────────────────────────────────────
 
     def initialize_builders(
@@ -113,27 +172,84 @@ class Coordinator:
         log.info("coordinator_builders_initialized", symbol_count=len(self.candle_builders))
 
     async def load_sma_histories(self) -> None:
-        """Load persisted SMA histories from Redis. Called at 09:00 AM."""
-        loaded = 0
+        """
+        Load persisted SMA histories from disk file first, then Redis.
+        Called at 09:00 AM pre-market BEFORE warmup_from_historical().
+
+        Priority order:
+          1. Disk file (./data/sma_histories.json.gz) — survives Redis restarts
+          2. Redis volume_sma:{symbol} keys — 48h TTL fallback
+          For each symbol, the source with MORE history wins.
+        """
+        # Step 1: Load from disk file (fastest, survives Redis restart)
+        file_age = sma_file_store.get_file_age_hours()
+        file_histories = await asyncio.to_thread(sma_file_store.load_sma_histories)
+        if file_histories:
+            log.info(
+                "sma_file_histories_available",
+                symbols=len(file_histories),
+                file_age_hours=file_age,
+            )
+
+        loaded_from_file = 0
+        loaded_from_redis = 0
         warming = 0
+
         for symbol, builder in self.candle_builders.items():
-            history = await self._redis.load_volume_sma_history(symbol)
-            if history:
-                builder.load_history(history)
-                loaded += 1
+            file_hist = file_histories.get(symbol)
+            redis_hist = await self._redis.load_volume_sma_history(symbol)
+
+            # Pick the richer source (more history = better SMA accuracy)
+            if file_hist and redis_hist:
+                history = file_hist if len(file_hist) >= len(redis_hist) else redis_hist
+                loaded_from_file += 1  # count as file since file triggered the choice
+            elif file_hist:
+                history = file_hist
+                loaded_from_file += 1
+            elif redis_hist:
+                history = redis_hist
+                loaded_from_redis += 1
             else:
                 warming += 1
+                continue
 
-        await self._redis.set_scanner_counts(loaded, warming)
-        log.info("sma_history_loaded", symbols_loaded=loaded, symbols_warming=warming)
+            builder.load_history(history)
+
+        await self._redis.set_scanner_counts(
+            loaded_from_file + loaded_from_redis, warming
+        )
+        log.info(
+            "sma_history_loaded",
+            from_file=loaded_from_file,
+            from_redis=loaded_from_redis,
+            warming=warming,
+        )
 
     async def persist_sma_histories(self) -> None:
-        """Persist SMA histories to Redis. Called at 15:25 PM session end."""
+        """Persist SMA histories to BOTH Redis and disk file. Called at 15:25 PM session end."""
+        import pytz as _pytz
+        today_ist = datetime.datetime.now(_pytz.timezone("Asia/Kolkata")).date().isoformat()
+
+        histories: dict[str, list[int]] = {}
         for symbol, builder in self.candle_builders.items():
             history = builder.volume_history_snapshot
             if history:
+                histories[symbol] = history
                 await self._redis.save_volume_sma_history(symbol, history)
-        log.info("sma_history_persisted", symbol_count=len(self.candle_builders))
+
+        # Save to disk file with today's date as as_of_date.
+        # Next morning warmup reads this date and fetches ONLY the gap days.
+        if histories:
+            await asyncio.to_thread(
+                sma_file_store.save_sma_histories, histories, today_ist
+            )
+
+        log.info(
+            "sma_history_persisted",
+            symbol_count=len(histories),
+            as_of_date=today_ist,
+            saved_to_file=bool(histories),
+        )
 
     # ── Tick Routing (HOT PATH) ────────────────────────────────────────────
 
@@ -144,15 +260,44 @@ class Coordinator:
 
         Per-tick: symbol lookup + CandleBuilder update + optional SM tick routing.
         Per-candle: scanner evaluation or SM on_candle routing.
+
+        Live tick persistence: every call flushes all received symbols to Redis in one
+        pipeline (no per-symbol round-trips), keeping livetick:* keys fresh for the
+        dashboard's 1-second WebSocket tick_batch poll.
         """
         self._tick_count += len(ticks)
 
-        # Throttle: only flush LTPs every N ticks total to avoid Redis I/O spikes
-        self._ltp_flush_counter = getattr(self, "_ltp_flush_counter", 0) + len(ticks)
-        should_flush_ltp = self._ltp_flush_counter >= 50
+        # Accumulate (symbol, data) for a single pipeline flush at the end.
+        # This replaces the old "every 50 ticks" throttle which starved the dashboard.
+        live_tick_updates: list[tuple] = []
 
         for tick in ticks:
             token: int = tick.get("instrument_token", 0)
+
+            # \u2500\u2500 Market Gate: route Nifty 50 and India VIX ticks separately \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            # These index tokens are NOT in token_to_symbol (universe symbols only).
+            # We update internal EMA/VIX state and skip all stock SM routing.
+            if token == settings.NIFTY_INSTRUMENT_TOKEN:
+                nifty_ltp = tick.get("last_price", 0.0)
+                if nifty_ltp > 0:
+                    self._nifty_ltp = nifty_ltp
+                    # Update EWMA on every tick (updates gate on each bar for simplicity)
+                    self._update_nifty_ema(nifty_ltp)
+                continue
+
+            if token == settings.VIX_INSTRUMENT_TOKEN:
+                vix_ltp = tick.get("last_price", 0.0)
+                if vix_ltp > 0:
+                    self._vix_ltp = vix_ltp
+                    # Also sync VIX into scanner cache directly
+                    scanner.update_market_gate(
+                        vix=self._vix_ltp,
+                        gate_open=self._nifty_ltp is not None and (
+                            self._nifty_ema is None or self._nifty_ltp >= self._nifty_ema
+                        ),
+                    )
+                continue
+
             symbol = self.token_to_symbol.get(token)
             if symbol is None:
                 continue
@@ -161,6 +306,10 @@ class Coordinator:
             cum_vol: int = tick.get("volume_traded", 0)
             ohlc = tick.get("ohlc", {})
             day_open = ohlc.get("open", 0.0) if ohlc else 0.0
+            # prev_close = ohlc.close in Kite QUOTE mode ticks
+            # This is the PREVIOUS DAY'S closing price — used for % change
+            # to match the Kite app display (same reference as NSE official change%)
+            prev_close = ohlc.get("close", 0.0) if ohlc else 0.0
 
             exch_ts = tick.get("exchange_timestamp")
             if exch_ts is None:
@@ -186,51 +335,86 @@ class Coordinator:
                 StrategyState.ACTION_PENDING,
             ):
                 await self._maybe_publish_monitoring_tick(
-                    symbol, ltp, day_open, cum_vol, builder, sm, exch_ts
+                    symbol, ltp, day_open, prev_close, cum_vol, builder, sm, exch_ts
                 )
             if sm is not None and sm.state == StrategyState.MANAGING:
                 await sm.on_tick(ltp, exch_ts)
 
-            # Throttled LTP update: persist to Redis for dashboard feed
-            if should_flush_ltp and ltp > 0:
-                try:
-                    await self._redis.set_live_tick(
-                        symbol,
-                        ltp,
-                        day_open,
-                        cum_vol,
-                        minute_volume=builder.current_volume,
-                        volume_sma_500=builder.volume_sma,
-                    )
-                except Exception:
-                    pass
+            # Collect for pipeline flush (only if ltp is valid)
+            if ltp > 0:
+                live_tick_updates.append((
+                    symbol, ltp, day_open, prev_close, cum_vol,
+                    builder.current_volume, builder.volume_sma,
+                ))
 
-        if should_flush_ltp:
-            self._ltp_flush_counter = 0
+        # Flush all live tick updates in one Redis pipeline round-trip.
+        # Avoids hundreds of individual SET calls (one per symbol per batch).
+        if live_tick_updates:
+            try:
+                import json as _json
+                _LIVETICK_TTL = 54000  # 15 hours — matches redis_store._TTL_LIVE_TICK
+                now_iso = datetime.datetime.now(IST_TZ).isoformat(timespec="seconds")
+                pipe = self._redis._r.pipeline(transaction=False)
+                for sym, ltp, day_open, prev_close, cum_vol, min_vol, vol_sma in live_tick_updates:
+                    # pct_chg uses prev_close (= ohlc.close from Kite tick)
+                    # which is the PREVIOUS DAY'S closing price — matches Kite app display
+                    ref = prev_close if prev_close > 0 else day_open
+                    pct_chg = round(((ltp - ref) / ref * 100), 2) if ref > 0 else 0.0
+                    payload: dict = {
+                        "ltp": ltp,
+                        "open": day_open,
+                        "prev_close": prev_close,
+                        "pct_chg": pct_chg,
+                        "volume": cum_vol,
+                        "minute_volume": min_vol,
+                    }
+                    if vol_sma:
+                        payload["volume_sma_500"] = vol_sma
+                        payload["relative_volume"] = round((min_vol or 0) / vol_sma, 2)
+                    encoded = _json.dumps(payload)
+                    # Primary: write to hash (O(1) HGETALL for dashboard)
+                    pipe.hset("livetick_hash", sym, encoded)
+                    # Legacy: per-symbol key (backward compat)
+                    pipe.set(f"livetick:{sym}", encoded, ex=_LIVETICK_TTL)
+                    pipe.set(f"ltp:{sym}", str(ltp))  # backward compat
+                # Track last tick time so dashboard can detect stale/frozen data
+                pipe.set("engine:last_tick_at", now_iso, ex=_LIVETICK_TTL)
+                await pipe.execute()
+            except Exception:
+                pass  # Redis blip — dashboard will catch up on next tick batch
 
     async def _maybe_publish_monitoring_tick(
         self,
         symbol: str,
         ltp: float,
         day_open: float,
+        prev_close: float,
         cumulative_volume: int,
         builder: CandleBuilder,
         sm: SymbolStateMachine,
         exchange_ts: datetime.datetime,
     ) -> None:
-        """Push sub-second live LTP/volume only for symbols the trader is watching."""
-        last = self._monitoring_tick_sent_at.get(symbol)
-        if last and (exchange_ts - last).total_seconds() < 1:
+        """Push sub-second live LTP/volume only for symbols the trader is watching.
+
+        Throttle uses wall-clock monotonic time (not exchange_ts) to prevent
+        flooding Redis pub/sub on reconnect when stale ticks arrive in bursts.
+        """
+        import time as _time
+        now_mono = _time.monotonic()
+        last_mono = self._monitoring_tick_sent_at.get(symbol)
+        if last_mono is not None and (now_mono - last_mono) < 1.0:
             return
-        self._monitoring_tick_sent_at[symbol] = exchange_ts
+        self._monitoring_tick_sent_at[symbol] = now_mono
 
         con = sm.consolidation
         volume_sma = builder.volume_sma
+        ref = prev_close if prev_close > 0 else day_open
         payload: dict[str, Any] = {
             "symbol": symbol,
             "ltp": ltp,
             "open": day_open,
-            "pct_chg": round(((ltp - day_open) / day_open * 100), 2) if day_open > 0 else 0.0,
+            "prev_close": prev_close,
+            "pct_chg": round(((ltp - ref) / ref * 100), 2) if ref > 0 else 0.0,
             "cumulative_volume": cumulative_volume,
             "volume_delta_1min": builder.current_volume,
             "volume_sma_500": volume_sma,

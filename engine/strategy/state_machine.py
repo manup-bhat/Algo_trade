@@ -213,9 +213,17 @@ class SymbolStateMachine:
             return
 
         self.impact_candle = impact_candle
+        # CRITICAL FIX (Problem 3/5): The consolidation HIGH must start at the
+        # impact candle's CLOSE, not its HIGH. The impact candle spike high is
+        # 3-6% above the close — if consolidation.high = impact_candle.high,
+        # the breakout_trigger_price is the spike peak and price can never reach
+        # it during the dry-up, making Phase 3 nearly impossible.
+        # Starting at impact_candle.close means the consolidation range builds
+        # from actual dry-up candles only (the candles AFTER the impact candle),
+        # which is what the strategy specification requires.
         self.consolidation = ConsolidationData(
             start_time=impact_candle.time,
-            high=impact_candle.high,     # Initial high = impact candle high
+            high=impact_candle.close,   # FIX: was impact_candle.high (wrong)
             low=impact_candle.low,       # Initial low = impact candle low
             swing_low=impact_candle.low, # Initial swing low = impact wick low
         )
@@ -338,6 +346,23 @@ class SymbolStateMachine:
                 await self._abandon("a_shape_reversal")
                 return
 
+        # 2d. Institutional exit pressure check (NEW):
+        #     If any single dry-up candle has volume > ASHAPE_IMPACT_VOLUME_PCT × impact volume,
+        #     institutions are actively selling into the spike — the setup has failed.
+        #     This replaces the need to wait for the full timeout to detect a bad setup.
+        assert self.impact_candle is not None  # already checked above
+        impact_vol_threshold = self.impact_candle.volume * settings.ASHAPE_IMPACT_VOLUME_PCT
+        if volume > impact_vol_threshold and self.consolidation.candle_count >= 1:
+            log.info(
+                "abandonment_institutional_exit_pressure",
+                symbol=self.symbol,
+                candle_volume=volume,
+                impact_volume=self.impact_candle.volume,
+                threshold_pct=settings.ASHAPE_IMPACT_VOLUME_PCT,
+            )
+            await self._abandon("institutional_exit_pressure")
+            return
+
         # ═══════════════════════════════════════════════════════════════
         # STEP 3: UPDATE CONSOLIDATION (after abandonment checks)
         # BUG 3 FIX: update() uses wick low (l), not close (c)
@@ -351,15 +376,24 @@ class SymbolStateMachine:
         if self.consolidation.candle_count >= settings.MIN_DRYUP_CANDLES:
             # Need at least 2 prev_volumes to form a meaningful comparison window
             if len(prev_volumes) >= 2:
-                # Comparison window: last N dry-up candles (pre-update snapshot)
-                comparison_window = prev_volumes[-settings.REIGNITION_LOOKBACK_CANDLES:]
-                max_prev_vol = max(comparison_window)
+                # ── Re-ignition volume threshold (Problem 2 fix) ─────────────────
+                # OLD: max(last_3_candles) × 1.5 — too loose. During dry-up where
+                # all candles have volume ~500, even volume=751 triggered re-ignition.
+                #
+                # NEW: mean(all_dry-up_candles) × 3.0 — requires an obvious
+                # institutional second leg, not random noise. This is controlled by
+                # REIGNITION_USE_AVG_VOLUME (default True) and REIGNITION_VOLUME_MULTIPLE.
+                if settings.REIGNITION_USE_AVG_VOLUME:
+                    # Use mean of ALL dry-up volumes seen so far (pre-update snapshot)
+                    ref_volume = statistics.mean(prev_volumes) if prev_volumes else 0.0
+                else:
+                    # Legacy: max of last N candles
+                    comparison_window = prev_volumes[-settings.REIGNITION_LOOKBACK_CANDLES:]
+                    ref_volume = max(comparison_window)
 
-                # All four conditions must pass simultaneously
-                is_volume_spike = volume > max_prev_vol * settings.REIGNITION_VOLUME_MULTIPLE
+                is_volume_spike = ref_volume > 0 and volume > ref_volume * settings.REIGNITION_VOLUME_MULTIPLE
                 is_price_breakout = c > breakout_level  # Bug 1 fix: pre-update level
                 is_green = c > o
-                now_ist = datetime.datetime.now(IST_TZ)
                 is_before_cutoff = candle_time.time() < settings.max_entry_time
 
                 if is_volume_spike and is_price_breakout and is_green and is_before_cutoff:
@@ -368,10 +402,12 @@ class SymbolStateMachine:
                         symbol=self.symbol,
                         candle_time=candle_time.strftime("%H:%M"),
                         volume=volume,
-                        max_prev_vol=max_prev_vol,
+                        ref_volume=round(ref_volume, 0),
+                        volume_multiple=round(volume / ref_volume, 1) if ref_volume else 0,
                         breakout_level=breakout_level,
                         close=c,
                         dry_up_candles=self.consolidation.candle_count,
+                        method="avg" if settings.REIGNITION_USE_AVG_VOLUME else "max",
                     )
                     await self._trigger_entry(c, candle_time)
                     return
@@ -509,6 +545,7 @@ class SymbolStateMachine:
         """
         After ENTRY_WIDEN_AFTER_SECONDS, if still ACTION_PENDING and price is not
         too far away, widen the limit by another ENTRY_BUFFER_PCT (spec §8.5).
+        Routes through the order_service retry wrapper (not the raw kite client).
         """
         await asyncio.sleep(settings.ENTRY_WIDEN_AFTER_SECONDS)
 
@@ -532,10 +569,15 @@ class SymbolStateMachine:
                 return
 
             new_limit = round(original_limit * (1 + settings.ENTRY_BUFFER_PCT), 2)
-            await self._order_service._kite.modify_order(
-                order_id=order_id,
-                price=new_limit,
-            ) if (self._order_service and self._order_service._kite) else None
+            if self._order_service._kite is not None:
+                # Use _call_with_retry (retry wrapper) — not raw kite client directly
+                from engine.orders.order_service import _call_with_retry
+                await _call_with_retry(
+                    self._order_service._kite,
+                    "modify_order",
+                    order_id=order_id,
+                    price=new_limit,
+                )
             log.info("entry_limit_widened", order_id=order_id, new_limit=new_limit)
         except Exception as exc:
             log.warning("entry_widen_failed", order_id=order_id, error=str(exc))

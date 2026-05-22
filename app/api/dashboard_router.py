@@ -185,6 +185,7 @@ async def get_status():
 
         # Paper trade override from Redis (runtime toggle)
         pt_override = await rs.get_paper_trade_override()
+        max_capital_override = await rs.get_max_capital_override()
         paper_trade = pt_override if pt_override is not None else settings.PAPER_TRADE
         status_name = str(eng_status.get("status", "OFFLINE")).upper()
         engine_running = bool(heartbeat) or (
@@ -209,6 +210,7 @@ async def get_status():
             "blocked_margin": blocked,
             "warmed_up": warmed_up,
             "warming_up": warming_up,
+            "max_capital": max_capital_override,
             "runner_heartbeat": heartbeat,
         }
     except Exception as exc:
@@ -764,13 +766,30 @@ async def get_market():
 
 # ── /universe ───────────────────────────────────────────────────────────────────
 
+# Cache universe symbols in memory: reading 500 lines from disk on every API
+# call (every ~3 seconds) is wasteful and floods the log with universe_loaded_raw.
+_universe_cache: list[str] = []
+_universe_cache_ts: float = 0.0
+_UNIVERSE_CACHE_TTL = 30.0  # seconds
+
+
+def _get_cached_universe() -> list[str]:
+    """Return universe symbols from memory cache (refreshed every 30 seconds)."""
+    import time as _time
+    global _universe_cache, _universe_cache_ts
+    if not _universe_cache or (_time.monotonic() - _universe_cache_ts) > _UNIVERSE_CACHE_TTL:
+        from engine.market.universe import load_universe
+        _universe_cache = load_universe()
+        _universe_cache_ts = _time.monotonic()
+    return _universe_cache
+
+
 @router.get("/universe")
 async def get_universe():
     """Universe file + live tick enrichment. Never fabricates prices."""
     from app.core.config import settings
-    from engine.market.universe import load_universe
 
-    symbols = load_universe()
+    symbols = _get_cached_universe()
     rs = _rs()
     ticks_by_symbol: dict[str, Any] = {}
     states: dict[str, Any] = {}
@@ -797,6 +816,7 @@ async def get_universe():
             "symbol": symbol,
             "ltp": tick.get("ltp"),
             "open": tick.get("open"),
+            "prev_close": tick.get("prev_close"),
             "pct_chg": tick.get("pct_chg"),
             "volume": tick.get("volume"),
             "minute_volume": tick.get("minute_volume"),
@@ -814,6 +834,344 @@ async def get_universe():
         "tick_count": len(ticks_by_symbol),
         "source_file": settings.UNIVERSE_FILE,
         "source": "universe_file_with_live_ticks" if ticks_by_symbol else "universe_file",
+    }
+
+
+# ── /universe/symbols — POST (add) ──────────────────────────────────────────────
+
+class UniverseSymbolsPayload(BaseModel):
+    symbols: list[str]
+
+
+@router.post("/universe/symbols")
+async def add_universe_symbols(payload: UniverseSymbolsPayload):
+    """
+    Add one or more NSE symbols to the universe watchlist.
+
+    Flow:
+      1. Validate symbols against the in-process InstrumentCache.
+      2. Append valid symbols to universe.txt (deduplicating).
+      3. Invalidate the in-memory universe cache so the next /universe call
+         returns the updated list.
+      4. Re-subscribe on the live Kite WebSocket ticker if the engine is running.
+      5. Trigger a coordinator reinit so candle builders are created for new symbols.
+      6. Kick off historical SMA warmup for new symbols (background task).
+    """
+    from app.core.config import settings
+    from engine.kite.instruments import instrument_cache
+    from engine.market.universe import load_universe
+
+    if not payload.symbols:
+        raise HTTPException(status_code=400, detail="No symbols provided")
+
+    requested = [s.upper().strip() for s in payload.symbols if s.strip()]
+    if not requested:
+        raise HTTPException(status_code=400, detail="No valid symbols provided")
+
+    # ── 1. Validate each symbol against instrument cache ────────────────────
+    added: list[str] = []
+    errors: list[str] = []
+    new_tokens: list[int] = []
+
+    existing = set(_get_cached_universe())
+    instruments = await _load_instrument_search_cache()
+    instr_map = {item.get("symbol", ""): item for item in instruments}
+
+    for sym in requested:
+        if sym in existing:
+            errors.append(f"{sym}: already in watchlist")
+            continue
+        info = instr_map.get(sym)
+        if info is None:
+            errors.append(f"{sym}: not found in NSE instrument list (engine may not be loaded yet)")
+            continue
+        added.append(sym)
+        new_tokens.append(info.get("instrument_token"))
+
+    if not added:
+        return {"added": [], "errors": errors, "message": "No new symbols to add"}
+
+    # ── 2. Append to universe file ───────────────────────────────────────────
+    try:
+        universe_path = Path(settings.UNIVERSE_FILE)
+        if not universe_path.is_absolute():
+            universe_path = Path(__file__).resolve().parents[2] / universe_path
+        with open(universe_path, "a", encoding="utf-8") as f:
+            for sym in added:
+                f.write(f"\n{sym}")
+        log.info("universe_symbols_added", symbols=added, file=str(universe_path))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to write universe file: {exc}")
+
+    # ── 3. Invalidate the in-memory universe cache ───────────────────────────
+    global _universe_cache, _universe_cache_ts
+    _universe_cache = []
+    _universe_cache_ts = 0.0
+
+    # ── 4. Subscribe new tokens on live Kite WebSocket (if engine is running) ─
+    try:
+        from engine import runner as _runner
+        ticker = getattr(_runner, "_ticker", None)
+        coordinator = getattr(_runner, "_coordinator", None)
+
+        if ticker is not None and coordinator is not None and new_tokens:
+            # Subscribe new tokens in QUOTE mode (same as universe stocks)
+            ticker.subscribe(new_tokens)
+            ticker.set_mode("quote", new_tokens)
+            # Also register in coordinator's token maps so ticks are routed
+            from engine.market.candle_builder import CandleBuilder
+            from app.core.config import settings as _s
+            for sym in added:
+                info = instr_map.get(sym)
+                if info is None:
+                    continue
+                coordinator.token_to_symbol[info.get("instrument_token")] = sym
+                coordinator.symbol_to_token[sym] = info.get("instrument_token")
+                if sym not in coordinator.candle_builders:
+                    coordinator.candle_builders[sym] = CandleBuilder(sym, _s.VOLUME_SMA_PERIOD)
+            log.info("universe_symbols_subscribed", symbols=added, tokens=new_tokens)
+    except Exception as exc:
+        log.warning("universe_subscribe_failed", error=str(exc))
+        errors.append(f"WS subscription failed: {exc} (symbols still saved to file)")
+
+    # ── 5. Store token + tick_size in Redis for new symbols ──────────────────
+    rs = _rs()
+    if rs is not None:
+        try:
+            for sym in added:
+                info = instr_map.get(sym)
+                if info:
+                    await rs.set_tick_size(sym, info.get("tick_size", 0.05))
+                    await rs.set_instrument_token(sym, info.get("instrument_token"))
+        except Exception as exc:
+            log.warning("universe_redis_update_failed", error=str(exc))
+
+    # ── 6. Kick off SMA warmup in background for new symbols ─────────────────
+    try:
+        from engine import runner as _runner
+        kite_client = getattr(_runner, "_kite_client", None)
+        coordinator = getattr(_runner, "_coordinator", None)
+        redis_store = getattr(_runner, "_redis_store", None)
+        if kite_client is not None and coordinator is not None and redis_store is not None and added:
+            from engine.market.historical_warmup import warmup_from_historical
+            asyncio.create_task(
+                warmup_from_historical(
+                    coordinator, kite_client, redis_store=redis_store, symbols_subset=added
+                ),
+                name=f"sma_warmup_new_symbols",
+            )
+            log.info("universe_sma_warmup_triggered", symbols=added)
+    except Exception as exc:
+        log.debug("universe_warmup_trigger_failed", error=str(exc))
+
+    await broadcast({
+        "event": "universe_updated",
+        "added": added,
+        "removed": [],
+        "timestamp": datetime.now(IST_TZ).isoformat(),
+    })
+
+    return {
+        "added": added,
+        "errors": errors,
+        "new_tokens": new_tokens,
+        "message": f"{len(added)} symbol(s) added to universe",
+    }
+
+
+@router.delete("/universe/symbols")
+async def remove_universe_symbols(payload: UniverseSymbolsPayload):
+    """
+    Remove one or more symbols from the universe watchlist.
+
+    Flow:
+      1. Rewrite universe.txt excluding the requested symbols.
+      2. Invalidate in-memory cache.
+      3. Unsubscribe tokens from Kite WebSocket (if engine running and no active SM).
+      4. Broadcast universe_updated event.
+    """
+    from app.core.config import settings
+    from engine.kite.instruments import instrument_cache
+
+    if not payload.symbols:
+        raise HTTPException(status_code=400, detail="No symbols provided")
+
+    to_remove = {s.upper().strip() for s in payload.symbols if s.strip()}
+
+    # ── 1. Rewrite universe file without removed symbols ─────────────────────
+    try:
+        universe_path = Path(settings.UNIVERSE_FILE)
+        if not universe_path.is_absolute():
+            universe_path = Path(__file__).resolve().parents[2] / universe_path
+
+        existing_lines: list[str] = []
+        removed_from_file: list[str] = []
+        if universe_path.exists():
+            with open(universe_path, encoding="utf-8") as f:
+                for raw_line in f:
+                    line = raw_line.rstrip("\n")
+                    stripped = line.strip()
+                    # Preserve blank lines and comments
+                    if not stripped or stripped.startswith("#"):
+                        existing_lines.append(line)
+                        continue
+                    sym = stripped.upper().removeprefix("NSE:").removesuffix(".NS").strip()
+                    if sym in to_remove:
+                        removed_from_file.append(sym)
+                        continue
+                    existing_lines.append(line)
+        with open(universe_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(existing_lines))
+            if existing_lines and not existing_lines[-1].endswith("\n"):
+                f.write("\n")
+        log.info("universe_symbols_removed", symbols=removed_from_file)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to rewrite universe file: {exc}")
+
+    # ── 2. Invalidate in-memory cache ────────────────────────────────────────
+    global _universe_cache, _universe_cache_ts
+    _universe_cache = []
+    _universe_cache_ts = 0.0
+
+    # ── 3. Unsubscribe from Kite WS (only if symbol has no active state machine) ──
+    tokens_to_unsub: list[int] = []
+    try:
+        from engine import runner as _runner
+        ticker = getattr(_runner, "_ticker", None)
+        coordinator = getattr(_runner, "_coordinator", None)
+
+        if ticker is not None and coordinator is not None:
+            instruments = await _load_instrument_search_cache()
+            instr_map = {item.get("symbol", ""): item for item in instruments}
+
+            for sym in removed_from_file:
+                # Never unsubscribe a symbol with an active state machine
+                if sym in coordinator.active_state_machines:
+                    log.info("universe_remove_skipped_active_sm", symbol=sym)
+                    continue
+                info = instr_map.get(sym)
+                if info:
+                    tokens_to_unsub.append(info.get("instrument_token"))
+                # Remove from coordinator maps
+                coordinator.token_to_symbol.pop(info.get("instrument_token") if info else 0, None)
+                coordinator.symbol_to_token.pop(sym, None)
+                coordinator.candle_builders.pop(sym, None)
+
+            if tokens_to_unsub:
+                ticker.unsubscribe(tokens_to_unsub)
+                log.info("universe_symbols_unsubscribed", tokens=tokens_to_unsub)
+    except Exception as exc:
+        log.warning("universe_unsubscribe_failed", error=str(exc))
+
+    await broadcast({
+        "event": "universe_updated",
+        "added": [],
+        "removed": removed_from_file,
+        "timestamp": datetime.now(IST_TZ).isoformat(),
+    })
+
+    return {
+        "removed": removed_from_file,
+        "unsubscribed_tokens": tokens_to_unsub,
+        "message": f"{len(removed_from_file)} symbol(s) removed from universe",
+    }
+
+
+# ── /instruments/search ──────────────────────────────────────────────────────────
+
+# In-memory cache for the full NSE instrument list (for fast fuzzy search)
+# Populated from Redis key "instruments:nse:eq" written by the engine runner.
+_instrument_search_cache: list[dict] = []
+_instrument_search_cache_ts: float = 0.0
+_INSTRUMENT_SEARCH_TTL = 60.0   # 60s in-memory TTL — avoid Redis round-trip on every keystroke
+_REDIS_INSTRUMENT_KEY = "instruments:nse:eq"
+
+
+async def _load_instrument_search_cache() -> list[dict]:
+    """
+    Load and cache NSE EQ instrument list from Redis.
+
+    The engine runner stores 'instruments:nse:eq' (JSON array) in Redis when it
+    authenticates with Kite during pre-market setup. This endpoint reads that key
+    so the FastAPI process never needs to call Kite directly.
+
+    Returns [] if Redis key is missing (engine not yet authenticated).
+    """
+    import time as _time
+    global _instrument_search_cache, _instrument_search_cache_ts
+
+    now = _time.monotonic()
+    # Return in-memory copy if fresh
+    if _instrument_search_cache and (now - _instrument_search_cache_ts) < _INSTRUMENT_SEARCH_TTL:
+        return _instrument_search_cache
+
+    # Load from Redis
+    try:
+        rc = _rs()
+        if rc is None:
+            return _instrument_search_cache  # return stale rather than fail
+
+        raw = await rc._r.get(_REDIS_INSTRUMENT_KEY)
+        if not raw:
+            return []
+
+        import json as _json
+        items: list[dict] = _json.loads(raw)
+        items.sort(key=lambda x: x.get("symbol", ""))
+        _instrument_search_cache = items
+        _instrument_search_cache_ts = now
+        log.debug("instrument_search_cache_loaded", count=len(items))
+    except Exception as exc:
+        log.debug("instrument_search_cache_load_failed", error=str(exc))
+
+    return _instrument_search_cache
+
+
+@router.get("/instruments/search")
+async def search_instruments(q: str = "", exchange: str = "NSE", limit: int = 20):
+    """
+    Search NSE EQ instruments by symbol name prefix/substring.
+    Used by the watchlist edit modal autocomplete.
+
+    Data source: Redis key 'instruments:nse:eq' (written by the engine runner
+    during pre-market setup). Prefix matches are returned first, then substring.
+    Falls back to a hint if the engine has not yet authenticated with Kite.
+    """
+    if not q or len(q) < 2:
+        return {"results": [], "count": 0, "query": q}
+
+    q_upper = q.upper().strip()
+    instruments = await _load_instrument_search_cache()
+
+    if not instruments:
+        return {
+            "results": [],
+            "count": 0,
+            "query": q,
+            "hint": "Instrument list not loaded — wait for engine to complete pre-market setup",
+        }
+
+    # Two-pass ranking: exact prefix matches first, then substring matches
+    prefix_matches: list[dict] = []
+    substr_matches: list[dict] = []
+
+    for item in instruments:
+        sym = item.get("symbol", "")
+        if sym.startswith(q_upper):
+            prefix_matches.append(item)
+        elif q_upper in sym:
+            substr_matches.append(item)
+
+        if len(prefix_matches) + len(substr_matches) >= limit * 3:
+            break  # Early exit — avoid scanning all 4000+ EQ instruments
+
+    results = (prefix_matches + substr_matches)[:limit]
+
+    return {
+        "results": results,
+        "count": len(results),
+        "query": q,
+        "total_in_cache": len(instruments),
     }
 
 
@@ -1058,6 +1416,80 @@ async def get_stock_detail(symbol: str):
     }
 
 
+# ── /candles/{symbol} ──────────────────────────────────────────────────────────
+
+@router.get("/candles/{symbol}")
+async def get_symbol_candles(symbol: str, limit: int = 60):
+    """
+    Lightweight Redis-only endpoint for mini chart popup.
+    Returns the last `limit` 1-minute candles + strategy overlay data.
+    No DB queries — fast enough to call on every drawer open.
+    """
+    sym = symbol.upper().strip()
+    if not sym.replace("-", "").replace("&", "").replace(".", "").isalnum():
+        raise HTTPException(status_code=400, detail="Invalid symbol")
+
+    rs = _rs()
+    candles: list[dict] = []
+    state_data: dict = {}
+    ltp: float | None = None
+    impact_candle: dict = {}
+    consolidation: dict = {}
+
+    if rs is not None:
+        try:
+            candles = await rs.get_recent_candles(sym, limit=max(1, min(limit, 420)))
+        except Exception:
+            pass
+        try:
+            state_raw = await rs.get_strategy_state(sym)
+            if state_raw:
+                state_data = state_raw
+                impact_candle = state_raw.get("impact_candle") or {}
+                consolidation = state_raw.get("consolidation") or {}
+        except Exception:
+            pass
+        try:
+            ltp = await rs.get_last_ltp(sym)
+        except Exception:
+            pass
+
+    # Compute chart overlay levels from strategy state
+    breakout_level: float | None = (
+        consolidation.get("breakout_trigger_price")
+        or consolidation.get("high")
+    )
+    swing_low: float | None = consolidation.get("swing_low")
+    impact_time: str | None = (
+        state_data.get("impact_candle_time")
+        or impact_candle.get("time")
+    )
+    impact_volume: int | None = impact_candle.get("volume")
+    volume_readings: list = consolidation.get("volume_readings") or []
+
+    return {
+        "symbol": sym,
+        "candles": candles,
+        "count": len(candles),
+        "ltp": ltp,
+        "state": state_data.get("state"),
+        "spike_multiple": state_data.get("spike_multiple") or impact_candle.get("spike_multiple"),
+        "impact_candle_time": impact_time,
+        "impact_volume": impact_volume,
+        "breakout_level": breakout_level,
+        "swing_low": swing_low,
+        "candle_count": consolidation.get("candle_count", 0),
+        "volume_readings": volume_readings,
+        "avg_dryup_volume": (
+            round(sum(volume_readings) / len(volume_readings))
+            if volume_readings else None
+        ),
+        "impact_high": impact_candle.get("high") or state_data.get("impact_high"),
+        "impact_low": impact_candle.get("low") or state_data.get("impact_low"),
+        "impact_close": impact_candle.get("close") or state_data.get("impact_close"),
+    }
+
+
 # ── /journal ───────────────────────────────────────────────────────────────────
 
 @router.get("/journal")
@@ -1181,16 +1613,38 @@ async def websocket_endpoint(ws: WebSocket):
         rs = _rs()
         if rs is None:
             return
+        _err_since: float | None = None
+        import time as _time
         while True:
             try:
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)  # 500ms
                 ticks = await rs.get_all_live_ticks()
+                last_ts = await rs.get_last_tick_timestamp()
+                _err_since = None  # clear error streak on success
                 if ticks:
-                    await _send({"event": "tick_batch", "data": ticks})
+                    await _send({
+                        "event": "tick_batch",
+                        "ticks": ticks,
+                        "last_tick_at": last_ts,
+                    })
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass  # Redis blip — skip tick batch
+            except Exception as exc:
+                # Track sustained errors — if Redis is down for >10s tell the UI
+                now = _time.monotonic()
+                if _err_since is None:
+                    _err_since = now
+                elif now - _err_since > 10:
+                    try:
+                        await _send({
+                            "event": "feed_error",
+                            "reason": "Redis unreachable — live ticks paused",
+                            "error": str(exc),
+                        })
+                    except Exception:
+                        pass
+                    _err_since = now  # reset so we don't spam
+
 
     async def _pubsub_loop():
         r = None
@@ -1222,7 +1676,9 @@ async def websocket_endpoint(ws: WebSocket):
                 except Exception:
                     continue
                 try:
-                    await _send({"event": evt_map.get(ch, "engine_event"), "data": data})
+                    # Spread data fields at top level so frontend can read
+                    # msg.symbol, msg.signal_time, msg.status, etc. directly.
+                    await _send({"event": evt_map.get(ch, "engine_event"), **data})
                 except Exception:
                     break
         except asyncio.CancelledError:

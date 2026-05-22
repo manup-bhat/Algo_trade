@@ -1,4 +1,4 @@
-﻿"""
+"""
 engine/store/redis_store.py — ALL Redis operations through this single class.
 
 No other module touches Redis directly. This centralizes key naming,
@@ -53,6 +53,11 @@ _TTL_RUNNER_HEARTBEAT = 20
 _TTL_RECENT_CANDLES = 54000
 _MAX_RECENT_CANDLES = 420
 
+# Single Redis Hash for all live ticks: HGETALL is O(1) vs KEYS livetick:* O(N)
+_LIVETICK_HASH = "livetick_hash"
+# ISO timestamp updated every tick-batch so dashboard can detect stale data
+_LAST_TICK_TS_KEY = "engine:last_tick_at"
+
 
 class RedisStore:
     """
@@ -74,12 +79,12 @@ class RedisStore:
 
     # ── Engine Status / Control ────────────────────────────────────────────
 
-    async def set_engine_status(self, status: dict[str, Any]) -> None:
-        await self._r.set(_ENGINE_STATUS, json.dumps(status))
+    async def set_engine_status(self, status_data: dict[str, Any]) -> None:
+        await self._r.set(_ENGINE_STATUS, json.dumps(status_data))
 
     async def get_engine_status(self) -> dict[str, Any] | None:
-        raw = await self._r.get(_ENGINE_STATUS)
-        return json.loads(raw) if raw else None
+        val = await self._r.get(_ENGINE_STATUS)
+        return json.loads(val) if val else None
 
     async def get_engine_control(self) -> str | None:
         return await self._r.get(_ENGINE_CONTROL)
@@ -108,13 +113,6 @@ class RedisStore:
     async def get_max_capital_override(self) -> float | None:
         val = await self._r.get(_ENGINE_CONFIG_MAX_CAPITAL)
         return float(val) if val else None
-
-    async def set_engine_status(self, status_data: dict[str, Any]) -> None:
-        await self._r.set(_ENGINE_STATUS, json.dumps(status_data))
-
-    async def get_engine_status(self) -> dict[str, Any] | None:
-        val = await self._r.get(_ENGINE_STATUS)
-        return json.loads(val) if val else None
 
     async def set_max_capital_override(self, capital: float | None) -> None:
         if capital is None:
@@ -263,12 +261,17 @@ class RedisStore:
         await self._r.delete(f"position:{symbol}")
 
     async def update_unrealized_pnl(self, symbol: str, unrealized: float) -> None:
-        """Update unrealized P&L in the position snapshot for dashboard display."""
-        pos_raw = await self._r.get(f"position:{symbol}")
-        if pos_raw:
-            pos = json.loads(pos_raw)
-            pos["unrealized_pnl"] = unrealized
-            await self._r.set(f"position:{symbol}", json.dumps(pos))
+        """Update unrealized P&L for dashboard display.
+
+        Uses a dedicated lightweight key (unrealized:{symbol}) to avoid the
+        expensive GET+deserialize+update+serialize+SET cycle on the full position
+        dict on every tick. The dashboard reads this key separately.
+        """
+        await self._r.set(
+            f"unrealized:{symbol}",
+            str(round(unrealized, 2)),
+            ex=_TTL_LIVE_TICK,
+        )
 
     # ── Last LTP (for entry widen logic + dashboard feed) ─────────────────────
 
@@ -287,12 +290,20 @@ class RedisStore:
         volume: int,
         minute_volume: int | None = None,
         volume_sma_500: float | None = None,
+        prev_close: float = 0.0,
     ) -> None:
-        """Store rich live tick data for dashboard market feed. TTL = 15 hours."""
-        pct_chg = round(((ltp - day_open) / day_open * 100), 2) if day_open > 0 else 0.0
+        """Store rich live tick data for dashboard market feed. TTL = 15 hours.
+
+        pct_chg is calculated against prev_close (previous day's closing price,
+        = ohlc.close in Kite QUOTE tick) to match the Kite app display.
+        Falls back to day_open if prev_close is not available.
+        """
+        ref = prev_close if prev_close > 0 else day_open
+        pct_chg = round(((ltp - ref) / ref * 100), 2) if ref > 0 else 0.0
         payload: dict[str, Any] = {
             "ltp": ltp,
             "open": day_open,
+            "prev_close": prev_close,
             "pct_chg": pct_chg,
             "volume": volume,
         }
@@ -310,6 +321,25 @@ class RedisStore:
         await self._r.set(f"ltp:{symbol}", str(ltp))
 
     async def _collect_live_ticks(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """Collect live ticks using O(1) HGETALL on the livetick_hash.
+
+        Falls back to legacy KEYS scan only on first run before hash is populated.
+        The coordinator pipeline writes all symbols into livetick_hash in one batch.
+        """
+        raw_hash = await self._r.hgetall(_LIVETICK_HASH)
+        if raw_hash:
+            result: list[dict[str, Any]] = []
+            for field, val in raw_hash.items():
+                try:
+                    sym = field.decode() if isinstance(field, bytes) else field
+                    data = json.loads(val)
+                    result.append({"symbol": sym, **data})
+                except Exception:
+                    pass
+            result.sort(key=lambda x: abs(x.get("pct_chg", 0)), reverse=True)
+            return result[:limit] if limit is not None else result
+
+        # Fallback: legacy KEYS scan for first run / migration (before hash is populated)
         keys = await self._r.keys("livetick:*")
         if not keys:
             return []
@@ -317,7 +347,7 @@ class RedisStore:
         selected = keys if limit is None else keys[:limit]
         values = await self._r.mget(selected)
 
-        result: list[dict[str, Any]] = []
+        result = []
         for key, val in zip(selected, values):
             if val:
                 try:
@@ -396,12 +426,28 @@ class RedisStore:
         return candles
 
     async def get_all_live_ticks(self) -> dict[str, dict[str, Any]]:
-        """Return ALL subscribed symbols' live tick data keyed by symbol. Used for 1s WS tick batch."""
+        """
+        Return ALL symbols' live tick data keyed by symbol.
+
+        Uses HGETALL on _LIVETICK_HASH (O(1)) written by coordinator pipeline.
+        Falls back to legacy KEYS scan on first run before hash is populated.
+        """
+        raw_hash = await self._r.hgetall(_LIVETICK_HASH)
+        if raw_hash:
+            result: dict[str, dict[str, Any]] = {}
+            for field, val in raw_hash.items():
+                try:
+                    sym = field.decode() if isinstance(field, bytes) else field
+                    result[sym] = json.loads(val)
+                except Exception:
+                    pass
+            return result
+        # Fallback: legacy KEYS scan for first run / migration
         keys = await self._r.keys("livetick:*")
         if not keys:
             return {}
         values = await self._r.mget(keys)
-        result: dict[str, dict[str, Any]] = {}
+        result = {}
         for key, val in zip(keys, values):
             if val:
                 try:
@@ -410,6 +456,11 @@ class RedisStore:
                 except Exception:
                     pass
         return result
+
+    async def get_last_tick_timestamp(self) -> str | None:
+        """ISO timestamp of last tick batch. Used by dashboard to detect stale/frozen data."""
+        raw = await self._r.get(_LAST_TICK_TS_KEY)
+        return raw.decode() if isinstance(raw, bytes) else raw
 
     # ── Exit Race Condition Lock ───────────────────────────────────────────
 
@@ -430,7 +481,40 @@ class RedisStore:
     async def release_symbol_lock(self, symbol: str) -> None:
         await self._r.delete(f"lock:symbol:{symbol}")
 
-    # ── Scanner Stats ─────────────────────────────────────────────────────
+    # \u2500\u2500 Market Direction Gate (Nifty EMA + India VIX) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    _NIFTY_EMA_KEY = "nifty:ema_5min"
+    _VIX_KEY = "vix:last"
+    _NIFTY_LTP_KEY = "nifty:ltp"
+    _TTL_MARKET_GATE = 7200  # 2 hours
+
+    async def get_nifty_ema(self) -> float | None:
+        """Return the latest Nifty 50 5-minute EMA, or None if not yet computed."""
+        val = await self._r.get(self._NIFTY_EMA_KEY)
+        return float(val) if val else None
+
+    async def set_nifty_ema(self, ema: float) -> None:
+        """Store the latest Nifty 5-min EMA. TTL = 2 hours so stale values expire."""
+        await self._r.set(self._NIFTY_EMA_KEY, str(round(ema, 2)), ex=self._TTL_MARKET_GATE)
+
+    async def get_nifty_ltp(self) -> float | None:
+        """Return the latest Nifty 50 LTP tick."""
+        val = await self._r.get(self._NIFTY_LTP_KEY)
+        return float(val) if val else None
+
+    async def set_nifty_ltp(self, ltp: float) -> None:
+        await self._r.set(self._NIFTY_LTP_KEY, str(ltp), ex=self._TTL_MARKET_GATE)
+
+    async def get_vix(self) -> float | None:
+        """Return the latest India VIX value, or None if not yet received."""
+        val = await self._r.get(self._VIX_KEY)
+        return float(val) if val else None
+
+    async def set_vix(self, vix: float) -> None:
+        """Store latest India VIX. TTL = 2 hours."""
+        await self._r.set(self._VIX_KEY, str(round(vix, 2)), ex=self._TTL_MARKET_GATE)
+
+    # \u2500\u2500 Scanner Stats \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     async def set_scanner_counts(self, ready: int, warming: int) -> None:
         await self._r.mset({

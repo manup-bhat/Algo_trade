@@ -29,6 +29,18 @@ from app.core.config import settings
 
 log = structlog.get_logger(__name__)
 
+# Module-level cache for VIX and Nifty gate \u2014 updated by coordinator on each candle.
+# Using a simple float avoids making evaluate() async (it's called from the hot path).
+_cached_vix: float | None = None
+_nifty_gate_open: bool = True   # True = allow new entries (default: open)
+
+
+def update_market_gate(vix: float | None, gate_open: bool) -> None:
+    """Called by coordinator whenever a Nifty/VIX candle closes."""
+    global _cached_vix, _nifty_gate_open
+    _cached_vix = vix
+    _nifty_gate_open = gate_open
+
 
 @dataclass(frozen=True, slots=True)
 class ImpactCandle:
@@ -75,6 +87,13 @@ def evaluate(
     This is a pure function — safe to call from any context.
     The coordinator is responsible for calling this only during market hours.
     """
+    # ── Filter 0: Market direction gate (Nifty EMA) ───────────────────
+    # Block all new scan hits if Nifty is below its 5-min EMA.
+    # This prevents entries into a broad bearish session.
+    # Gate defaults to OPEN if no EMA has been computed yet (cold start safety).
+    if settings.NIFTY_GATE_ENABLED and not _nifty_gate_open:
+        return None  # Market gate closed — skip entire symbol this candle
+
     # ── Filter 1: SMA warmup ──────────────────────────────────────────
     volume_sma = builder.volume_sma
     if volume_sma is None:
@@ -90,14 +109,24 @@ def evaluate(
     if spike_multiple < settings.VOLUME_SPIKE_MULTIPLE:
         return None  # Most candles fail here — hot path exit
 
-    # ── Filter 4: Minimum turnover ────────────────────────────────────
-    # turnover is already computed in Candle as close × volume
-    if candle.turnover < settings.min_turnover_rupees:
+    # ── Filter 4: Minimum turnover (VIX-aware) ────────────────────────
+    # During high-volatility sessions (VIX > threshold), raise the turnover
+    # bar to filter out noise spikes that won't survive the dry-up phase.
+    # Falls back to MIN_TURNOVER_CRORE if VIX data is unavailable.
+    vix = _cached_vix
+    if vix is not None and vix > settings.HIGH_VIX_THRESHOLD:
+        effective_turnover_crore = settings.HIGH_VIX_TURNOVER_CRORE
+    else:
+        effective_turnover_crore = settings.MIN_TURNOVER_CRORE
+    effective_turnover_rupees = effective_turnover_crore * 1e7
+
+    if candle.turnover < effective_turnover_rupees:
         log.debug(
             "scanner_turnover_miss",
             symbol=candle.symbol,
             turnover_cr=candle.turnover / 1e7,
-            required_cr=settings.MIN_TURNOVER_CRORE,
+            required_cr=effective_turnover_crore,
+            vix=vix,
             spike=f"{spike_multiple:.1f}x",
         )
         return None

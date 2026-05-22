@@ -85,6 +85,28 @@ async def get_login_url():
     }
 
 
+# ── Step 1b: Direct browser redirect to Kite login ────────────────────────────
+
+@router.get("/login-redirect", summary="Redirect browser to Kite login page")
+async def login_redirect():
+    """
+    302 redirect to Kite Connect login URL.
+
+    The dashboard calls window.open('/api/v1/auth/login-redirect', '_blank')
+    **synchronously** inside a click handler so the browser's popup-blocker
+    never fires.  Doing window.open() after an await fetch() puts it outside
+    the user-gesture context, causing it to be silently blocked.
+    """
+    from fastapi.responses import RedirectResponse
+    from app.core.config import settings
+
+    login_url = (
+        f"https://kite.zerodha.com/connect/login"
+        f"?v=3&api_key={settings.KITE_API_KEY}"
+    )
+    return RedirectResponse(login_url, status_code=302)
+
+
 # ── Step 2: OAuth Callback (receives request_token from Zerodha) ───────────────
 
 @router.get("/callback", response_class=HTMLResponse, summary="Kite OAuth callback")
