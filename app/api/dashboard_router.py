@@ -1615,13 +1615,36 @@ async def websocket_endpoint(ws: WebSocket):
             return
         _err_since: float | None = None
         import time as _time
+        from datetime import timezone as _tz
         while True:
             try:
                 await asyncio.sleep(0.5)  # 500ms
                 ticks = await rs.get_all_live_ticks()
                 last_ts = await rs.get_last_tick_timestamp()
                 _err_since = None  # clear error streak on success
-                if ticks:
+
+                # ── Staleness guard ──────────────────────────────────────
+                # Don't stream cached Redis ticks when the engine is offline
+                # or Kite is not connected (market closed / after hours).
+                # engine:last_tick_at is set by coordinator on every tick batch.
+                # If it's older than 60s we know the engine stopped sending.
+                # In that case skip the tick_batch so the browser counter
+                # doesn't keep inflating with yesterday's Redis data.
+                is_stale = True  # assume stale until proven fresh
+                if last_ts:
+                    try:
+                        import dateutil.parser as _dp
+                        last_dt = _dp.parse(last_ts)
+                        if last_dt.tzinfo is None:
+                            import pytz as _pytz
+                            last_dt = _pytz.utc.localize(last_dt)
+                        now_utc = __import__('datetime').datetime.now(_tz.utc)
+                        age_sec = (now_utc - last_dt).total_seconds()
+                        is_stale = age_sec > 60
+                    except Exception:
+                        is_stale = True  # parse error = treat as stale
+
+                if ticks and not is_stale:
                     await _send({
                         "event": "tick_batch",
                         "ticks": ticks,

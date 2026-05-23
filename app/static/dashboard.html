@@ -2864,6 +2864,7 @@ let _uniPendingTicks = {};        // accumulated tick deltas, flushed each RAF
 let _lastTickBatchAt  = Date.now();  // epoch ms of last received tick_batch WS event
 let _tickCount = 0;               // total tick symbols received across all batches
 let _candleCount = 0;             // total candle_close events received
+let _lastServerTickAt = null;     // last server-reported engine:last_tick_at timestamp
 
 async function loadUniverse() {
   try {
@@ -3221,7 +3222,27 @@ function handleWSMessage(msg) {
 
   if (ev === 'tick_batch') {
     // Track last received time for staleness detection
+    const newLastTickAt = msg.last_tick_at || null;
+
+    // ── Session break detection ──────────────────────────────────────────
+    // If the server-reported last_tick_at jumped forward by >60s compared to
+    // the previous tick_batch, this is a new engine session (engine restarted
+    // or Kite just connected). Reset counters so the UI shows today's data.
+    if (newLastTickAt && _lastServerTickAt) {
+      try {
+        const prevMs = new Date(_lastServerTickAt).getTime();
+        const newMs  = new Date(newLastTickAt).getTime();
+        if (newMs - prevMs > 60_000) {
+          _tickCount = 0;
+          _candleCount = 0;
+          const sub = $('#stat-candles-sub');
+          if (sub) sub.textContent = '0 candles';
+        }
+      } catch (_) {}
+    }
+    _lastServerTickAt = newLastTickAt;
     _lastTickBatchAt = Date.now();
+
     // Clear stale bar if it was showing
     const staleBar = $('#feed-stale-bar');
     if (staleBar && staleBar.style.display !== 'none') {
