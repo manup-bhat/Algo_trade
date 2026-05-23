@@ -180,6 +180,7 @@ class SymbolStateMachine:
         order_service: "OrderService | None" = None,
         order_tracker: "OrderTracker | None" = None,
         fill_timeout_manager: "FillTimeoutManager | None" = None,
+        is_second_spike: bool = False,
     ) -> None:
         self.symbol = symbol
         self.instrument_token = instrument_token
@@ -188,6 +189,7 @@ class SymbolStateMachine:
         self._order_service = order_service
         self._order_tracker = order_tracker
         self._fill_timeout = fill_timeout_manager
+        self.is_second_spike = is_second_spike  # Flag for analytics / DB notes
 
         self.state: StrategyState = StrategyState.IDLE
         self.impact_candle: ImpactCandle | None = None
@@ -196,6 +198,7 @@ class SymbolStateMachine:
         self._pending_order_id: str | None = None
         self._signal_id: int | None = None
         self._abandonment_reason: str | None = None
+        self._second_spike_stop_loss_override: float | None = None
 
     # ── Phase 1: Scan Hit ─────────────────────────────────────────────────────
 
@@ -274,6 +277,39 @@ class SymbolStateMachine:
 
         await self._persist_state()
 
+    def set_second_spike_sl(
+        self,
+        stop_loss: float,
+        prior_spike_time: datetime.datetime,
+        prior_spike_high: float,
+        prior_spike_low: float,
+    ) -> None:
+        """
+        Called by coordinator._handle_second_spike_entry() to inject the
+        pre-computed SL and skip the consolidation-building phase.
+
+        Initialises a minimal ConsolidationData so _trigger_entry() and
+        on_order_filled() have a valid swing_low. Transitions to MONITORING
+        so the SM is ready to receive the entry trigger immediately.
+
+        v3 NEW: Second spike entry path — bypasses scanner + dry-up phases
+        because the inter-spike period already served as the dry-up.
+        """
+        self.consolidation = ConsolidationData(
+            start_time=prior_spike_time,
+            high=prior_spike_high,
+            low=prior_spike_low,
+            swing_low=stop_loss,  # pre-computed: inter_spike_low - 1 tick
+        )
+        self._second_spike_stop_loss_override = stop_loss
+        self.state = StrategyState.MONITORING  # Ready to receive entry trigger
+        log.debug(
+            "second_spike_sl_set",
+            symbol=self.symbol,
+            stop_loss=stop_loss,
+            swing_low=self.consolidation.swing_low,
+        )
+
     # ── Phase 2: Dry-Up Monitoring ────────────────────────────────────────────
 
     async def on_candle(
@@ -318,8 +354,14 @@ class SymbolStateMachine:
         # STEP 2: ABANDONMENT CHECKS (on current candle)
         # ═══════════════════════════════════════════════════════════════
 
-        # 2a. Price broke below impact candle low → abandon
-        if c < self.impact_candle.low:
+        # 2a. Price broke below impact candle low (with buffer) → abandon
+        # v3 FIX: Use candle wick LOW (l), not CLOSE (c).
+        # Chan & Lakonishok (1993): institutions stop-hunt below key levels
+        # by 0.1-0.3% to trigger retail stops, then absorb that selling.
+        # A wick through the low that closes above = normal accumulation.
+        # Buffer = ABANDON_PRICE_BUFFER_PCT (default 0.3%).
+        abandon_floor = self.impact_candle.low * (1.0 - settings.ABANDON_PRICE_BUFFER_PCT)
+        if l < abandon_floor:
             await self._abandon("price_broke_impact_low")
             return
 

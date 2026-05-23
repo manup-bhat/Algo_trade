@@ -22,6 +22,7 @@ from engine.market.candle_builder import CandleBuilder, Candle
 from engine.market import calendar as mkt_calendar
 from engine.strategy import scanner
 from engine.strategy.state_machine import SymbolStateMachine, StrategyState
+from engine.strategy.second_spike_detector import SecondSpikeDetector, SecondSpikeEntry
 from engine.store import sma_file_store
 from app.core.config import settings
 
@@ -79,6 +80,9 @@ class Coordinator:
         self._order_tracker: "OrderTracker | None" = None
         self._fill_timeout: "FillTimeoutManager | None" = None
         self._kite: "AsyncKiteClient | None" = None
+
+        # v3 NEW: Second spike detector (singleton per engine process)
+        self.second_spike_detector = SecondSpikeDetector()
 
     # ── Dependency injection ─────────────────────────────────────────────────
 
@@ -504,11 +508,41 @@ class Coordinator:
                 await self._publish_candle_close(symbol, candle, builder)
                 return
 
+            # v3 NEW: Track inter-spike consolidation low for ALL idle candles.
+            # This keeps the SL anchor accurate for any eventual second-spike entry.
+            self.second_spike_detector.update_inter_spike_low(symbol, candle.low)
+
             instrument_token = self.symbol_to_token.get(symbol, 0)
+
+            # v3 NEW: Check for second-spike entry BEFORE running first-wave scanner.
+            # If a prior spike record exists and today's candle meets all 7 conditions,
+            # route directly to the second-spike entry path and skip the normal scanner.
+            if self.second_spike_detector.has_record(symbol):
+                volume_sma = builder.volume_sma
+                if volume_sma and volume_sma > 0:
+                    tick_size = await self._redis.get_tick_size(symbol)
+                    second = self.second_spike_detector.evaluate_second_spike(
+                        symbol=symbol,
+                        candle_close=candle.close,
+                        candle_open=candle.open,
+                        candle_low=candle.low,
+                        candle_volume=candle.volume,
+                        candle_time=candle.timestamp,
+                        volume_sma=volume_sma,
+                        tick_size=tick_size if tick_size else 0.05,
+                    )
+                    if second is not None:
+                        await self._handle_second_spike_entry(second, instrument_token)
+                        await self._publish_candle_close(symbol, candle, builder)
+                        return  # Do NOT run first-wave scanner on this candle
+
             impact = scanner.evaluate(candle, builder, instrument_token)
 
             if impact is not None:
                 self._signal_count += 1
+                # v3 NEW: Record this first spike for potential second-spike detection later.
+                self.second_spike_detector.record_first_spike(impact)
+
                 sm = self._create_sm(symbol, instrument_token)
                 self.active_state_machines[symbol] = sm
                 await sm.on_scan_hit(impact)
@@ -542,9 +576,10 @@ class Coordinator:
                 del self.active_state_machines[symbol]
                 log.debug("sm_cleaned_up", symbol=symbol)
 
-    def _create_sm(self, symbol: str, instrument_token: int) -> SymbolStateMachine:
+    def _create_sm(self, symbol: str, instrument_token: int, is_second_spike: bool = False) -> SymbolStateMachine:
         """
         Create a SymbolStateMachine with all Phase 4 dependencies wired.
+        Pass is_second_spike=True for second-spike direct entry SMs.
         """
         sm = SymbolStateMachine(
             symbol=symbol,
@@ -554,11 +589,67 @@ class Coordinator:
             order_service=self._order_service,
             order_tracker=self._order_tracker,
             fill_timeout_manager=self._fill_timeout,
+            is_second_spike=is_second_spike,
         )
         # Wire kite client and candle builder for pre-trade checks
         sm._kite = self._kite  # type: ignore[attr-defined]
         sm._candle_builder = self.candle_builders.get(symbol)  # type: ignore[attr-defined]
         return sm
+
+    async def _handle_second_spike_entry(
+        self,
+        second: SecondSpikeEntry,
+        instrument_token: int,
+    ) -> None:
+        """
+        Direct entry path for second-spike signals. (v3 NEW)
+
+        Bypasses the scan -> monitoring -> re-ignition cycle entirely because
+        the inter-spike period already served as the dry-up phase.
+
+        SL = second.stop_loss (= inter_spike_low - 1 tick).
+        All other risk checks still run inside SM._trigger_entry().
+        """
+        symbol = second.symbol
+        prior = second.prior_spike
+
+        # Guard: don't create a second SM if one is already active (race condition)
+        if symbol in self.active_state_machines:
+            log.debug("second_spike_skipped_sm_already_active", symbol=symbol)
+            self.second_spike_detector.clear(symbol)
+            return
+
+        # Create SM pre-loaded with the inter-spike SL — no dry-up phase needed
+        sm = self._create_sm(symbol, instrument_token, is_second_spike=True)
+        sm.set_second_spike_sl(
+            stop_loss=second.stop_loss,
+            prior_spike_time=prior.spike_time,
+            prior_spike_high=prior.spike_high,
+            prior_spike_low=prior.spike_low,
+        )
+        self.active_state_machines[symbol] = sm
+        self._signal_count += 1
+
+        # Trigger entry immediately on the second spike candle's close.
+        # This calls the exact same _trigger_entry() used by the normal path,
+        # so all pre-trade checks, position sizing, and order placement run.
+        await sm._trigger_entry(second.entry_close, second.entry_time)
+
+        # If entry was rejected or SM moved to CLOSED, clean up
+        if sm.state == StrategyState.CLOSED:
+            del self.active_state_machines[symbol]
+
+        # Clear the prior spike record — this symbol has been acted on
+        self.second_spike_detector.clear(symbol)
+
+        log.info(
+            "second_spike_entry_routed",
+            symbol=symbol,
+            entry_close=second.entry_close,
+            stop_loss=second.stop_loss,
+            vol_ratio=round(second.vol_ratio, 2),
+            gap_minutes=round(second.gap_minutes, 1),
+        )
 
     # ── WebSocket Lifecycle ────────────────────────────────────────────────
 
@@ -600,6 +691,8 @@ class Coordinator:
                   if m.state == StrategyState.CLOSED]
         for s in closed:
             del self.active_state_machines[s]
+        # v3 NEW: Reset second spike detector at end-of-day
+        self.second_spike_detector.end_of_day_reset()
 
     # ── Order Postback Routing (Phase 4) ────────────────────────────────────
 

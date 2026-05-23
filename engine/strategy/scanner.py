@@ -20,6 +20,7 @@ import datetime
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pytz
 import structlog
 
 if TYPE_CHECKING:
@@ -28,8 +29,9 @@ if TYPE_CHECKING:
 from app.core.config import settings
 
 log = structlog.get_logger(__name__)
+_IST_TZ = pytz.timezone("Asia/Kolkata")
 
-# Module-level cache for VIX and Nifty gate \u2014 updated by coordinator on each candle.
+# Module-level cache for VIX and Nifty gate — updated by coordinator on each candle.
 # Using a simple float avoids making evaluate() async (it's called from the hot path).
 _cached_vix: float | None = None
 _nifty_gate_open: bool = True   # True = allow new entries (default: open)
@@ -87,7 +89,16 @@ def evaluate(
     This is a pure function — safe to call from any context.
     The coordinator is responsible for calling this only during market hours.
     """
-    # ── Filter 0: Market direction gate (Nifty EMA) ───────────────────
+    # ── Filter 0: Opening noise guard ────────────────────────────────────
+    # Research: NSE pre-open auction order matching clears for 15-30 min after
+    # market open. Volume is structurally elevated in this window and dry-up is
+    # structurally impossible. Skip every candle before SCANNER_START_MINUTE
+    # (default 30 = 09:30 AM IST).
+    candle_ist = candle.timestamp.astimezone(_IST_TZ)
+    if candle_ist.hour == 9 and candle_ist.minute < settings.SCANNER_START_MINUTE:
+        return None
+
+    # ── Filter 1 (was 0): Market direction gate (Nifty EMA) ──────────────
     # Block all new scan hits if Nifty is below its 5-min EMA.
     # This prevents entries into a broad bearish session.
     # Gate defaults to OPEN if no EMA has been computed yet (cold start safety).

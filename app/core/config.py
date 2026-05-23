@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     UNIVERSE_FILE: str = "universe.txt"
 
     # ── Group A: Strategy Filter Values ────────────────────────────
-    VOLUME_SPIKE_MULTIPLE: float = 20.0
+    VOLUME_SPIKE_MULTIPLE: float = 15.0
     VOLUME_SMA_PERIOD: int = 500
     HISTORICAL_WARMUP_ENABLED: bool = True
     HISTORICAL_WARMUP_TRADING_DAYS: int = 5
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     MIN_TURNOVER_CRORE: float = 8.0
     MIN_PRICE: float = 50.0
     MAX_PRICE: float = 5000.0
-    REIGNITION_VOLUME_MULTIPLE: float = 3.0
+    REIGNITION_VOLUME_MULTIPLE: float = 2.0
     REIGNITION_LOOKBACK_CANDLES: int = 3
     # When True, re-ignition compares volume to the MEAN of all dry-up candles
     # (not just max of last N). This is the correct institutional threshold.
@@ -57,6 +57,26 @@ class Settings(BaseSettings):
     # Abandon dryup if any single candle's volume exceeds this fraction of the
     # impact candle's volume — signals institutional selling into the spike.
     ASHAPE_IMPACT_VOLUME_PCT: float = 0.50
+
+    # ── v3 NEW: Opening noise guard ─────────────────────────────────────────
+    # Skip candles in the 9 AM hour before this minute (default 30 = 09:30 start).
+    # Research: NSE pre-open queue clears 15-30 min post-open; volume structurally
+    # elevated, dry-up is impossible in this window.
+    SCANNER_START_MINUTE: int = 30
+
+    # ── v3 NEW: Abandonment price buffer ─────────────────────────────────────
+    # Chan & Lakonishok (1993): stop-hunt wicks 0.1-0.3% below key levels are
+    # normal NSE institutional behaviour. Use candle wick (not close) + buffer.
+    ABANDON_PRICE_BUFFER_PCT: float = 0.003
+
+    # ── v3 NEW: Second spike detection ─────────────────────────────────────
+    # Keim & Madhavan (1995): institutions leg into positions in tranches.
+    # The inter-spike quiet period is the Wyckoff secondary test at 5-min TF.
+    SECOND_SPIKE_MIN_RATIO: float = 0.50
+    SECOND_SPIKE_MAX_RATIO: float = 1.00
+    SECOND_SPIKE_MIN_GAP_MINUTES: int = 15
+    SECOND_SPIKE_VOLUME_FLOOR: float = 10.0
+    SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD: float = 0.80
 
     # ── Group B: SEBI / Regulatory Values ──────────────────────────
     STT_INTRADAY_SELL_PCT: float = 0.00025
@@ -75,8 +95,8 @@ class Settings(BaseSettings):
     EXIT_SL_CANCEL_DELAY_MS: int = 500
 
     # ── Group D: Strategy Calibration Values ───────────────────────
-    DRYUP_MAX_MINUTES: int = 25
-    MAX_ENTRY_TIME: str = "14:00"
+    DRYUP_MAX_MINUTES: int = 20
+    MAX_ENTRY_TIME: str = "13:30"
     ENTRY_BUFFER_PCT: float = 0.003
     ENTRY_WIDEN_AFTER_SECONDS: int = 5
     ENTRY_ABANDON_PCT: float = 0.015
