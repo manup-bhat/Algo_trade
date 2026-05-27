@@ -1772,10 +1772,11 @@ async def websocket_endpoint(ws: WebSocket):
         await ws.send_text(json.dumps(payload, default=str))
 
     async def _heartbeat_loop():
+        rs = _rs()
         # Send snapshot immediately on connect
         try:
             sd = await get_status()
-            hb = await rs.get_runner_heartbeat()
+            hb = await rs.get_runner_heartbeat() if rs else None
             if hb:
                 sd["runner_heartbeat"] = hb
             pd = await get_positions()
@@ -1801,7 +1802,7 @@ async def websocket_endpoint(ws: WebSocket):
             try:
                 await asyncio.sleep(5)
                 sd = await get_status()
-                hb = await rs.get_runner_heartbeat()
+                hb = await rs.get_runner_heartbeat() if rs else None
                 if hb:
                     sd["runner_heartbeat"] = hb
                 pd = await get_positions()
