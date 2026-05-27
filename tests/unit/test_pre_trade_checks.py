@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/unit/test_pre_trade_checks.py — Unit tests for all 9 PreTradeChecks.
 
 Each test exercises exactly one check failure. The autouse paper_trade_mode 
@@ -88,6 +88,7 @@ class TestAllNinePass:
 
     async def test_live_mode(self, redis_store, warmed_builder, live_kite, monkeypatch):
         monkeypatch.setattr("app.core.config.settings.PAPER_TRADE", False)
+        monkeypatch.setattr("app.core.config.settings.TRADE_MODE", "LIVE")
         ok, reason = await check(redis_store, warmed_builder, kite=live_kite)
         assert ok, f"All 9 should pass in live mode with mocked kite, got: {reason}"
 
@@ -174,6 +175,7 @@ class TestCheck6Quantity:
 class TestCheck7And8Margin:
     async def test_insufficient_margin_fails(self, redis_store, warmed_builder, monkeypatch):
         monkeypatch.setattr("app.core.config.settings.PAPER_TRADE", False)
+        monkeypatch.setattr("app.core.config.settings.TRADE_MODE", "LIVE")
         kite = AsyncMock()
         kite.order_margins.return_value = [{"initial": {"total": 200_000.0}}]
         kite.get_available_balance.return_value = 50_000.0
@@ -183,6 +185,7 @@ class TestCheck7And8Margin:
 
     async def test_peak_margin_exceeded_fails(self, redis_store, warmed_builder, monkeypatch):
         monkeypatch.setattr("app.core.config.settings.PAPER_TRADE", False)
+        monkeypatch.setattr("app.core.config.settings.TRADE_MODE", "LIVE")
         monkeypatch.setattr("app.core.config.settings.PEAK_MARGIN_SAFETY_BUFFER_PCT", 15.0)
         kite = AsyncMock()
         kite.order_margins.return_value = [{"initial": {"total": 90_000.0}}]

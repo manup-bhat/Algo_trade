@@ -503,9 +503,10 @@ async def job_reconcile() -> None:
 
 # ── Graceful Shutdown ─────────────────────────────────────────────────────────
 
-def _handle_signal(sig: int, frame: object) -> None:
+def _handle_signal(sig: int, frame: object | None = None) -> None:
+    """Synchronous signal handler (fallback for Windows KeyboardInterrupt)."""
     global _running
-    log.warning("shutdown_signal_received", signal=signal.Signals(sig).name)
+    log.warning("shutdown_signal_received", sig=sig)
     _running = False
 
 
@@ -599,9 +600,18 @@ async def _poll_config() -> None:
                         name="reinit_pre_market_setup",
                     )
 
+                # Sync TRADE_MODE override from Redis → settings (changed via dashboard)
+                override_mode = await _redis_store.get_trade_mode_override()
+                if override_mode is not None and settings.TRADE_MODE != override_mode:
+                    log.info("trade_mode_override_applied", new_mode=override_mode, prev=settings.TRADE_MODE)
+                    settings.TRADE_MODE = override_mode  # type: ignore[assignment]
+                    # Keep legacy PAPER_TRADE bool in sync
+                    settings.PAPER_TRADE = (override_mode == "PAPER")  # type: ignore[assignment]
+
+                # Legacy paper_trade bool override (kept for backward compat)
                 override_pt = await _redis_store.get_paper_trade_override()
                 if override_pt is not None and settings.PAPER_TRADE != override_pt:
-                    settings.PAPER_TRADE = override_pt
+                    settings.PAPER_TRADE = override_pt  # type: ignore[assignment]
 
                 # Push heartbeat telemetry — but NEVER clobber auth failure states
                 if _coordinator is not None:
@@ -740,24 +750,52 @@ async def main() -> None:
     )
 
     # ── Signal Handlers ───────────────────────────────────────────────────────
-    # asyncio.get_event_loop() inside an async function is deprecated since
-    # Python 3.10. get_running_loop() is always correct here.
-    loop = asyncio.get_running_loop()  # noqa: F841 — kept for clarity / future use
-    signal.signal(signal.SIGINT, _handle_signal)
-    # SIGTERM is not available on Windows (raises OSError); guard to avoid a
-    # startup crash on developer machines running the engine directly.
+    # On Windows, signal.signal(SIGINT) and loop.add_signal_handler() both have
+    # quirks inside asyncio:
+    #   - loop.add_signal_handler() is NOT available on Windows (raises NotImplementedError)
+    #   - signal.signal(SIGINT) sets _running=False but Ctrl+C still raises
+    #     KeyboardInterrupt in asyncio.sleep, which would propagate up and bypass
+    #     the while _running check.
+    # Solution: register the sync handler AND wrap the sleep with a KeyboardInterrupt
+    # guard so both paths cleanly set _running=False and fall through to shutdown().
+    loop = asyncio.get_running_loop()
     try:
-        signal.signal(signal.SIGTERM, _handle_signal)
-    except (OSError, ValueError):
-        log.debug("sigterm_not_available_on_this_platform")
+        # Unix / macOS: use the asyncio-native add_signal_handler (no race conditions)
+        loop.add_signal_handler(signal.SIGINT,  _handle_signal, signal.SIGINT, None)
+        loop.add_signal_handler(signal.SIGTERM, _handle_signal, signal.SIGTERM, None)
+        log.debug("signal_handlers_registered", method="loop.add_signal_handler")
+    except (NotImplementedError, OSError):
+        # Windows: fall back to synchronous signal handlers
+        signal.signal(signal.SIGINT, _handle_signal)
+        try:
+            signal.signal(signal.SIGTERM, _handle_signal)
+        except (OSError, ValueError):
+            pass
+        log.debug("signal_handlers_registered", method="signal.signal", platform="windows")
 
     # ── Main Control Loop ─────────────────────────────────────────────────────
+    # Wrapping sleep with KeyboardInterrupt guard covers the Windows case where
+    # Ctrl+C raises KeyboardInterrupt inside asyncio.sleep() even though our
+    # signal handler set _running=False — we catch and treat it as a clean exit.
     try:
         while _running:
-            await asyncio.sleep(5)
+            try:
+                await asyncio.sleep(5)
+            except KeyboardInterrupt:
+                log.warning("keyboard_interrupt_in_sleep_treating_as_shutdown")
+                _running = False
+                break
+
+            if not _running:
+                break
 
             # Poll Redis for operator control commands
-            control = await _redis_store.get_engine_control()
+            try:
+                control = await _redis_store.get_engine_control()
+            except Exception as exc:
+                log.warning("engine_control_poll_error", error=str(exc))
+                continue
+
             if control is None:
                 continue
 
@@ -784,6 +822,9 @@ async def main() -> None:
                 await job_market_open()
                 await _redis_store.set_engine_control("")
 
+    except KeyboardInterrupt:
+        log.warning("keyboard_interrupt_main_loop_shutting_down")
+        _running = False
     finally:
         await shutdown()
 

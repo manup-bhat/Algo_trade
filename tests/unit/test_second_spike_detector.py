@@ -214,35 +214,55 @@ class TestSecondSpikeConditions:
         )
         assert red_result is None
 
-    def test_condition6_high_ratio_needs_price_confirm(self):
+
+    def test_condition6_high_ratio_needs_price_confirm_or_extended_gap(self):
         """
-        At vol_ratio >= 80%, close must be ABOVE prior spike's high.
-        Research: at 80%+ volume, Wyckoff secondary test needs price to confirm.
+        At vol_ratio >= 80%, close must be >= prior spike high * 1.005 (0.5% buffer).
+        UNLESS the inter-spike gap is >= SECOND_SPIKE_EXTENDED_GAP_MINUTES (30 min),
+        in which case the extended gap compensates and the signal is allowed.
+
+        Research: At 80%+ volume, Wyckoff secondary test is borderline.
+        Price confirms with a 0.5% buffer, OR time compensates with a 30-min extended gap.
         """
         detector = SecondSpikeDetector()
         _record_prior(detector, spike_close=500.0, spike_high=505.0, spike_volume=200_000, inter_spike_lows=[498.0])
 
-        # Vol ratio 80% with close = 504 (below prior high 505)
-        # No price confirmation → reject
-        result = _eval(
+        # SHORT gap (20 min) + no price confirm → REJECT
+        # 80% volume, close=504 (below 505*1.005=507.525), gap=20 min (< 30 min)
+        result_short_gap = _eval(
             detector,
-            candle_close=504.0,    # Below prior spike high
+            candle_close=504.0,    # Below required 505 * 1.005 = 507.525
             candle_open=502.0,
             candle_volume=160_000,  # 80% of 200k
-            candle_time=make_ts(10, 30),
+            candle_time=make_ts(9, 50),  # 20 min gap from 9:30 spike
         )
-        assert result is None
+        assert result_short_gap is None, "Short gap + no price confirm should reject"
 
-    def test_condition6_high_ratio_with_price_confirm(self):
-        """At vol_ratio >= 80%, close ABOVE prior spike high → valid."""
+    def test_condition6_extended_gap_overrides_no_price_confirm(self):
+        """At vol_ratio >= 80%, if gap >= 30 min, allow even without price confirm above 0.5% buffer."""
         detector = SecondSpikeDetector()
         _record_prior(detector, spike_close=500.0, spike_high=505.0, spike_volume=200_000, inter_spike_lows=[498.0])
 
-        # Vol ratio 80% with close = 506 (above prior high 505)
+        # 60 min gap compensates for lack of price confirmation above 507.525
         result = _eval(
             detector,
-            candle_close=506.0,    # Above prior spike high
-            candle_open=504.0,
+            candle_close=504.0,    # Below required 505 * 1.005 = 507.525 — but gap compensates
+            candle_open=502.0,
+            candle_volume=160_000,  # 80% of 200k
+            candle_time=make_ts(10, 30),  # 60 min gap from 9:30 spike
+        )
+        assert result is not None, "60-min extended gap should override no-price-confirm at 80%"
+
+    def test_condition6_high_ratio_with_price_confirm(self):
+        """At vol_ratio >= 80%, close >= prior spike high * 1.005 → valid even short gap."""
+        detector = SecondSpikeDetector()
+        _record_prior(detector, spike_close=500.0, spike_high=505.0, spike_volume=200_000, inter_spike_lows=[498.0])
+
+        # Vol ratio 80% with close = 509 (above 505*1.005=507.525)
+        result = _eval(
+            detector,
+            candle_close=509.0,    # Above prior spike high * 1.005
+            candle_open=506.0,
             candle_volume=160_000,  # 80% of 200k
             candle_time=make_ts(10, 30),
         )

@@ -423,6 +423,7 @@ class TestPaperTrade:
         impact = make_impact()
         await sm.on_scan_hit(impact)
         sm.state = StrategyState.ACTION_PENDING  # Skip entry flow
+        sm._is_paper_entry = True  # simulate paper trade (normally set by _trigger_entry)
 
         await sm.on_order_filled(
             order_id="PAPER_TEST_456",
@@ -446,6 +447,7 @@ class TestPaperTrade:
         impact = make_impact()
         await sm.on_scan_hit(impact)
         sm.state = StrategyState.ACTION_PENDING
+        sm._is_paper_entry = True  # simulate paper trade (normally set by _trigger_entry)
 
         await sm.on_order_filled(
             order_id="PAPER_TEST_789",
@@ -468,6 +470,7 @@ class TestPaperTrade:
         impact = make_impact()
         await sm.on_scan_hit(impact)
         sm.state = StrategyState.ACTION_PENDING
+        sm._is_paper_entry = True  # simulate paper trade (normally set by _trigger_entry)
 
         await sm.on_order_filled(
             order_id="PAPER_TEST_TRAIL",
