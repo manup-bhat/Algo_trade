@@ -47,6 +47,7 @@ class StrategyState(str, enum.Enum):
     SCAN_HIT = "SCAN_HIT"
     MONITORING = "MONITORING"
     ACTION_PENDING = "ACTION_PENDING"
+    ACTION_PENDING_APPROVAL = "ACTION_PENDING_APPROVAL"  # Live mode: waiting for trader approval
     MANAGING = "MANAGING"
     CLOSED = "CLOSED"
 
@@ -199,6 +200,9 @@ class SymbolStateMachine:
         self._signal_id: int | None = None
         self._abandonment_reason: str | None = None
         self._second_spike_stop_loss_override: float | None = None
+        self._trade_mode: str = "PAPER"
+        self._entry_count: int = 0
+        self._is_paper_entry: bool = False
 
     # ── Phase 1: Scan Hit ─────────────────────────────────────────────────────
 
@@ -473,11 +477,42 @@ class SymbolStateMachine:
     async def _trigger_entry(self, entry_close: float, candle_time: datetime.datetime) -> None:
         """
         Trigger an entry order based on re-ignition signal.
-        Paper mode: simulate fill immediately via order_service._paper_entry().
-        Live mode: place real LIMIT order via order_service.place_entry().
+
+        Mode resolution (per TRADE_MODE config):
+          PAPER:        simulate fill immediately at live LTP — no Kite API calls.
+          LIVE:         hold in ACTION_PENDING_APPROVAL until trader approves via
+                        dashboard API. Always requires human confirmation.
+          SIMULTANEOUS: alternate entry modes. First signal → PAPER (auto),
+                        second → LIVE (approval required), and so on.
+                        Easy to change: swap settings.TRADE_MODE to any of the three.
+
+        The approval-gated flow for LIVE:
+          1. Compute all entry params (same as paper)
+          2. Run all 9 pre-trade checks
+          3. Transition to ACTION_PENDING_APPROVAL, store approval request in Redis,
+             publish pub:signals event, and WAIT. No Kite order is placed yet.
+          4. On dashboard approval: place LIMIT order via Kite.
+          5. On dashboard rejection or timeout: abandon the SM.
         """
         assert self.consolidation is not None
         assert self.impact_candle is not None
+
+        # Resolve this entry's mode (PAPER or LIVE) before any state changes.
+        # In SIMULTANEOUS mode, this SM may alternate between paper and live.
+        self._trade_mode = settings.trade_mode_for_symbol(self.symbol, self._entry_count)
+        self._entry_count += 1
+
+        is_paper = self._trade_mode == "PAPER"
+
+        # Capture entry mode for use throughout lifecycle (SL checks, exit, DB persistence)
+        self._is_paper_entry = is_paper
+
+        log.info(
+            "entry_resolved",
+            symbol=self.symbol,
+            trade_mode=self._trade_mode,
+            entry_count=self._entry_count,
+        )
 
         # Get tick size for SL calculation (default 5 paise)
         try:
@@ -516,6 +551,8 @@ class SymbolStateMachine:
             await self._abandon("insufficient_capital_for_quantity")
             return
 
+        risk_amount = round(risk_per_share * quantity, 2)
+
         # Run all 9 pre-trade checks before placing order (spec §8.4)
         from engine.risk.pre_trade_checks import pre_trade_checks
         from engine.kite.client import AsyncKiteClient
@@ -540,14 +577,48 @@ class SymbolStateMachine:
                 await self._abandon(f"pre_trade_failed:{reason}")
                 return
 
-        # Transition to ACTION_PENDING
+        # ── LIVE ENTRY: hold for trader approval ─────────────────────────
+        if not is_paper:
+            self.state = StrategyState.ACTION_PENDING_APPROVAL
+            self._pending_order_id = None
+
+            approval_data = {
+                "entry_close": entry_close,
+                "entry_time": candle_time.isoformat(),
+                "limit_price": limit_price,
+                "stop_loss": stop_loss,
+                "risk_per_share": risk_per_share,
+                "risk_amount": risk_amount,
+                "quantity": quantity,
+                "symbol": self.symbol,
+                "signal_id": self._signal_id,
+                "trade_mode": self._trade_mode,
+            }
+            await self._redis.add_pending_approval(self.symbol, approval_data)
+
+            log.info(
+                "entry_holding_for_approval",
+                symbol=self.symbol,
+                limit_price=limit_price,
+                stop_loss=stop_loss,
+                qty=quantity,
+                risk_per_share=risk_per_share,
+            )
+            await self._persist_state()
+
+            # Start approval timeout watchdog — auto-revert after APPROVAL_TIMEOUT_SECONDS
+            asyncio.create_task(
+                self._wait_for_approval_timeout(),
+                name=f"approval_timeout_{self.symbol}",
+            )
+            return
+
+        # ── PAPER MODE: auto-execute with simulated fill ──────────────────
+        # In paper mode, we use real market data for fill simulation.
+        # The fill price is the live LTP at the time of the candle close,
+        # adjusted for realistic market slippage.
         self.state = StrategyState.ACTION_PENDING
         self._pending_order_id = None
-
-        # Get or lazy-import order_service
-        if self._order_service is None:
-            from engine.orders.order_service import order_service as _os
-            self._order_service = _os
 
         order_id = await self._order_service.place_entry(
             symbol=self.symbol,
@@ -569,19 +640,38 @@ class SymbolStateMachine:
             self._order_tracker.register_entry(order_id, self.symbol)
 
             # Start fill timeout watchdog
-            if not settings.is_paper_trade:
-                if self._fill_timeout is None:
-                    from engine.orders.fill_timeout import fill_timeout_manager as _ftm
-                    self._fill_timeout = _ftm
-                self._fill_timeout.start_timeout(order_id, self, self._order_service)
+            if self._fill_timeout is None:
+                from engine.orders.fill_timeout import fill_timeout_manager as _ftm
+                self._fill_timeout = _ftm
+            self._fill_timeout.start_timeout(order_id, self, self._order_service)
 
-                # 5-second widen task (spec §8.5)
-                asyncio.create_task(
-                    self._maybe_widen_limit(order_id, limit_price),
-                    name=f"widen_{order_id}",
-                )
+            # 5-second widen task (spec §8.5)
+            asyncio.create_task(
+                self._maybe_widen_limit(order_id, limit_price),
+                name=f"widen_{order_id}",
+            )
 
         await self._persist_state()
+
+    async def _wait_for_approval_timeout(self) -> None:
+        """
+        Watchdog task: after APPROVAL_TIMEOUT_SECONDS, if still in
+        ACTION_PENDING_APPROVAL state, auto-revert to MONITORING.
+
+        This prevents approvals from hanging indefinitely while the setup
+        still has a chance to re-trigger on a subsequent candle.
+        """
+        await asyncio.sleep(settings.APPROVAL_TIMEOUT_SECONDS)
+
+        if self.state == StrategyState.ACTION_PENDING_APPROVAL:
+            log.warning(
+                "approval_timeout_auto_reverting",
+                symbol=self.symbol,
+                timeout_sec=settings.APPROVAL_TIMEOUT_SECONDS,
+            )
+            # Remove from pending approval queue
+            await self._redis.remove_pending_approval(self.symbol)
+            await self.on_approval_timeout()
 
     async def _maybe_widen_limit(self, order_id: str, original_limit: float) -> None:
         """
@@ -626,6 +716,102 @@ class SymbolStateMachine:
 
     # ── Phase 3: Order Fill / Reject / Timeout ────────────────────────────────
 
+    async def on_approval_received(
+        self,
+        limit_price: float,
+        quantity: int,
+    ) -> None:
+        """
+        Called when a trader approves a pending live trade from the dashboard.
+        Transitions ACTION_PENDING_APPROVAL → ACTION_PENDING and places the LIMIT order.
+
+        Args:
+            limit_price:  The approved entry limit price.
+            quantity:     The approved quantity.
+        """
+        if self.state != StrategyState.ACTION_PENDING_APPROVAL:
+            log.warning(
+                "approval_in_wrong_state",
+                symbol=self.symbol,
+                current_state=self.state,
+            )
+            return
+
+        log.info(
+            "trade_approved_placing_entry",
+            symbol=self.symbol,
+            limit_price=limit_price,
+            qty=quantity,
+        )
+
+        # Transition to ACTION_PENDING before placing the order
+        self.state = StrategyState.ACTION_PENDING
+
+        # Get or lazy-import order_service
+        if self._order_service is None:
+            from engine.orders.order_service import order_service as _os
+            self._order_service = _os
+
+        order_id = await self._order_service.place_entry(
+            symbol=self.symbol,
+            limit_price=limit_price,
+            quantity=quantity,
+            sm=self,
+        )
+
+        if order_id is None:
+            # Order placement failed — revert to MONITORING (don't abandon)
+            log.warning("entry_order_failed_reverting_to_monitoring", symbol=self.symbol)
+            self.state = StrategyState.MONITORING
+        else:
+            self._pending_order_id = order_id
+            if self._order_tracker is None:
+                from engine.orders.order_tracker import order_tracker as _ot
+                self._order_tracker = _ot
+            self._order_tracker.register_entry(order_id, self.symbol)
+
+            if self._fill_timeout is None:
+                from engine.orders.fill_timeout import fill_timeout_manager as _ftm
+                self._fill_timeout = _ftm
+            self._fill_timeout.start_timeout(order_id, self, self._order_service)
+
+            asyncio.create_task(
+                self._maybe_widen_limit(order_id, limit_price),
+                name=f"widen_{order_id}",
+            )
+
+        await self._persist_state()
+
+    async def on_approval_rejected(self, reason: str = "manual_rejection") -> None:
+        """
+        Called when a trader rejects a pending live trade from the dashboard.
+        Transitions ACTION_PENDING_APPROVAL → CLOSED (abandoned).
+        """
+        if self.state != StrategyState.ACTION_PENDING_APPROVAL:
+            return
+
+        log.info("trade_rejected", symbol=self.symbol, reason=reason)
+        self.state = StrategyState.CLOSED
+        self._abandonment_reason = reason
+        await self._persist_state()
+
+    async def on_approval_timeout(self) -> None:
+        """
+        Called when the approval window expires without trader action.
+        Transitions ACTION_PENDING_APPROVAL → MONITORING to give the setup
+        another chance — the re-ignition candle has not been filled yet,
+        so the price may continue to move.
+        """
+        if self.state != StrategyState.ACTION_PENDING_APPROVAL:
+            return
+        log.warning(
+            "approval_timeout_reverting_to_monitoring",
+            symbol=self.symbol,
+        )
+        self.state = StrategyState.MONITORING
+        self._pending_order_id = None
+        await self._persist_state()
+
     async def on_order_filled(
         self,
         order_id: str,
@@ -638,7 +824,7 @@ class SymbolStateMachine:
         Transitions ACTION_PENDING → MANAGING.
         Also cancels fill timeout watchdog and places SL order.
         """
-        if self.state != StrategyState.ACTION_PENDING:
+        if self.state not in (StrategyState.ACTION_PENDING, StrategyState.ACTION_PENDING_APPROVAL):
             log.warning(
                 "fill_in_wrong_state",
                 symbol=self.symbol,
@@ -669,7 +855,7 @@ class SymbolStateMachine:
         # Place SL-M order immediately on fill
         sl_order_id: str | None = None
         margin_blocked = 0.0
-        if not settings.is_paper_trade and self._order_service is not None:
+        if not self._is_paper_entry and self._order_service is not None:
             sl_order_id = await self._order_service.place_stop_loss(
                 symbol=self.symbol,
                 quantity=fill_qty,
@@ -720,7 +906,7 @@ class SymbolStateMachine:
                         symbol=self.symbol,
                         error=str(exc),
                     )
-        elif settings.is_paper_trade:
+        elif self._is_paper_entry:
             # Paper SL is tracked internally — checked via on_tick() LTP
             sl_order_id = f"PAPER_SL_{self.symbol}_{int(__import__('time').time())}"
 
@@ -740,7 +926,7 @@ class SymbolStateMachine:
                 target_1r2=target_1r2,
                 target_1r4=target_1r4,
                 sl_order_id=sl_order_id,
-                notes="PAPER_TRADE" if settings.is_paper_trade else None,
+                trade_mode=self._trade_mode,
             )
         except Exception as exc:
             log.error("trade_db_write_failed", symbol=self.symbol, error=str(exc))
@@ -773,7 +959,7 @@ class SymbolStateMachine:
             sl_order_id=sl_order_id,
             target_1r2=target_1r2,
             target_1r4=target_1r4,
-            paper=settings.is_paper_trade,
+            paper=self._is_paper_entry,
         )
 
         # Update signal progression in DB
@@ -819,7 +1005,7 @@ class SymbolStateMachine:
         Called by FillTimeoutManager when order hasn't filled within timeout.
         Reverts ACTION_PENDING → MONITORING.
         """
-        if self.state != StrategyState.ACTION_PENDING:
+        if self.state not in (StrategyState.ACTION_PENDING, StrategyState.ACTION_PENDING_APPROVAL):
             return
         log.warning(
             "fill_timeout_order_not_filled_reverting",
@@ -828,6 +1014,8 @@ class SymbolStateMachine:
             timeout_sec=settings.ORDER_FILL_TIMEOUT_SECONDS,
         )
         self._pending_order_id = None
+        if self.state == StrategyState.ACTION_PENDING_APPROVAL:
+            await self._redis.remove_pending_approval(self.symbol)
         self.state = StrategyState.MONITORING
         await self._persist_state()
 
@@ -886,7 +1074,7 @@ class SymbolStateMachine:
             pos.max_adverse_excursion = unrealized
 
         # ── Paper mode SL check ───────────────────────────────────────
-        if settings.is_paper_trade and ltp <= pos.current_sl and not pos._exit_initiated:
+        if self._is_paper_entry and ltp <= pos.current_sl and not pos._exit_initiated:
             reason = "CLOSED_TRAILSTOP" if pos.cost_trailed else "CLOSED_STOPLOSS"
             log.info(
                 "paper_sl_hit",
@@ -910,7 +1098,7 @@ class SymbolStateMachine:
                 new_sl=new_sl,
             )
             # Live mode: modify the actual SL-M order at the exchange
-            if not settings.is_paper_trade and self._order_service and pos.sl_order_id:
+            if not self._is_paper_entry and self._order_service and pos.sl_order_id:
                 success = await self._order_service.modify_stop_loss(
                     pos.sl_order_id, new_trigger=new_sl, symbol=self.symbol, sm=self
                 )
@@ -938,7 +1126,7 @@ class SymbolStateMachine:
                 new_sl=new_sl,
             )
             # Live mode: modify the actual SL-M order at the exchange
-            if not settings.is_paper_trade and self._order_service and pos.sl_order_id:
+            if not self._is_paper_entry and self._order_service and pos.sl_order_id:
                 success = await self._order_service.modify_stop_loss(
                     pos.sl_order_id, new_trigger=new_sl, symbol=self.symbol, sm=self
                 )
@@ -962,7 +1150,7 @@ class SymbolStateMachine:
                 ltp=ltp,
                 target=pos.target_1r4,
             )
-            if settings.is_paper_trade:
+            if self._is_paper_entry:
                 # Paper: close directly — no Redis lock needed
                 await self._close_position(ltp, None, "CLOSED_TARGET")
             else:
@@ -978,7 +1166,7 @@ class SymbolStateMachine:
         Paper mode: simulate exit at current LTP.
         """
         if self.state == StrategyState.MANAGING and self.position is not None:
-            if settings.is_paper_trade:
+            if self._is_paper_entry:
                 try:
                     ltp = await self._redis.get_last_ltp(self.symbol) or self.position.entry_price
                 except Exception:
@@ -1018,7 +1206,7 @@ class SymbolStateMachine:
         if self.position is None or self.position._exit_initiated:
             return
 
-        if settings.is_paper_trade:
+        if self._is_paper_entry:
             # Paper: close directly
             try:
                 ltp = await self._redis.get_last_ltp(self.symbol) or self.position.entry_price
@@ -1117,7 +1305,7 @@ class SymbolStateMachine:
             gross_pnl=gross_pnl,
             charges=estimated_charges,
             net_pnl=net_pnl,
-            paper=settings.is_paper_trade,
+            paper=self._is_paper_entry,
         )
 
         # Update trade in DB
@@ -1238,6 +1426,8 @@ class SymbolStateMachine:
                 "symbol": self.symbol,
                 "state": self.state.value,
                 "signal_id": self._signal_id,
+                "trade_mode": self._trade_mode,
+                "is_second_spike": self.is_second_spike,
             }
             if self.impact_candle:
                 data["impact_candle_time"] = self.impact_candle.time.isoformat()

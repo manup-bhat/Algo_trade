@@ -75,8 +75,10 @@ class Settings(BaseSettings):
     SECOND_SPIKE_MIN_RATIO: float = 0.50
     SECOND_SPIKE_MAX_RATIO: float = 1.00
     SECOND_SPIKE_MIN_GAP_MINUTES: int = 15
+    SECOND_SPIKE_EXTENDED_GAP_MINUTES: int = 30
     SECOND_SPIKE_VOLUME_FLOOR: float = 10.0
     SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD: float = 0.80
+    SECOND_SPIKE_PRICE_ABOVE_HIGH_PCT: float = 0.005
 
     # ── Group B: SEBI / Regulatory Values ──────────────────────────
     STT_INTRADAY_SELL_PCT: float = 0.00025
@@ -101,6 +103,14 @@ class Settings(BaseSettings):
     ENTRY_WIDEN_AFTER_SECONDS: int = 5
     ENTRY_ABANDON_PCT: float = 0.015
     ORDER_FILL_TIMEOUT_SECONDS: int = 30
+    # After this hour, no new scan hits are accepted. Conservative cutoff
+    # at 14:00 (40 min before 15:20 square-off) ensures setups have time to
+    # progress through dry-up before the session ends.
+    SCAN_CUTOFF_HOUR: int = 14
+    # In LIVE mode (PAPER_TRADE=False), entries hold in ACTION_PENDING_APPROVAL
+    # for this many seconds before auto-reverting to MONITORING.
+    # Gives the trader time to review while not missing the entry entirely.
+    APPROVAL_TIMEOUT_SECONDS: int = 60
 
     # ── Market Direction Gate ───────────────────────────────────────
     # When enabled, new Phase 2 entries are blocked unless Nifty 50
@@ -129,12 +139,20 @@ class Settings(BaseSettings):
     MIN_RISK_PER_SHARE_INR: float = 5.0
     PEAK_MARGIN_SAFETY_BUFFER_PCT: float = 15.0
 
+    # ── Mode Selection ──────────────────────────────────────────────────────────
+    # PAPER: all entries simulated with live LTP, no Kite orders placed.
+    # LIVE:  real Kite orders placed, requires manual approval via dashboard.
+    # SIMULTANEOUS: PAPER auto-entries + LIVE entries with approval.
+    #               First signal on a symbol → PAPER, second → LIVE, alternates.
+    #               Max 1 LIVE trade per symbol at a time (respects MAX_CONCURRENT).
+    TRADE_MODE: str = "PAPER"
+    PAPER_TRADE: bool = False  # Legacy — use TRADE_MODE instead
+
     # ── Server & Operational ────────────────────────────────────────
     API_HOST: str = "127.0.0.1"
     API_PORT: int = 8000
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
-    PAPER_TRADE: bool = False
     AUTO_START_ENGINE_WITH_BACKEND: bool = True
     AUTO_STOP_ENGINE_WITH_BACKEND: bool = True
     ENGINE_RUNNER_CMD: str = ""
@@ -178,6 +196,18 @@ class Settings(BaseSettings):
                 return True
         return v
 
+    @field_validator("TRADE_MODE", mode="before")
+    @classmethod
+    def validate_trade_mode(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            normalized = v.strip().upper()
+            if normalized not in {"PAPER", "LIVE", "SIMULTANEOUS"}:
+                raise ValueError(
+                    "TRADE_MODE must be PAPER, LIVE, or SIMULTANEOUS"
+                )
+            return normalized
+        return v
+
     @field_validator("MAX_ENTRY_TIME", "MARKET_OPEN_TIME", "SQUARE_OFF_TIME",
                      "MASS_SQUAREOFF_START_TIME", "SESSION_END_TIME", mode="before")
     @classmethod
@@ -194,9 +224,14 @@ class Settings(BaseSettings):
         open_t = datetime.time.fromisoformat(self.MARKET_OPEN_TIME)
         squareoff_t = datetime.time.fromisoformat(self.SQUARE_OFF_TIME)
         entry_t = datetime.time.fromisoformat(self.MAX_ENTRY_TIME)
+        session_end_t = datetime.time.fromisoformat(self.SESSION_END_TIME)
         if not (open_t < entry_t < squareoff_t):
             raise ValueError(
                 "Time ordering must be: MARKET_OPEN < MAX_ENTRY_TIME < SQUARE_OFF_TIME"
+            )
+        if not (squareoff_t < session_end_t):
+            raise ValueError(
+                "Time ordering must be: SQUARE_OFF_TIME < SESSION_END_TIME"
             )
         return self
 
@@ -209,7 +244,32 @@ class Settings(BaseSettings):
 
     @property
     def is_paper_trade(self) -> bool:
-        return self.PAPER_TRADE
+        return self.TRADE_MODE == "PAPER"
+
+    @property
+    def is_live_trade(self) -> bool:
+        return self.TRADE_MODE == "LIVE"
+
+    @property
+    def is_simultaneous(self) -> bool:
+        return self.TRADE_MODE == "SIMULTANEOUS"
+
+    def trade_mode_for_symbol(self, symbol: str, entry_count: int = 0) -> str:
+        """
+        Return PAPER or LIVE for a given entry.
+
+        PAPER: always returns "PAPER"
+        LIVE:  always returns "LIVE"
+        SIMULTANEOUS: alternates based on entry count for this symbol.
+                      entry_count=0 → PAPER (first), 1 → LIVE (second),
+                      2 → PAPER (third), etc.
+        """
+        if self.TRADE_MODE == "PAPER":
+            return "PAPER"
+        if self.TRADE_MODE == "LIVE":
+            return "LIVE"
+        # SIMULTANEOUS: alternate, starting with PAPER
+        return "LIVE" if entry_count % 2 == 1 else "PAPER"
 
     @property
     def market_open_time(self) -> datetime.time:

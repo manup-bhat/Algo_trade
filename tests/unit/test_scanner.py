@@ -63,16 +63,20 @@ def make_builder(sma_value: float | None, symbol: str = "TEST") -> MagicMock:
     return builder
 
 
-# The SMA needed for a 20x spike: if volume=100_000, sma=5000 gives 20x
-# turnover at close=508, volume=100_000 → 50_800_000 (5.08 Cr) — need to adjust
+# The SMA needed for a 20x spike (old hardcoded test value):
+# if volume=100_000, sma=5000 gives 20x
+# turnover at close=508, volume=100_000 → 50_800_000 (5.08 Cr)
 # For 8 Cr turnover: close × volume ≥ 8e7: at close=500, need volume ≥ 160_000
-# Let's use: close=500, volume=200_000 → turnover=1e8 (10 Cr) ✓
-# sma = 10_000 for 20x: 200_000 / 10_000 = 20x ✓
+# Let's use: close=500, volume=200_000 → turnover=1e8 (10 Cr)
+# sma = 10_000 for 20x: 200_000 / 10_000 = 20x
+# BUT config uses VOLUME_SPIKE_MULTIPLE=15.0 (per spec), so:
+#   15x: sma = 200_000 / 15 = 13_333.3 → gives 15x exactly
+#   For 19.9x test: sma = 200_000 / 19.9 = 10_050.25 → 19.9x (just below threshold)
 
 BASE_VOLUME = 200_000
-BASE_SMA = 10_000    # 20x exactly
+BASE_SMA_15X = 200_000 / 15.0    # 13_333.3 → exactly 15x (passing boundary)
 BASE_CLOSE = 500.0
-BASE_OPEN = 498.0    # close/open = 500/498 > 0.995 ✓
+BASE_OPEN = 498.0    # close/open = 500/498 > 0.995 (passes sell dump filter)
 
 
 def base_passing_candle(**overrides) -> Candle:
@@ -106,32 +110,31 @@ class TestScannerWarmup:
 
 
 class TestVolumeSpikeFilter:
-    def test_exactly_20x_passes(self):
-        """Volume = 20× SMA exactly → PASS (inclusive boundary)."""
-        # volume=200_000, sma=10_000 → exactly 20x
+    def test_exactly_15x_passes(self):
+        """Volume = 15× SMA exactly → PASS (spec VOLUME_SPIKE_MULTIPLE=15.0)."""
         candle = base_passing_candle(volume=BASE_VOLUME)
-        builder = make_builder(sma_value=float(BASE_VOLUME / 20))  # 10_000
+        builder = make_builder(sma_value=float(BASE_VOLUME / 15))  # ~13_333 → exactly 15x
         result = evaluate(candle, builder)
         assert result is not None
         assert isinstance(result, ImpactCandle)
-        assert abs(result.spike_multiple - 20.0) < 0.001
+        assert abs(result.spike_multiple - 15.0) < 0.001
 
-    def test_just_below_20x_fails(self):
-        """Volume = 19.9× SMA → FAIL."""
-        sma = BASE_VOLUME / 19.9  # gives 19.9x
+    def test_just_below_15x_fails(self):
+        """Volume = 14.9× SMA → FAIL."""
+        sma = BASE_VOLUME / 14.9  # gives ~14.9x
         candle = base_passing_candle(volume=BASE_VOLUME)
         builder = make_builder(sma_value=sma)
         result = evaluate(candle, builder)
         assert result is None
 
-    def test_well_above_20x_passes(self):
+    def test_well_above_15x_passes(self):
         """Volume = 50× SMA → PASS."""
         sma = BASE_VOLUME / 50
         candle = base_passing_candle(volume=BASE_VOLUME)
         builder = make_builder(sma_value=sma)
         result = evaluate(candle, builder)
         assert result is not None
-        assert result.spike_multiple > 20
+        assert result.spike_multiple > 15
 
 
 class TestTurnoverFilter:
@@ -219,7 +222,7 @@ class TestSellDumpFilter:
         candle = base_passing_candle(open_=open_, close=close, volume=BASE_VOLUME,
                                      turnover=close * BASE_VOLUME)
         # Need turnover >= 8Cr: 497.5 × 200_000 = 9.95Cr ✓
-        builder = make_builder(sma_value=BASE_SMA)
+        builder = make_builder(sma_value=BASE_SMA_15X)
         result = evaluate(candle, builder)
         assert result is not None, (
             f"Flat candle (close={close}, open={open_}) should PASS but failed"
@@ -231,7 +234,7 @@ class TestSellDumpFilter:
         close = round(open_ * 0.994, 2)  # 497.00
         candle = base_passing_candle(open_=open_, close=close, volume=BASE_VOLUME,
                                      turnover=close * BASE_VOLUME)
-        builder = make_builder(sma_value=BASE_SMA)
+        builder = make_builder(sma_value=BASE_SMA_15X)
         result = evaluate(candle, builder)
         assert result is None
 
@@ -241,7 +244,7 @@ class TestSellDumpFilter:
         close = 510.0
         candle = base_passing_candle(open_=open_, close=close, volume=BASE_VOLUME,
                                      turnover=close * BASE_VOLUME)
-        builder = make_builder(sma_value=BASE_SMA)
+        builder = make_builder(sma_value=BASE_SMA_15X)
         result = evaluate(candle, builder)
         assert result is not None
 
@@ -250,7 +253,7 @@ class TestImpactCandleFields:
     def test_impact_candle_fields_populated_correctly(self):
         """Verify all ImpactCandle fields match the input candle."""
         candle = base_passing_candle(volume=BASE_VOLUME)
-        sma = float(BASE_SMA)
+        sma = float(BASE_SMA_15X)
         builder = make_builder(sma_value=sma)
         result = evaluate(candle, builder, instrument_token=12345)
 

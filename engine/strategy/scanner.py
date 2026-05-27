@@ -98,6 +98,14 @@ def evaluate(
     if candle_ist.hour == 9 and candle_ist.minute < settings.SCANNER_START_MINUTE:
         return None
 
+    # ── Filter 0b: Late-session guard ────────────────────────────────────
+    # Use the CANDLE's own hour, not wall-clock time, so this guard is
+    # consistent regardless of when tests run. After SCAN_CUTOFF_HOUR, skip
+    # new scan hits because the remaining window before 3:20 PM square-off
+    # is too short for the institutional move to complete.
+    if candle_ist.hour >= settings.SCAN_CUTOFF_HOUR:
+        return None
+
     # ── Filter 1 (was 0): Market direction gate (Nifty EMA) ──────────────
     # Block all new scan hits if Nifty is below its 5-min EMA.
     # This prevents entries into a broad bearish session.

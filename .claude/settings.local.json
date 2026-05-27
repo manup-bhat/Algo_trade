@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python -m py_compile tests/unit/test_second_spike_detector.py)",
+      "Bash(python -m pytest tests/unit/test_second_spike_detector.py -v --tb=short)",
+      "Bash(python -m pytest tests/unit/test_state_machine.py::TestBugRegressions::test_abandonment_timeout -v --tb=short)",
+      "Bash(python -m pytest tests/unit/test_state_machine.py -k \"abandonment_timeout\" -v --tb=short)",
+      "Bash(python -m pytest tests/unit/test_state_machine.py::TestStateMachineLifecycle::test_abandonment_timeout tests/unit/test_state_machine.py::TestBugRegressions::test_bug1_breakout_check_uses_pre_update_level -v --tb=long)"
+    ]
+  }
+}

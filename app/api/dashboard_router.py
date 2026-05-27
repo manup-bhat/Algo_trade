@@ -109,6 +109,8 @@ def _state_phase(state: str | None) -> str:
     normalized = (state or "SCAN_HIT").upper()
     if normalized in {"ENTERED", "ACTION_PENDING", "PENDING"}:
         return "ENTRY"
+    if normalized in {"ACTION_PENDING_APPROVAL"}:
+        return "PENDING_APPROVAL"
     if normalized in {"MANAGING"}:
         return "MANAGING"
     if normalized in {"MONITORING"}:
@@ -130,7 +132,8 @@ async def broadcast(payload: dict[str, Any]) -> None:
     for ws in list(_ws_clients):
         try:
             await ws.send_text(msg)
-        except Exception:
+        except Exception as exc:
+            log.error("ws_send_failed", error=str(exc))
             dead.add(ws)
     _ws_clients.difference_update(dead)
 
@@ -186,7 +189,11 @@ async def get_status():
         # Paper trade override from Redis (runtime toggle)
         pt_override = await rs.get_paper_trade_override()
         max_capital_override = await rs.get_max_capital_override()
+        trade_mode_override = await rs.get_trade_mode_override()
         paper_trade = pt_override if pt_override is not None else settings.PAPER_TRADE
+        trade_mode  = trade_mode_override if trade_mode_override is not None else settings.TRADE_MODE
+        # Ensure paper_trade bool is always consistent with trade_mode
+        paper_trade = trade_mode == "PAPER"
         status_name = str(eng_status.get("status", "OFFLINE")).upper()
         engine_running = bool(heartbeat) or (
             status_name not in {"", "OFFLINE", "EMERGENCY_STOP"}
@@ -195,6 +202,7 @@ async def get_status():
 
         return {
             **base,
+            "trade_mode": trade_mode,
             "paper_trade": paper_trade,
             "engine_running": engine_running,
             "engine_control": control,
@@ -299,14 +307,17 @@ async def get_positions():
 async def get_signals():
     try:
         from sqlalchemy import text
+        today = _today_ist()
         engine = _get_db_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text(
                 "SELECT symbol, signal_time AS candle_time, "
                 "  volume_spike_multiple AS spike_multiple, "
                 "  impact_candle_close AS entry_price, created_at "
-                "FROM signals ORDER BY created_at DESC LIMIT 50"
-            ))
+                "FROM signals "
+                "WHERE date(signal_time) = :today "
+                "ORDER BY created_at DESC LIMIT 50"
+            ), {"today": today})
             rows = [dict(r._mapping) for r in result]
         return {"signals": rows, "count": len(rows)}
     except Exception as exc:
@@ -458,7 +469,144 @@ async def get_circuit_breaker():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# ── /emergency_stop ───────────────────────────────────────────────────────────────
+# ── Trade Approval Endpoints (Live Mode Gate) ─────────────────────────────────
+
+@router.get("/approvals")
+async def get_pending_approvals():
+    """
+    Return all pending trade approvals waiting for trader confirmation.
+    Available only in LIVE mode (PAPER_TRADE=False).
+    """
+    rs = _rs()
+    if rs is None:
+        return {"approvals": [], "count": 0}
+    try:
+        pending = await rs.get_all_pending_approvals()
+        approvals = []
+        for symbol, data in pending.items():
+            ltp = await rs.get_last_ltp(symbol)
+            approvals.append({
+                "symbol": symbol,
+                "ltp": ltp,
+                "limit_price": data.get("limit_price"),
+                "stop_loss": data.get("stop_loss"),
+                "quantity": data.get("quantity"),
+                "risk_per_share": data.get("risk_per_share"),
+                "risk_amount": data.get("risk_amount"),
+                "entry_close": data.get("entry_close"),
+                "entry_time": data.get("entry_time"),
+                "queued_at": data.get("_queued_at"),
+                "signal_id": data.get("signal_id"),
+            })
+        return {"approvals": approvals, "count": len(approvals)}
+    except Exception as exc:
+        log.error("approvals_fetch_error", error=str(exc))
+        return {"approvals": [], "count": 0, "error": str(exc)}
+
+
+class ApprovalAction(BaseModel):
+    action: str  # "approve" or "reject"
+    symbol: str
+    reason: str | None = None
+
+
+@router.post("/approvals")
+async def approve_or_reject_trade(payload: ApprovalAction):
+    """
+    Approve or reject a pending live trade.
+
+    APPROVE: fetches the stored approval data, finds the SM in the coordinator,
+             and calls on_approval_received() to place the LIMIT order.
+
+    REJECT:  removes from approval queue and abandons the SM.
+
+    This is the human oversight gate — no real capital is deployed without
+    the trader explicitly confirming via this endpoint.
+    """
+    rs = _rs()
+    if rs is None:
+        return {"status": "error", "message": "Engine not connected"}
+    try:
+        symbol = payload.symbol.upper().strip()
+
+        if payload.action == "approve":
+            # Get stored approval data from Redis
+            data = await rs.get_pending_approval(symbol)
+            if data is None:
+                return {"status": "error", "message": f"No pending approval for {symbol}"}
+
+            # Find the SM in the coordinator and trigger approval
+            try:
+                from engine import runner as _runner
+                coordinator = getattr(_runner, "_coordinator", None)
+                if coordinator is None or symbol not in coordinator.active_state_machines:
+                    return {"status": "error", "message": f"SM not found for {symbol} (may have timed out)"}
+
+                sm = coordinator.active_state_machines[symbol]
+                await sm.on_approval_received(
+                    limit_price=float(data["limit_price"]),
+                    quantity=int(data["quantity"]),
+                )
+                await rs.remove_pending_approval(symbol)
+
+                log.info("trade_approved_via_dashboard", symbol=symbol)
+                await broadcast({
+                    "event": "trade_approved",
+                    "symbol": symbol,
+                    "limit_price": data["limit_price"],
+                    "quantity": data["quantity"],
+                    "timestamp": datetime.now(IST_TZ).isoformat(),
+                })
+                return {
+                    "status": "approved",
+                    "symbol": symbol,
+                    "limit_price": data["limit_price"],
+                    "quantity": data["quantity"],
+                    "message": f"Entry order placed for {symbol}",
+                }
+            except Exception as exc:
+                log.error("approval_sm_trigger_failed", symbol=symbol, error=str(exc))
+                return {"status": "error", "message": f"Failed to place order: {exc}"}
+
+        elif payload.action == "reject":
+            data = await rs.get_pending_approval(symbol)
+            await rs.remove_pending_approval(symbol)
+
+            # Abandon the SM if it exists
+            try:
+                from engine import runner as _runner
+                coordinator = getattr(_runner, "_coordinator", None)
+                if coordinator is not None and symbol in coordinator.active_state_machines:
+                    sm = coordinator.active_state_machines[symbol]
+                    await sm.on_approval_rejected(reason=payload.reason or "manual_rejection")
+                    del coordinator.active_state_machines[symbol]
+            except Exception:
+                pass
+
+            log.info("trade_rejected_via_dashboard", symbol=symbol, reason=payload.reason)
+            await broadcast({
+                "event": "trade_rejected",
+                "symbol": symbol,
+                "reason": payload.reason,
+                "timestamp": datetime.now(IST_TZ).isoformat(),
+            })
+            return {
+                "status": "rejected",
+                "symbol": symbol,
+                "reason": payload.reason or "manual_rejection",
+                "message": f"Trade for {symbol} rejected",
+            }
+        else:
+            raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("approval_action_error", error=str(exc))
+        return {"status": "error", "message": str(exc)}
+
+
+@router.post("/emergency_stop")
 
 @router.post("/emergency_stop")
 async def emergency_stop():
@@ -509,8 +657,11 @@ async def start_engine():
 # ── /settings ───────────────────────────────────────────────────────────────────
 
 class SettingsUpdate(BaseModel):
-    paper_trade: bool | None = None
-    max_capital: float | None = None
+    trade_mode: str | None = None            # "PAPER" | "LIVE" | "SIMULTANEOUS"
+    paper_trade: bool | None = None          # legacy — derived from trade_mode if omitted
+    max_capital: float | None = None         # global fallback cap
+    max_capital_paper: float | None = None   # cap for PAPER trades specifically
+    max_capital_live: float | None = None    # cap for LIVE trades specifically
     config: dict[str, Any] | None = None
     reload_engine: bool = True
 
@@ -663,20 +814,24 @@ def _settings_payload(settings: Any) -> list[dict[str, Any]]:
 async def get_settings():
     from app.core.config import settings
     rs = _rs()
-    max_capital = None
+    max_capital = max_capital_paper = max_capital_live = None
+    trade_mode_override = None
     try:
         if rs is not None:
-            pt_override = await rs.get_paper_trade_override()
-            max_capital = await rs.get_max_capital_override()
-        else:
-            pt_override = None
+            max_capital       = await rs.get_max_capital_override()
+            max_capital_paper = await rs.get_max_capital_paper()
+            max_capital_live  = await rs.get_max_capital_live()
+            trade_mode_override = await rs.get_trade_mode_override()
     except Exception:
-        pt_override = None
+        pass
 
-    paper_trade = pt_override if pt_override is not None else settings.PAPER_TRADE
+    trade_mode = trade_mode_override if trade_mode_override is not None else settings.TRADE_MODE
     return {
-        "paper_trade": paper_trade,
+        "trade_mode": trade_mode,
+        "paper_trade": trade_mode == "PAPER",   # convenience bool for navbar pill
         "max_capital": max_capital,
+        "max_capital_paper": max_capital_paper,
+        "max_capital_live": max_capital_live,
         "daily_loss_limit_pct": settings.DAILY_LOSS_LIMIT_PCT,
         "groups": _settings_payload(settings),
     }
@@ -709,25 +864,52 @@ async def update_settings(payload: SettingsUpdate):
                 setattr(settings, key, value)
 
         if rs is not None:
-            if payload.paper_trade is not None:
-                await rs.set_paper_trade_override(payload.paper_trade)
-                settings.PAPER_TRADE = payload.paper_trade
+            # ── Trade mode ──────────────────────────────────────────────────
+            # Accept either trade_mode (preferred) or legacy paper_trade bool.
+            resolved_mode: str | None = None
+            if payload.trade_mode is not None:
+                normalized = payload.trade_mode.strip().upper()
+                if normalized not in {"PAPER", "LIVE", "SIMULTANEOUS"}:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="trade_mode must be PAPER, LIVE, or SIMULTANEOUS",
+                    )
+                resolved_mode = normalized
+            elif payload.paper_trade is not None:
+                # Legacy bool → mode string
+                resolved_mode = "PAPER" if payload.paper_trade else "LIVE"
+
+            if resolved_mode is not None:
+                await rs.set_trade_mode_override(resolved_mode)
+                settings.TRADE_MODE = resolved_mode
+                # Keep legacy PAPER_TRADE in sync
+                settings.PAPER_TRADE = resolved_mode == "PAPER"
+                await rs.set_paper_trade_override(settings.PAPER_TRADE)
+
+            # ── Per-mode max capital ──────────────────────────────────────────
+            if "max_capital_paper" in payload.model_fields_set:
+                await rs.set_max_capital_paper(payload.max_capital_paper)
+            if "max_capital_live" in payload.model_fields_set:
+                await rs.set_max_capital_live(payload.max_capital_live)
             if "max_capital" in payload.model_fields_set:
                 await rs.set_max_capital_override(payload.max_capital)
+
             if payload.reload_engine:
                 await rs.set_reinit_trigger()
 
         await broadcast({
             "event": "settings_updated",
-            "paper_trade": payload.paper_trade,
-            "max_capital": payload.max_capital,
+            "trade_mode": settings.TRADE_MODE,
+            "max_capital_paper": payload.max_capital_paper,
+            "max_capital_live": payload.max_capital_live,
             "updated_keys": sorted(updates.keys()),
             "timestamp": datetime.now(IST_TZ).isoformat(),
         })
         return {
             "status": "success",
-            "paper_trade": payload.paper_trade,
-            "max_capital": payload.max_capital,
+            "trade_mode": settings.TRADE_MODE,
+            "max_capital_paper": payload.max_capital_paper,
+            "max_capital_live": payload.max_capital_live,
             "updated_keys": sorted(updates.keys()),
             "reload_engine": payload.reload_engine,
         }
@@ -1197,6 +1379,7 @@ async def get_pipeline():
         "scan_hit": [],
         "monitoring": [],
         "entry": [],
+        "pending_approval": [],
         "managing": [],
     }
     seen: set[str] = set()
@@ -1225,6 +1408,7 @@ async def get_pipeline():
             card["state"] = state_data.get("state", card["state"])
             card["consolidation"] = state_data.get("consolidation")
             card["position"] = state_data.get("position")
+            card["is_second_spike"] = state_data.get("is_second_spike", False)
             phase = _state_phase(card["state"])
         if symbol in latest_order_by_symbol:
             card["order"] = latest_order_by_symbol[symbol]
@@ -1233,20 +1417,36 @@ async def get_pipeline():
             "SCAN_HIT": "scan_hit",
             "MONITORING": "monitoring",
             "ENTRY": "entry",
+            "PENDING_APPROVAL": "pending_approval",
             "MANAGING": "managing",
         }.get(phase)
         if target_column:
             columns[target_column].append(card)
             seen.add(symbol)
 
+    today = _today_ist()
     for symbol, state_data in (states or {}).items():
         if symbol in seen:
             continue
+        # Skip stale states from a prior trading day.  We check two timestamps:
+        # 1. _updated_at — stamped on every set_strategy_state() write (added 2026-05-27)
+        # 2. impact_candle_time — the scan-hit candle time (older key, always present)
+        # If either exists and is not today, discard to avoid phantom pipeline cards.
+        updated_at = state_data.get("_updated_at") or state_data.get("impact_candle_time")
+        if updated_at:
+            try:
+                from datetime import date
+                state_date = str(updated_at)[:10]   # "YYYY-MM-DD"
+                if state_date != today:
+                    continue
+            except Exception:
+                pass
         phase = _state_phase(state_data.get("state"))
         target_column = {
             "SCAN_HIT": "scan_hit",
             "MONITORING": "monitoring",
             "ENTRY": "entry",
+            "PENDING_APPROVAL": "pending_approval",
             "MANAGING": "managing",
         }.get(phase)
         if not target_column:
@@ -1265,6 +1465,7 @@ async def get_pipeline():
         if symbol in latest_order_by_symbol:
             card["order"] = latest_order_by_symbol[symbol]
         columns[target_column].append(card)
+
 
     position_by_symbol = {p.get("symbol"): p for p in positions.get("positions", [])}
     for card in columns["managing"]:
@@ -1545,6 +1746,7 @@ async def _get_radar_data():
                     "breakout_level": breakout_level,
                     "candle_count": consolidation.get("candle_count", 0),
                     "current_price": ltp,
+                    "is_second_spike": state_data.get("is_second_spike", False),
                 })
         return radar
     except Exception as exc:
@@ -1573,10 +1775,14 @@ async def websocket_endpoint(ws: WebSocket):
         # Send snapshot immediately on connect
         try:
             sd = await get_status()
+            hb = await rs.get_runner_heartbeat()
+            if hb:
+                sd["runner_heartbeat"] = hb
             pd = await get_positions()
             rd = await _get_radar_data()
             sc = await get_scanner()
             mk = await get_market()
+            pl = await get_pipeline()
             await _send({
                 "event": "snapshot",
                 "status": sd,
@@ -1584,6 +1790,7 @@ async def websocket_endpoint(ws: WebSocket):
                 "radar": rd,
                 "scanner": sc["hits"],
                 "market": mk["ticks"],
+                "pipeline": pl,
             })
         except asyncio.CancelledError:
             return
@@ -1594,15 +1801,20 @@ async def websocket_endpoint(ws: WebSocket):
             try:
                 await asyncio.sleep(5)
                 sd = await get_status()
+                hb = await rs.get_runner_heartbeat()
+                if hb:
+                    sd["runner_heartbeat"] = hb
                 pd = await get_positions()
                 rd = await _get_radar_data()
                 sc = await get_scanner()
+                pl = await get_pipeline()
                 await _send({
                     "event": "heartbeat",
                     "status": sd,
                     "positions": pd["positions"],
                     "radar": rd,
                     "scanner": sc["hits"],
+                    "pipeline": pl,
                 })
             except asyncio.CancelledError:
                 break
@@ -1645,9 +1857,10 @@ async def websocket_endpoint(ws: WebSocket):
                         is_stale = True  # parse error = treat as stale
 
                 if ticks and not is_stale:
+                    ticks_dict = {t["symbol"]: t for t in ticks if "symbol" in t}
                     await _send({
                         "event": "tick_batch",
-                        "ticks": ticks,
+                        "ticks": ticks_dict,
                         "last_tick_at": last_ts,
                     })
             except asyncio.CancelledError:
@@ -1712,8 +1925,7 @@ async def websocket_endpoint(ws: WebSocket):
             try:
                 if pubsub:
                     await pubsub.unsubscribe()
-                if r:
-                    await r.aclose()
+                    await pubsub.close()
             except Exception:
                 pass
 

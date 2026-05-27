@@ -439,8 +439,9 @@ a { color: var(--blue); text-decoration: none; }
   transition: all var(--transition);
 }
 .mode-pill:hover { opacity: 0.8; }
-.mode-pill.paper { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); }
-.mode-pill.live  { background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green-border); }
+.mode-pill.paper        { background:var(--amber-dim); color:var(--amber); border:1px solid var(--amber-border); }
+.mode-pill.live         { background:var(--red-dim);   color:var(--red);   border:1px solid rgba(239,68,68,0.35); }
+.mode-pill.simultaneous { background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.35); }
 
 .engine-status-pill {
   display: flex; align-items: center; gap: 6px;
@@ -1385,29 +1386,55 @@ a { color: var(--blue); text-decoration: none; }
               Force Re-login (delete saved token)
             </button>
           </div>
-          <!-- Trading Settings Panel -->
+          <!-- Trading Mode Panel -->
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
-            <!-- Paper Trade Row -->
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-              <div>
-                <div style="font-size:12px;font-weight:600;color:var(--text-primary);">Paper Trade Mode</div>
-                <div style="font-size:11px;margin-top:2px;" id="paper-mode-hint">No real orders placed</div>
-              </div>
-              <button id="btn-toggle-paper" class="mode-pill paper" style="cursor:pointer;font-size:10px;padding:5px 14px;min-width:54px;border:none;" title="Click to toggle then Save">PAPER</button>
+            <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Trading Mode</div>
+            <!-- 3-mode selector -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:6px;" id="mode-selector">
+              <button id="msel-paper" data-mode="PAPER"
+                style="padding:6px 4px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:0.3px;
+                       border:1.5px solid var(--amber-border);background:var(--amber-dim);color:var(--amber);
+                       cursor:pointer;transition:all 0.15s;opacity:0.45;"
+                onclick="_selectMode('PAPER')">PAPER</button>
+              <button id="msel-simultaneous" data-mode="SIMULTANEOUS"
+                style="padding:6px 4px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:0.3px;
+                       border:1.5px solid rgba(139,92,246,0.35);background:rgba(139,92,246,0.1);color:#a78bfa;
+                       cursor:pointer;transition:all 0.15s;opacity:0.45;"
+                onclick="_selectMode('SIMULTANEOUS')">P+L</button>
+              <button id="msel-live" data-mode="LIVE"
+                style="padding:6px 4px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:0.3px;
+                       border:1.5px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.1);color:var(--red);
+                       cursor:pointer;transition:all 0.15s;opacity:0.45;"
+                onclick="_selectMode('LIVE')">LIVE</button>
             </div>
-            <!-- Max Capital Row -->
-            <div style="margin-bottom:12px;">
-              <label style="font-size:12px;font-weight:600;color:var(--text-primary);display:block;margin-bottom:5px;">Max Trade Capital (₹)</label>
+            <div id="mode-desc" style="font-size:10.5px;color:var(--text-muted);min-height:28px;margin-bottom:10px;line-height:1.45;"></div>
+            <!-- Max Capital — Paper -->
+            <div style="margin-bottom:8px;">
+              <label style="font-size:11px;font-weight:600;color:var(--text-primary);display:block;margin-bottom:4px;">Max Capital — Paper (₹)</label>
               <div style="position:relative;">
                 <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none;">₹</span>
-                <input type="number" id="inp-max-capital" min="0" step="1000"
-                  placeholder="Leave blank = use full equity"
+                <input type="number" id="inp-max-capital-paper" min="0" step="1000"
+                  placeholder="blank = full equity"
                   style="width:100%;box-sizing:border-box;padding:6px 10px 6px 22px;
                     background:var(--bg-input);border:1px solid var(--border);
                     border-radius:6px;font-size:12px;color:var(--text-primary);
                     font-family:var(--mono);outline:none;"/>
               </div>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:3px;" id="max-capital-hint">Cap the capital used per trade. Leave blank = full equity.</div>
+            </div>
+            <!-- Max Capital — Live -->
+            <div style="margin-bottom:10px;">
+              <label style="font-size:11px;font-weight:600;color:var(--text-primary);display:block;margin-bottom:4px;">
+                Max Capital — Live (₹) <span style="color:var(--red);font-size:9px;">⚡ REAL MONEY</span>
+              </label>
+              <div style="position:relative;">
+                <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none;">₹</span>
+                <input type="number" id="inp-max-capital-live" min="0" step="1000"
+                  placeholder="blank = full equity"
+                  style="width:100%;box-sizing:border-box;padding:6px 10px 6px 22px;
+                    background:var(--bg-input);border:1px solid var(--border);
+                    border-radius:6px;font-size:12px;color:var(--text-primary);
+                    font-family:var(--mono);outline:none;"/>
+              </div>
             </div>
             <!-- Save Button -->
             <button id="btn-save-trade-settings"
@@ -2117,15 +2144,15 @@ safeOn('#btn-profile', 'click', async (e) => {
   // Pre-populate settings fields from backend
   try {
     const s = await fetch('/api/v1/settings').then(r => r.json());
-    _profilePaperState = !!s.paper_trade;
-    _syncProfilePaperUI(_profilePaperState);
-    const capInput = $('#inp-max-capital');
-    const hintEl   = $('#max-capital-hint');
+    _profileTradeMode = s.trade_mode || 'PAPER';
+    _syncProfileModeUI(_profileTradeMode);
+    const paperInp = $('#inp-max-capital-paper');
+    const liveInp  = $('#inp-max-capital-live');
     const statusEl = $('#trade-settings-status');
-    if (capInput) capInput.value = s.max_capital != null ? s.max_capital : '';
-    if (hintEl)   hintEl.textContent = s.max_capital ? `Active cap: ${fmtINR(s.max_capital)}` : 'No cap — using full equity';
+    if (paperInp) paperInp.value = s.max_capital_paper != null ? s.max_capital_paper : '';
+    if (liveInp)  liveInp.value  = s.max_capital_live  != null ? s.max_capital_live  : '';
     if (statusEl) statusEl.textContent = '';
-  } catch { /* ignore — fields will show current cached state */ }
+  } catch { /* ignore */ }
 });
 document.addEventListener('click', (e) => {
   const wrap = $('#profile-wrapper');
@@ -2172,18 +2199,22 @@ safeOn('#btn-delete-token', 'click', async () => {
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 });
 
-/* ── Profile dropdown: paper trade toggle + save ─────────────────────── */
-// Tracks local paper-trade state in the dropdown. Set when dropdown opens
-// or when Save succeeds. NOT overridden by the 5s heartbeat to prevent
-// unsaved toggle from reverting.
-let _profilePaperState  = false;
-let _profileUnsaved     = false;  // true when user toggled but hasn't saved yet
+/* ── Profile dropdown: 3-mode trade selector + per-mode capital ─────── */
+// Tracks mode locally. Set when dropdown opens or Save succeeds.
+// NOT overridden by the heartbeat so unsaved changes don't revert.
+let _profileTradeMode = 'PAPER';
+let _profileUnsaved   = false;
 
-// Toggle the local pill in the profile dropdown only — doesn't save
-function togglePaperTrade() {
-  _profilePaperState = !_profilePaperState;
-  _profileUnsaved    = true;
-  _syncProfilePaperUI(_profilePaperState);
+const _MODE_DESCRIPTIONS = {
+  PAPER: 'Simulated trades only — no real orders placed. Safe for testing.',
+  LIVE:  '⚡ Real orders via Kite. Requires manual approval before each entry.',
+  SIMULTANEOUS: 'Runs PAPER + LIVE in parallel. Paper entry first, then Live with approval.',
+};
+
+function _selectMode(mode) {
+  _profileTradeMode = mode;
+  _profileUnsaved   = true;
+  _syncProfileModeUI(mode);
   const statusEl = $('#trade-settings-status');
   if (statusEl) {
     statusEl.textContent = 'Unsaved — click Save Settings to apply.';
@@ -2191,112 +2222,68 @@ function togglePaperTrade() {
   }
 }
 
-// Syncs Paper Trade toggle pill + hint inside the profile dropdown.
-// Does NOT touch the navbar mode-pill (that's updated from heartbeat).
-function _syncProfilePaperUI(isPaper) {
-  const btn  = $('#btn-toggle-paper');
-  const hint = $('#paper-mode-hint');
-  if (btn) {
-    btn.className   = 'mode-pill ' + (isPaper ? 'paper' : 'live');
-    btn.textContent = isPaper ? 'PAPER' : 'LIVE';
-  }
-  if (hint) {
-    hint.textContent = isPaper ? 'No real orders placed' : 'LIVE — real orders will be placed!';
-    hint.style.color  = isPaper ? 'var(--text-muted)' : 'var(--red)';
-  }
+// Syncs the 3-button mode selector in the profile dropdown.
+function _syncProfileModeUI(mode) {
+  ['PAPER', 'SIMULTANEOUS', 'LIVE'].forEach(m => {
+    const btn = document.getElementById('msel-' + m.toLowerCase());
+    if (!btn) return;
+    btn.style.opacity = m === mode ? '1' : '0.4';
+    btn.style.transform = m === mode ? 'scale(1.04)' : 'scale(1)';
+  });
+  const desc = $('#mode-desc');
+  if (desc) desc.textContent = _MODE_DESCRIPTIONS[mode] || '';
+  // Live capital input: dim/enable based on whether LIVE trades exist in this mode
+  const liveCapRow = $('#inp-max-capital-live');
+  if (liveCapRow) liveCapRow.disabled = mode === 'PAPER';
 }
 
-// Saves paper_trade + max_capital to backend via POST /api/v1/settings
-async function _saveTradingSettings(paperState, maxCapRaw) {
-  const maxCap = maxCapRaw !== '' ? parseFloat(maxCapRaw) : null;
-  if (maxCapRaw !== '' && (isNaN(maxCap) || maxCap < 0)) {
-    throw new Error('Invalid capital amount');
-  }
-  const body = { paper_trade: paperState, max_capital: maxCap, reload_engine: false };
+// Saves trade_mode + per-mode capitals to backend via POST /api/v1/settings
+async function _saveTradingSettings(mode, maxCapPaperRaw, maxCapLiveRaw) {
+  const parse = (v) => v !== '' ? parseFloat(v) : null;
+  const capP = parse(maxCapPaperRaw);
+  const capL = parse(maxCapLiveRaw);
+  if (maxCapPaperRaw !== '' && (isNaN(capP) || capP < 0)) throw new Error('Invalid Paper capital');
+  if (maxCapLiveRaw  !== '' && (isNaN(capL) || capL < 0)) throw new Error('Invalid Live capital');
+  const body = {
+    trade_mode: mode,
+    max_capital_paper: capP,
+    max_capital_live:  capL,
+    reload_engine: false
+  };
   const r = await fetch('/api/v1/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  if (!r.ok) {
-    const txt = await r.text();
-    throw new Error(txt || `HTTP ${r.status}`);
-  }
+  if (!r.ok) { const txt = await r.text(); throw new Error(txt || `HTTP ${r.status}`); }
   return await r.json();
 }
 
-// Save button handler — profile dropdown
+// Save button handler
 safeOn('#btn-save-trade-settings', 'click', async () => {
   const btn      = $('#btn-save-trade-settings');
   const statusEl = $('#trade-settings-status');
-  const capInput = $('#inp-max-capital');
-  const capRaw   = capInput ? capInput.value.trim() : '';
-
-  if (capRaw !== '' && isNaN(parseFloat(capRaw))) {
-    statusEl.textContent = '❌ Invalid capital amount';
-    statusEl.style.color = 'var(--red)';
-    return;
-  }
+  const capP     = ($('#inp-max-capital-paper') || {}).value?.trim() ?? '';
+  const capL     = ($('#inp-max-capital-live')  || {}).value?.trim() ?? '';
 
   btn.disabled    = true;
   btn.textContent = 'Saving…';
   try {
-    await _saveTradingSettings(_profilePaperState, capRaw);
-    _profileUnsaved = false;  // mark as clean — heartbeat can now sync again
-
+    await _saveTradingSettings(_profileTradeMode, capP, capL);
+    _profileUnsaved = false;
     statusEl.textContent = '✓ Saved';
     statusEl.style.color = 'var(--green)';
-    btn.textContent = '💾  Save Settings';
+    btn.textContent = 'Save Settings';
     btn.disabled    = false;
-
-    const maxCap   = capRaw !== '' ? parseFloat(capRaw) : null;
-    const hintEl   = $('#max-capital-hint');
-    if (hintEl) hintEl.textContent = maxCap
-      ? `Active cap: ${fmtINR(maxCap)}`
-      : 'Cap the capital used per trade. Leave blank = full equity.';
-
-    const mode = _profilePaperState ? 'ON — no real orders' : 'OFF — LIVE active';
-    toast(`Settings saved. Paper trade ${mode}`, _profilePaperState ? 'warning' : 'success', 4000);
-    loadStatus();  // refresh navbar pill + equity from backend
+    const modeLabels = { PAPER: 'Paper only', LIVE: 'Live active ⚡', SIMULTANEOUS: 'Paper + Live' };
+    toast(`Mode set to: ${modeLabels[_profileTradeMode] || _profileTradeMode}`, _profileTradeMode === 'PAPER' ? 'warning' : 'success', 4000);
+    loadStatus();  // refresh navbar pill
     setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
   } catch(e) {
     statusEl.textContent = '❌ ' + e.message;
     statusEl.style.color = 'var(--red)';
-    btn.textContent = '💾  Save Settings';
+    btn.textContent = 'Save Settings';
     btn.disabled    = false;
-  }
-});
-
-// Profile dropdown paper pill — just toggles local state, Save commits
-safeOn('#btn-toggle-paper', 'click', togglePaperTrade);
-
-// Navbar mode-pill — saves IMMEDIATELY (no Save button needed for one-click toggle)
-safeOn('#mode-pill', 'click', async () => {
-  const pill = $('#mode-pill');
-  if (!pill) return;
-  const wasPaper = pill.className.includes('paper');
-  const newPaper = !wasPaper;
-  // Optimistically update navbar pill
-  pill.className   = 'mode-pill ' + (newPaper ? 'paper' : 'live');
-  pill.textContent = newPaper ? 'PAPER' : 'LIVE';
-  // Sync profile dropdown if it's open
-  _profilePaperState = newPaper;
-  _profileUnsaved    = false;
-  _syncProfilePaperUI(newPaper);
-  try {
-    const capInput = $('#inp-max-capital');
-    const capRaw   = capInput ? capInput.value.trim() : '';
-    await _saveTradingSettings(newPaper, capRaw);
-    const mode = newPaper ? 'ON — no real orders' : 'OFF — LIVE active';
-    toast(`Paper trade ${mode}`, newPaper ? 'warning' : 'success', 4000);
-    loadStatus();
-  } catch(e) {
-    // Revert on failure
-    pill.className   = 'mode-pill ' + (wasPaper ? 'paper' : 'live');
-    pill.textContent = wasPaper ? 'PAPER' : 'LIVE';
-    _profilePaperState = wasPaper;
-    _syncProfilePaperUI(wasPaper);
-    toast('Failed to save: ' + e.message, 'error');
   }
 });
 
@@ -2345,30 +2332,35 @@ function updateCommandBar(d) {
   $('#cm-positions').textContent = active;
   $('#cm-builders').textContent = `${warmed} / ${total}`;
 
-  // mode pill (navbar) — only sync navbar pill from heartbeat, NOT the profile dropdown
-  // (profile dropdown state is managed separately to prevent unsaved toggle from reverting)
+  // mode pill (navbar) — 3-state: PAPER (amber) / LIVE (red) / SIMULTANEOUS (purple)
   const modePill = $('#mode-pill');
-  const isPaper  = !!d.paper_trade;
-  modePill.className   = 'mode-pill ' + (isPaper ? 'paper' : 'live');
-  modePill.textContent = isPaper ? 'PAPER' : 'LIVE';
+  const tradeMode = d.trade_mode || (d.paper_trade ? 'PAPER' : 'LIVE');
+  const pillMap = {
+    PAPER:        { cls: 'paper',        label: 'PAPER' },
+    LIVE:         { cls: 'live',         label: 'LIVE ⚡' },
+    SIMULTANEOUS: { cls: 'simultaneous', label: 'P+L' },
+  };
+  const pm = pillMap[tradeMode] || pillMap.PAPER;
+  modePill.className   = 'mode-pill ' + pm.cls;
+  modePill.textContent = pm.label;
 
   // Only sync profile dropdown if user has NO unsaved changes
   if (!_profileUnsaved) {
-    _profilePaperState = isPaper;
-    _syncProfilePaperUI(isPaper);
+    _profileTradeMode = tradeMode;
+    _syncProfileModeUI(tradeMode);
   }
 
   // Sync max_capital display if backend returned it and field is untouched
-  if (d.max_capital !== undefined) {
-    const capInput = $('#inp-max-capital');
-    const hintEl   = $('#max-capital-hint');
-    if (capInput && capInput.value === '' && !_profileUnsaved) {
-      capInput.value = d.max_capital != null ? d.max_capital : '';
+  if (d.max_capital_paper !== undefined) {
+    const paperInp = $('#inp-max-capital-paper');
+    if (paperInp && paperInp.value === '' && !_profileUnsaved) {
+      paperInp.value = d.max_capital_paper != null ? d.max_capital_paper : '';
     }
-    if (hintEl && !_profileUnsaved) {
-      hintEl.textContent = d.max_capital
-        ? `Active cap: ${fmtINR(d.max_capital)}`
-        : 'Cap the capital used per trade. Leave blank = full equity.';
+  }
+  if (d.max_capital_live !== undefined) {
+    const liveInp  = $('#inp-max-capital-live');
+    if (liveInp && liveInp.value === '' && !_profileUnsaved) {
+      liveInp.value = d.max_capital_live != null ? d.max_capital_live : '';
     }
   }
 }
@@ -2780,7 +2772,10 @@ function renderPipeline(d) {
       return `<div class="pipeline-card" onclick="openStockDrawer('${c.symbol}','pipeline')">
         <div class="pcard-top">
           <span class="pcard-sym">${c.symbol}</span>
-          ${statePhaseBadge(c.state)}
+          <div style="display:flex;gap:4px">
+            ${c.is_second_spike ? '<span class="pcard-badge" style="background:var(--teal-bg);color:var(--teal)">2ND SPIKE</span>' : ''}
+            ${statePhaseBadge(c.state)}
+          </div>
         </div>
         <div class="pcard-row">
           <span style="color:var(--text-muted);font-size:10px">${fmtTime(c.signal_time)}</span>

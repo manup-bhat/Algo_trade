@@ -174,11 +174,16 @@ async def job_pre_market_setup() -> None:
     await redis_store.set_capital(capital)
 
     # ── 3. Reset daily state ─────────────────────────────────────────
+    today_iso = now_ist().date().isoformat()
+    stale_removed = await redis_store.clear_stale_strategy_states(today_iso)
+    if stale_removed:
+        log.info("stale_strategy_states_cleared", count=stale_removed, today=today_iso)
     await redis_store.set_circuit_breaker(False)
     await circuit_breaker.reset(redis_store)
     await redis_store.set_daily_pnl(0.0)
     await redis_store.set_blocked_margin(0.0)
     log.info("daily_state_reset")
+
 
     # ── 4. Load instruments ──────────────────────────────────────────
     raw_symbols = load_universe()

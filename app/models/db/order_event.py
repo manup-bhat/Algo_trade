@@ -23,6 +23,8 @@ class OrderEvent(Base):
     # Event metadata
     event_type: Mapped[str] = mapped_column(Text, nullable=False)  # PLACED|FILLED|REJECTED|CANCELLED|MODIFIED
     status: Mapped[str | None] = mapped_column(Text, nullable=True)  # Raw Kite order status
+    # PAPER or LIVE — never empty after first implementation
+    trade_mode: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Price/qty snapshot
     price: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -44,6 +44,7 @@ class DbWriter:
         impact_turnover: float,
         volume_sma_500: float,
         volume_spike_multiple: float,
+        trade_mode: str | None = None,
     ) -> int:
         """Write a scan hit signal. Returns the new signal ID."""
         async with get_db() as session:
@@ -59,6 +60,7 @@ class DbWriter:
                 impact_candle_turnover=impact_turnover,
                 volume_sma_500=volume_sma_500,
                 volume_spike_multiple=volume_spike_multiple,
+                trade_mode=trade_mode,
             )
             session.add(sig)
             await session.flush()  # Get the ID before commit
@@ -106,6 +108,7 @@ class DbWriter:
         target_1r4: float,
         sl_order_id: str | None = None,
         notes: str | None = None,
+        trade_mode: str | None = None,
     ) -> int:
         """Record a new open trade. Returns trade ID."""
         async with get_db() as session:
@@ -126,6 +129,7 @@ class DbWriter:
                 sl_order_id=sl_order_id,
                 status=TradeStatus.OPEN.value,
                 notes=notes,
+                trade_mode=trade_mode,
             )
             session.add(trade)
             await session.flush()
@@ -190,6 +194,7 @@ class DbWriter:
         average_price: float | None = None,
         status_message: str | None = None,
         raw_payload: dict[str, Any] | None = None,
+        trade_mode: str | None = None,
     ) -> None:
         async with get_db() as session:
             event = OrderEvent(
@@ -206,6 +211,7 @@ class DbWriter:
                 status_message=status_message,
                 raw_payload=json.dumps(raw_payload) if raw_payload else None,
                 event_time=event_time,
+                trade_mode=trade_mode,
             )
             session.add(event)
         log.debug("order_event_written", order_id=order_id, event_type=event_type)

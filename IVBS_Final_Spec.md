@@ -47,7 +47,8 @@ Large institutional actors (FIIs, DIIs, domestic prop desks, large mutual funds)
 
 **Phase 1 — SCAN (Impact Candle Detection)**
 A 1-minute candle triggers ALL of:
-- Volume ≥ 20× the 500-period rolling SMA of 1-minute volume for that symbol
+- Time is ≥ 09:30 AM IST (opening noise guard: skips pre-open queue clearing)
+- Volume ≥ 15× the 500-period rolling SMA of 1-minute volume for that symbol
 - Turnover (candle_close × candle_volume) ≥ ₹8 Crore
 - candle_close ≥ candle_open × 0.995 (green or near-flat — not a sell dump)
 - ₹50 ≤ candle_close ≤ ₹5,000 (price sanity band)
@@ -55,18 +56,26 @@ A 1-minute candle triggers ALL of:
 
 **Phase 2 — MONITORING (Dry-Up Validation)**
 After the impact candle, the bot watches subsequent 1-minute candles for:
-- Price holding above the impact candle's low (minimum acceptable floor)
+- Price holding above the impact candle's low (wick low with 0.3% penetration buffer)
 - Volume shrinking — each dry-up candle should be noticeably smaller than the spike
 - No large red candles with elevated volume (A-shape reversal = exit distribution)
-- Maximum 10 minutes to observe valid dry-up before abandoning
+- Maximum 20 minutes to observe valid dry-up before abandoning
 
-**Phase 3 — ENTRY (Re-Ignition)**
-Entry triggers when ALL of:
-- A new volume surge exceeds the max of the last 3 dry-up candles × 1.5
+**Phase 3 — ENTRY (Re-Ignition or Second Spike)**
+Entry triggers on ONE of two paths:
+**Path A (Standard Re-Ignition):**
+- A new volume surge exceeds the mean of all dry-up candles × 2.0
 - Price closes above the highest point of the consolidation zone
 - The candle is green (close > open)
-- Current time is before 2:00 PM IST
+- Current time is before 1:30 PM IST
 - All 9 pre-trade checks pass
+
+**Path B (Second Spike Direct Entry):**
+- A new volume surge occurs ≥15 mins after a prior spike
+- Volume is 50-100% of the first spike, absolute volume ≥ 10x SMA
+- Price held above prior spike's close × 0.998, candle is green
+- At ≥80% vol ratio, close > prior spike high
+- Bypasses normal dry-up phase (inter-spike gap serves as dry-up)
 
 **Phase 4 — MANAGEMENT (1:4 Trail System)**
 - Hard SL placed immediately on fill at: wick-bottom swing low of dry-up − 1 tick
@@ -81,7 +90,7 @@ Entry triggers when ALL of:
 
 **1-minute candles, not 5-minute:** The institutional footprint is visible on 1-minute charts. A 5-minute aggregation would hide the volume spike inside a larger candle, making the signal impossible to detect in real time and blurring the dry-up pattern.
 
-**20x volume filter, not 10x:** The 10x filter generates too many alerts on normal high-volume stocks during news-driven periods. 20x is the threshold that isolates genuinely anomalous events. Fewer signals means less decision fatigue and better setup quality.
+**15x volume filter, not 10x or 20x:** The 10x filter generates too many alerts on normal high-volume stocks during news-driven periods. 20x was originally used but missed genuine institutional accumulation. 15x is the optimal threshold that isolates anomalous events while still capturing the best setups.
 
 **Hard exit at 1:4, not trailing indefinitely:** Institutional intraday moves rarely run beyond 4R in a single session because the institution eventually stops buying, retail takes profit, and momentum stalls. Statistical holding for 1:10 via trailing stop typically results in giving back to 1:2–3 before getting stopped. The fixed 1:4 exit captures the bulk of the move without overstaying.
 
@@ -282,7 +291,8 @@ trading_bot/
 │   │   ├── __init__.py
 │   │   ├── coordinator.py            ← Manages all SymbolStateMachines + tick routing
 │   │   ├── state_machine.py          ← Per-symbol FSM: all 4 phases, all bugs fixed
-│   │   └── scanner.py                ← Phase 1: impact candle evaluation
+│   │   ├── scanner.py                ← Phase 1: impact candle evaluation
+│   │   └── second_spike_detector.py  ← Phase 3 alternate: direct entry on Wyckoff secondary test
 │   │
 │   ├── risk/
 │   │   ├── __init__.py
@@ -347,17 +357,25 @@ DATABASE_URL=sqlite+aiosqlite:///./trading.db
 # Trigger: >15 hits/day consistently → raise thresholds
 # Trigger: <2-3 hits/week → review (may be too strict)
 # ═══════════════════════════════════════════════════════════════════
-VOLUME_SPIKE_MULTIPLE=20.0          # 20x the 500-period rolling SMA
+VOLUME_SPIKE_MULTIPLE=15.0          # 15x the 500-period rolling SMA
 VOLUME_SMA_PERIOD=500               # ~3 trading sessions at 167 min/session
 MIN_TURNOVER_CRORE=8.0              # Minimum ₹8 Crore per-minute turnover
 MIN_PRICE=50.0                      # Below this = likely manipulable penny stock
 MAX_PRICE=5000.0                    # Above this = too illiquid per share
-REIGNITION_VOLUME_MULTIPLE=1.5      # Re-ignition candle must exceed max(prev 3) × 1.5
-REIGNITION_LOOKBACK_CANDLES=3       # Compare re-ignition against last N dry-up candles
+REIGNITION_VOLUME_MULTIPLE=2.0      # Re-ignition candle must exceed mean of all dry-up candles × 2.0
+REIGNITION_LOOKBACK_CANDLES=3       # Used if USE_AVG_VOLUME is false
+REIGNITION_USE_AVG_VOLUME=true      # Uses mean instead of max(last 3)
 MIN_DRYUP_CANDLES=2                 # Minimum dry-up candles before re-ignition valid
 ASHAPE_RED_CANDLE_PCT=0.5           # Abandonment: candle range % to flag as large-red
 ASHAPE_VOLUME_MULTIPLE=1.5          # Abandonment: red candle volume vs avg multiple
 ASHAPE_MIN_CANDLE_COUNT=2           # Min dry-up candles before A-shape check activates
+SCANNER_START_MINUTE=30             # Skip 09:15-09:29 pre-open noise
+ABANDON_PRICE_BUFFER_PCT=0.003      # 0.3% stop-hunt buffer for abandonment check
+SECOND_SPIKE_MIN_RATIO=0.50         # Second spike must be >=50% of first spike volume
+SECOND_SPIKE_MAX_RATIO=1.00         # Second spike >100% = unrelated event, reject
+SECOND_SPIKE_MIN_GAP_MINUTES=15     # Inter-spike gap must prove real consolidation
+SECOND_SPIKE_VOLUME_FLOOR=10.0      # Second spike still needs 10x SMA minimum absolute
+SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD=0.80  # At >=80% vol ratio, require close > spike1.high
 
 # ═══════════════════════════════════════════════════════════════════
 # GROUP B: SEBI / REGULATORY VALUES
@@ -386,8 +404,8 @@ EXIT_SL_CANCEL_DELAY_MS=500         # Milliseconds wait after SL cancel before m
 # GROUP D: STRATEGY CALIBRATION VALUES
 # Tune after accumulating 50+ live trades of data
 # ═══════════════════════════════════════════════════════════════════
-DRYUP_MAX_MINUTES=10                # Max monitoring window; abandon if no re-ignition
-MAX_ENTRY_TIME=14:00                # No new entries after 2:00 PM IST
+DRYUP_MAX_MINUTES=20                # Max monitoring window; abandon if no re-ignition
+MAX_ENTRY_TIME=13:30                # No new entries after 1:30 PM IST
 ENTRY_BUFFER_PCT=0.003              # 0.3% above breakout high for limit order
 ENTRY_WIDEN_AFTER_SECONDS=5         # If no fill in 5s, widen limit by ENTRY_BUFFER_PCT more
 ENTRY_ABANDON_PCT=0.015             # Abandon entry if price already >1.5% above trigger
@@ -729,10 +747,12 @@ Key responsibilities:
 - Maintains `active_state_machines: dict[str, SymbolStateMachine]` — keyed by symbol
 - Maintains `candle_builders: dict[str, CandleBuilder]` — one per subscribed symbol (much larger than active SMs)
 - Maintains `token_to_symbol: dict[int, str]` — O(1) lookup in hot path
+- Owns the singleton `SecondSpikeDetector` instance
 - Implements `process_ticks(ticks: list[dict])` — the hot path
 - Implements `on_websocket_reconnect()` — calls `reset_cumulative_baseline()` on all builders
 - Implements `on_fatal_disconnect()` — emergency close all positions
 - Implements `on_market_open()` — resets all builders for new session
+- Routes IDLE candles through `second_spike_detector` before scanner
 - Cleans up CLOSED state machines after each `on_candle()` call
 
 The coordinator does NOT know about order details, margin, or risk — it routes. Each SM handles its own logic.
@@ -746,6 +766,7 @@ See Part 8 for complete corrected logic.
 **Purpose:** Evaluate each completed 1-minute candle against the strategy filters.
 
 Filters in order (fail-fast):
+0. `time < 09:30 AM` → skip (opening noise guard — pre-open queue clearing)
 1. `volume_sma is None` → skip (warmup incomplete)
 2. `volume_sma <= 0` → skip (data issue)
 3. `spike_multiple = candle.volume / volume_sma < VOLUME_SPIKE_MULTIPLE` → skip
@@ -755,7 +776,17 @@ Filters in order (fail-fast):
 
 If all pass: creates and returns an `ImpactCandle` dataclass.
 
-**Scanner does NOT check time of day.** The coordinator routes candles to the scanner only during market hours (9:15 AM onwards). The scanner's job is purely signal quality.
+**Scanner does NOT check time of day beyond 09:30.** The coordinator routes candles to the scanner only during market hours (9:15 AM onwards). The scanner's job is purely signal quality.
+
+### 7.10a engine/strategy/second_spike_detector.py (v3 NEW)
+**Purpose:** Phase 3 alternate. Detects when a stock fires a second significant volume spike on the same trading day as a prior scan hit, enabling a direct entry.
+
+**Core functionality:**
+- `record_first_spike(impact)`: Saves snapshot of first wave
+- `update_inter_spike_low(symbol, low)`: Tracks the lowest low of the consolidation (this becomes the Wyckoff secondary test SL)
+- `evaluate_second_spike(...)`: Evaluates 7 conditions on new candles (gap >= 15m, vol ratio 50-100%, absolute vol >= 10x, price held, green candle, close > prior high if vol >= 80%)
+
+If all conditions pass, returns a `SecondSpikeEntry` which the coordinator uses to bypass normal dry-up monitoring and trigger a direct Phase 3 entry.
 
 ### 7.11 engine/risk/position_sizer.py
 **Purpose:** Compute trade quantity from the 1% risk rule.
@@ -925,7 +956,7 @@ breakout_level = consolidation.breakout_trigger_price  ← snapshot BEFORE updat
 ═══════════════════════════════════════════════════════════
 STEP 2: ABANDONMENT CHECKS (on current candle)
 ═══════════════════════════════════════════════════════════
-IF c < impact_candle.low:
+IF l < impact_candle.low * (1.0 - ABANDON_PRICE_BUFFER_PCT):
     ABANDON("price_broke_impact_low")
     return
 
@@ -953,8 +984,13 @@ STEP 4: RE-IGNITION CHECK (using PRE-UPDATE snapshots)
 ═══════════════════════════════════════════════════════════
 IF consolidation.candle_count >= MIN_DRYUP_CANDLES:
     IF len(prev_volumes) >= 2:
-        comparison_window = prev_volumes[-REIGNITION_LOOKBACK_CANDLES:]
-        is_volume_spike = volume > max(comparison_window) × REIGNITION_VOLUME_MULTIPLE
+        IF REIGNITION_USE_AVG_VOLUME:
+            ref_vol = mean(prev_volumes)
+        ELSE:
+            comparison_window = prev_volumes[-REIGNITION_LOOKBACK_CANDLES:]
+            ref_vol = max(comparison_window)
+        
+        is_volume_spike = volume > (ref_vol × REIGNITION_VOLUME_MULTIPLE)
         is_price_breakout = c > breakout_level   ← uses PRE-UPDATE level
         is_green = c > o
         is_before_cutoff = current_time_IST < MAX_ENTRY_TIME

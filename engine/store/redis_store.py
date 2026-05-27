@@ -30,9 +30,14 @@ _ENGINE_BLOCKED_MARGIN = "engine:blocked_margin"
 _ENGINE_SCANNER_READY = "engine:scanner:ready_count"
 _ENGINE_SCANNER_WARMING = "engine:scanner:warming_count"
 _ENGINE_CONFIG_PAPER_TRADE = "engine:config:paper_trade"
-_ENGINE_CONFIG_MAX_CAPITAL = "engine:config:max_capital"
+_ENGINE_CONFIG_MAX_CAPITAL = "engine:config:max_capital"        # fallback (no per-mode cap)
+_ENGINE_CONFIG_MAX_CAPITAL_PAPER = "engine:config:max_capital_paper"  # cap for PAPER trades
+_ENGINE_CONFIG_MAX_CAPITAL_LIVE  = "engine:config:max_capital_live"   # cap for LIVE trades
+_ENGINE_CONFIG_TRADE_MODE = "engine:config:trade_mode"
 _ENGINE_REINIT_TRIGGER    = "engine:reinit_trigger"
 _ENGINE_RUNNER_HEARTBEAT = "engine:runner:heartbeat"
+_ENGINE_PENDING_APPROVAL = "engine:pending_approval"
+_APPROVAL_KEY_PREFIX = "approval:pending:"
 _MARKET_EOD_SNAPSHOT = "market:eod_snapshot"
 
 _PUB_SIGNALS = "pub:signals"
@@ -111,6 +116,7 @@ class RedisStore:
         await self._r.set(_ENGINE_CONFIG_PAPER_TRADE, "true" if paper_trade else "false")
 
     async def get_max_capital_override(self) -> float | None:
+        """Global max-capital override (fallback when per-mode keys are unset)."""
         val = await self._r.get(_ENGINE_CONFIG_MAX_CAPITAL)
         return float(val) if val else None
 
@@ -119,6 +125,43 @@ class RedisStore:
             await self._r.delete(_ENGINE_CONFIG_MAX_CAPITAL)
         else:
             await self._r.set(_ENGINE_CONFIG_MAX_CAPITAL, str(capital))
+
+    async def get_max_capital_paper(self) -> float | None:
+        """Capital cap applied to PAPER-mode trade sizing."""
+        val = await self._r.get(_ENGINE_CONFIG_MAX_CAPITAL_PAPER)
+        if val:
+            return float(val)
+        return await self.get_max_capital_override()  # fall back to global
+
+    async def set_max_capital_paper(self, capital: float | None) -> None:
+        if capital is None:
+            await self._r.delete(_ENGINE_CONFIG_MAX_CAPITAL_PAPER)
+        else:
+            await self._r.set(_ENGINE_CONFIG_MAX_CAPITAL_PAPER, str(capital))
+
+    async def get_max_capital_live(self) -> float | None:
+        """Capital cap applied to LIVE-mode trade sizing."""
+        val = await self._r.get(_ENGINE_CONFIG_MAX_CAPITAL_LIVE)
+        if val:
+            return float(val)
+        return await self.get_max_capital_override()  # fall back to global
+
+    async def set_max_capital_live(self, capital: float | None) -> None:
+        if capital is None:
+            await self._r.delete(_ENGINE_CONFIG_MAX_CAPITAL_LIVE)
+        else:
+            await self._r.set(_ENGINE_CONFIG_MAX_CAPITAL_LIVE, str(capital))
+
+    async def get_trade_mode_override(self) -> str | None:
+        """Return the Redis-overridden TRADE_MODE (PAPER/LIVE/SIMULTANEOUS), or None if unset."""
+        val = await self._r.get(_ENGINE_CONFIG_TRADE_MODE)
+        if val is None:
+            return None
+        return val.decode() if isinstance(val, bytes) else val
+
+    async def set_trade_mode_override(self, mode: str) -> None:
+        """Store a TRADE_MODE override in Redis. Mode must be PAPER, LIVE, or SIMULTANEOUS."""
+        await self._r.set(_ENGINE_CONFIG_TRADE_MODE, mode.upper())
 
     async def set_reinit_trigger(self) -> None:
         """Signal the engine runner to call job_pre_market_setup (used after fresh login)."""
@@ -226,11 +269,47 @@ class RedisStore:
     # ── Strategy State (per active SM) ─────────────────────────────────────
 
     async def set_strategy_state(self, symbol: str, state_dict: dict[str, Any]) -> None:
-        await self._r.set(f"strategy:state:{symbol}", json.dumps(state_dict))
+        from datetime import datetime, timezone
+        # Stamp every write with IST date so the dashboard can filter stale cross-day state.
+        # 28-hour TTL ensures keys auto-expire overnight even if clear_strategy_state is
+        # not called (e.g. crash mid-session).
+        stamped = dict(state_dict)
+        stamped["_updated_at"] = datetime.now(timezone.utc).isoformat()
+        await self._r.set(f"strategy:state:{symbol}", json.dumps(stamped), ex=28 * 3600)
 
     async def get_strategy_state(self, symbol: str) -> dict[str, Any] | None:
         raw = await self._r.get(f"strategy:state:{symbol}")
         return json.loads(raw) if raw else None
+
+    async def clear_stale_strategy_states(self, today_iso: str) -> int:
+        """
+        Sweep all strategy:state:* Redis keys and delete any whose _updated_at
+        or impact_candle_time predates today_iso (YYYY-MM-DD).
+
+        Called at the start of job_pre_market_setup() so the dashboard never
+        shows phantom pipeline cards from a previous trading session.
+        The 28-hour TTL on set_strategy_state() is a secondary safety net;
+        this sweep is the primary guarantee.
+
+        Returns the number of stale keys removed.
+        """
+        keys = await self._r.keys("strategy:state:*")
+        if not keys:
+            return 0
+        removed = 0
+        for key in keys:
+            val = await self._r.get(key)
+            if not val:
+                continue
+            try:
+                data = json.loads(val)
+                ts = data.get("_updated_at") or data.get("impact_candle_time")
+                if ts and str(ts)[:10] < today_iso:
+                    await self._r.delete(key)
+                    removed += 1
+            except Exception:
+                pass  # malformed key — leave it for the TTL to expire
+        return removed
 
     async def clear_strategy_state(self, symbol: str) -> None:
         await self._r.delete(f"strategy:state:{symbol}")
@@ -542,6 +621,75 @@ class RedisStore:
 
     async def publish_monitoring_tick(self, data: dict[str, Any]) -> None:
         await self._r.publish(_PUB_MONITORING_TICKS, json.dumps(data))
+
+    # ── Trade Approval Queue (Live Mode Gate) ─────────────────────────────────
+    # When PAPER_TRADE=False, entries are held in ACTION_PENDING_APPROVAL until
+    # the trader approves via the dashboard API.
+
+    async def add_pending_approval(
+        self,
+        symbol: str,
+        entry_data: dict[str, Any],
+    ) -> None:
+        """
+        Store a pending trade approval request.
+        Published to pub:approvals so the dashboard WS can alert the trader.
+        """
+        import time as _time
+        key = f"{_APPROVAL_KEY_PREFIX}{symbol}"
+        entry_data["_queued_at"] = _time.time()
+        entry_data["symbol"] = symbol
+        await self._r.set(key, json.dumps(entry_data))
+        # Also add to a sorted set scored by timestamp for dashboard to enumerate
+        await self._r.zadd(_ENGINE_PENDING_APPROVAL, {symbol: _time.time()})
+        await self._r.publish(_PUB_SIGNALS, json.dumps({
+            "event": "pending_approval",
+            "symbol": symbol,
+            **entry_data,
+        }))
+
+    async def get_pending_approval(self, symbol: str) -> dict[str, Any] | None:
+        """Return pending approval data for a symbol, or None if none."""
+        key = f"{_APPROVAL_KEY_PREFIX}{symbol}"
+        raw = await self._r.get(key)
+        return json.loads(raw) if raw else None
+
+    async def remove_pending_approval(self, symbol: str) -> None:
+        """Remove a symbol from the approval queue (approved or abandoned)."""
+        key = f"{_APPROVAL_KEY_PREFIX}{symbol}"
+        await self._r.delete(key)
+        await self._r.zrem(_ENGINE_PENDING_APPROVAL, symbol)
+
+    async def get_all_pending_approvals(self) -> dict[str, dict[str, Any]]:
+        """Return all pending approvals keyed by symbol."""
+        members = await self._r.zrange(_ENGINE_PENDING_APPROVAL, 0, -1)
+        result = {}
+        for sym in members:
+            data = await self.get_pending_approval(sym)
+            if data:
+                result[sym] = data
+        return result
+
+    async def approve_trade(self, symbol: str) -> dict[str, Any] | None:
+        """
+        Approve a pending trade. Returns the stored entry data, or None if not found.
+        Called by the dashboard /approvals POST endpoint.
+        """
+        data = await self.get_pending_approval(symbol)
+        if data is None:
+            return None
+        await self.remove_pending_approval(symbol)
+        return data
+
+    async def reject_trade(self, symbol: str, reason: str = "manual_rejection") -> bool:
+        """
+        Reject a pending trade. Removes from queue and abandons the SM.
+        """
+        data = await self.get_pending_approval(symbol)
+        if data is None:
+            return False
+        await self.remove_pending_approval(symbol)
+        return True
 
     # ── Health Check ──────────────────────────────────────────────────────
 

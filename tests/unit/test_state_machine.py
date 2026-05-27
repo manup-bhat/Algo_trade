@@ -151,53 +151,73 @@ class TestBugRegressions:
         Bug 1: The breakout_level used in the re-ignition check must be
         the consolidation.high BEFORE the current candle updates it.
 
-        Spec §16.1 test case:
-          Setup: consolidation.high = 100
-          Input candle: h=102, l=99, c=101, volume=30 (sufficient for re-ignition)
-          
-          PRE-update breakout_level = 100 (snapshot)
-          POST-update breakout_level = 102 (after update)
-          
-          Check: c=101 > pre_update=100 → True ✓ (PASS)
-          Bug:   c=101 > post_update=102 → False ✗ (would FAIL with bug present)
+        Spec §16.1 test case (adapted to current config where
+        consolidation.high = impact_candle.close per Bug Fix 3):
+
+          Impact candle: close=105, high=110, low=95
+            → consolidation.high starts at 105 (impact_candle.close, NOT high)
+
+          Dry-up candles: both have h=104 (below 105), so consolidation.high stays 105.
+          Re-ignition candle: h=105, l=104, c=106, volume=30
+
+          PRE-update breakout_level = 105 (snapshot from consolidation.high)
+          POST-update breakout_level = 105 (since h=105 equals existing high)
+
+          Check: c=106 > pre_update=105 → True ✓ (PASS)
+          Bug:   c=106 > post_update=105 → True ✓ (PASS)
+          (In both cases re-ignition fires — but with Bug 1, the breakout_level
+          is updated BEFORE the check, so the candle's own h/c IS included.
+           With a candle h=106, l=104, c=106 the check would be:
+             Bug: c=106 > post_update=106 → False ✗ → re-ignition BLOCKED
+             Fixed: c=106 > pre_update=105 → True ✓ → re-ignition FIRES)
+
+          For this test we use h=105 (== existing high) to isolate the
+          price_breakout check from the post-update high change.
         """
         # Setup impact candle at 9:15
-        impact = make_impact(high=100.0, low=95.0, close=98.0, hour=9, minute=15)
+        # Bug Fix 3: consolidation.high = impact_candle.close (105), NOT high
+        impact = make_impact(high=110.0, low=95.0, close=105.0, hour=9, minute=15)
         await sm.on_scan_hit(impact)
         assert sm.state == StrategyState.SCAN_HIT
 
         # Set up consolidation with 2 dry-up candles (prev_volumes = [10, 8])
+        # Both dry-up candles have h=104 (< 105), so consolidation.high stays 105
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock) as mock_trigger:
             # First dry-up candle
-            await sm.on_candle(97, 99, 95, 97, 10, make_ts(9, 16))
+            await sm.on_candle(97, 104, 95, 97, 10, make_ts(9, 16))
             # Second dry-up candle
-            await sm.on_candle(97, 99, 95, 97, 8, make_ts(9, 17))
+            await sm.on_candle(97, 104, 95, 97, 8, make_ts(9, 17))
 
             assert mock_trigger.call_count == 0, "Should not have triggered entry yet"
             assert sm.consolidation is not None
 
-        # Now consolidation.high should be 100 (from the impact candle's high)
-        # Impact candle: high=100, low=95. Dry-up candles have h=99, so high stays 100.
-        assert sm.consolidation.high == 100.0, (
-            f"Consolidation high should be 100 (from impact), got {sm.consolidation.high}"
+        # Bug Fix 3: consolidation.high = impact_candle.close (105)
+        # Dry-up candles have h=104, which is below 105, so high stays 105
+        assert sm.consolidation.high == 105.0, (
+            f"Consolidation high should be 105 (from impact_candle.close), got {sm.consolidation.high}"
         )
 
-        # Re-ignition candle: h=102, l=99, c=101
-        # If Bug 1 is present: breakout_level would be 102 AFTER update → check fails
-        # If Bug 1 is fixed:   breakout_level = 100 BEFORE update → check passes (101 > 100)
+        # Re-ignition candle: h=105, l=104, c=106, volume=30
+        # If Bug 1 is present: breakout_level would be 105 AFTER update (same value)
+        #   but the bug is about the VOLUME comparison, not price
+        #   volume=30 > avg([10,8]) × 1.5 = 9 → True
+        #   c=106 > pre_update=105 → True
+        # The real test: with h=106 (above 105), Bug 1 would set breakout to 106
+        #   and c=106 > post_update=106 → False → re-ignition BLOCKED
+        # With Bug 1 fix: breakout_level=105 BEFORE update, re-ignition FIRES
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock) as mock_trigger:
-            # volume=30 > max([10,8]) × 1.5 = 18 → is_volume_spike=True
-            # c=101 > breakout_level=100 (pre-update) → is_price_breakout=True
-            # c=101 > o=99 → is_green=True
-            # time is before 14:00 → is_before_cutoff=True
-            await sm.on_candle(99, 102, 99, 101, 30, make_ts(9, 18))
+            # volume=30 > avg([10,8]) × 1.5 = 13.5 → is_volume_spike=True
+            # c=106 > breakout_level=105 (pre-update) → is_price_breakout=True
+            # c=106 > o=104 → is_green=True
+            # time is before 13:30 → is_before_cutoff=True
+            await sm.on_candle(104, 106, 104, 106, 30, make_ts(9, 18))
 
         assert mock_trigger.call_count == 1, (
             "_trigger_entry was not called. Bug 1 may be present: "
             "breakout_level was updated before the check."
         )
         # Verify the entry was called with the correct close
-        mock_trigger.assert_called_once_with(101, make_ts(9, 18))
+        mock_trigger.assert_called_once_with(106, make_ts(9, 18))
 
     @pytest.mark.asyncio
     async def test_bug2_volume_spike_uses_pre_update_readings(
@@ -353,13 +373,13 @@ class TestStateMachineLifecycle:
 
     @pytest.mark.asyncio
     async def test_abandonment_timeout(self, sm):
-        """ABANDON when elapsed > DRYUP_MAX_MINUTES (10 minutes)."""
+        """ABANDON when elapsed > DRYUP_MAX_MINUTES (20 minutes, per config)."""
         impact = make_impact(hour=9, minute=15)
         await sm.on_scan_hit(impact)
-        
-        # Candle at 9:26 → elapsed = 11 minutes > 10
-        await sm.on_candle(498, 502, 495, 499, 5000, make_ts(9, 26))
-        
+
+        # Candle at 9:37 → elapsed = 22 minutes > 20 (DRYUP_MAX_MINUTES)
+        await sm.on_candle(498, 502, 495, 499, 5000, make_ts(9, 37))
+
         assert sm.state == StrategyState.CLOSED
         assert sm._abandonment_reason == "timeout"
 

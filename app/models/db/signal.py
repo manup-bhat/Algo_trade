@@ -38,6 +38,10 @@ class Signal(Base):
     resulted_in_trade: Mapped[int] = mapped_column(Integer, default=0)
     abandonment_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Trade mode: PAPER or LIVE — set when signal triggers an entry in any mode.
+    # A signal that produces both paper and live trades gets BOTH modes recorded.
+    trade_mode: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default="(datetime('now'))", nullable=False
     )

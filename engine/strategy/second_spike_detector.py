@@ -207,21 +207,23 @@ class SecondSpikeDetector:
             log.debug("second_spike_rejected_not_green", symbol=symbol)
             return None
 
-        # Condition 6: at vol_ratio >= 0.80, require close above prior spike's HIGH
+        # Condition 6: at vol_ratio >= 0.80, require close >= prior spike's HIGH + 0.5%
         # Research: At 80%+ volume the Wyckoff secondary test rule is borderline —
         # price must compensate by confirming absorption with a new high.
-        if (
-            vol_ratio >= settings.SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD
-            and candle_close <= record.spike_high
-        ):
-            log.debug(
-                "second_spike_rejected_high_ratio_no_price_confirm",
-                symbol=symbol,
-                vol_ratio=round(vol_ratio, 2),
-                candle_close=candle_close,
-                prior_spike_high=record.spike_high,
-            )
-            return None
+        # If it doesn't clear the 0.5% hurdle, require a 30+ min extended gap.
+        if vol_ratio >= settings.SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD:
+            required_price = record.spike_high * (1 + settings.SECOND_SPIKE_PRICE_ABOVE_HIGH_PCT)
+            if candle_close < required_price:
+                if gap_minutes < settings.SECOND_SPIKE_EXTENDED_GAP_MINUTES:
+                    log.debug(
+                        "second_spike_rejected_high_ratio_no_price_confirm",
+                        symbol=symbol,
+                        vol_ratio=round(vol_ratio, 2),
+                        candle_close=candle_close,
+                        required_price=required_price,
+                        gap_minutes=round(gap_minutes, 1),
+                    )
+                    return None
 
         # All conditions passed
         # SL = lowest low of the inter-spike consolidation minus 1 tick

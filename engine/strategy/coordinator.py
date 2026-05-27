@@ -337,6 +337,7 @@ class Coordinator:
                 StrategyState.SCAN_HIT,
                 StrategyState.MONITORING,
                 StrategyState.ACTION_PENDING,
+                StrategyState.ACTION_PENDING_APPROVAL,
             ):
                 await self._maybe_publish_monitoring_tick(
                     symbol, ltp, day_open, prev_close, cum_vol, builder, sm, exch_ts
@@ -381,11 +382,18 @@ class Coordinator:
                     # Legacy: per-symbol key (backward compat)
                     pipe.set(f"livetick:{sym}", encoded, ex=_LIVETICK_TTL)
                     pipe.set(f"ltp:{sym}", str(ltp))  # backward compat
-                # Track last tick time so dashboard can detect stale/frozen data
-                pipe.set("engine:last_tick_at", now_iso, ex=_LIVETICK_TTL)
                 await pipe.execute()
             except Exception:
                 pass  # Redis blip — dashboard will catch up on next tick batch
+
+        # Always write last_tick_at — outside the symbol pipeline so this key is
+        # updated even when no symbols had live_tick_updates this batch.
+        try:
+            _LIVETICK_TTL = 54000
+            now_iso = datetime.datetime.now(IST_TZ).isoformat(timespec="seconds")
+            await self._redis._r.set("engine:last_tick_at", now_iso, ex=_LIVETICK_TTL)
+        except Exception:
+            pass
 
     async def _maybe_publish_monitoring_tick(
         self,

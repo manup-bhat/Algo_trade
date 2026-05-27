@@ -70,6 +70,8 @@ class Trade(Base):
     # Analytics
     max_adverse_excursion: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_favorable_excursion: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # PAPER or LIVE — never empty after first implementation
+    trade_mode: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime.datetime] = mapped_column(
