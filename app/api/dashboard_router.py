@@ -1858,10 +1858,9 @@ async def websocket_endpoint(ws: WebSocket):
                         is_stale = True  # parse error = treat as stale
 
                 if ticks and not is_stale:
-                    ticks_dict = {t["symbol"]: t for t in ticks if "symbol" in t}
                     await _send({
                         "event": "tick_batch",
-                        "ticks": ticks_dict,
+                        "ticks": ticks,
                         "last_tick_at": last_ts,
                     })
             except asyncio.CancelledError:
