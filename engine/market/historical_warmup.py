@@ -387,7 +387,7 @@ async def warmup_from_historical(
             )
             log.info("warmup_gap_fill_done",
                      warmed=w, partial=p, errors=e)
-        _log_final_counts(builders, coordinator)
+        await _log_final_counts(builders, coordinator)
         return
 
     # ── Case B / C: Gap > 0 — fetch missing days ─────────────────────────────
@@ -453,7 +453,7 @@ async def warmup_from_historical(
         if batch_delay > 0 and i + concurrency < len(all_symbols):
             await asyncio.sleep(batch_delay)
 
-    _log_final_counts(builders, coordinator)
+    await _log_final_counts(builders, coordinator)
 
     log.info(
         "historical_warmup_complete",
@@ -469,16 +469,14 @@ async def warmup_from_historical(
         await coordinator.persist_sma_histories()
 
 
-def _log_final_counts(builders: dict, coordinator: "Coordinator") -> None:
+async def _log_final_counts(builders: dict, coordinator: "Coordinator") -> None:
     """Update Redis scanner counts and log summary."""
     total_warmed = sum(1 for b in builders.values() if b.is_warmed_up)
     total_warming = len(builders) - total_warmed
     try:
-        asyncio.ensure_future(
-            coordinator._redis.set_scanner_counts(total_warmed, total_warming)
-        )
-    except Exception:
-        pass
+        await coordinator._redis.set_scanner_counts(total_warmed, total_warming)
+    except Exception as exc:
+        log.warning("redis_set_scanner_counts_failed", error=str(exc))
     log.info(
         "warmup_summary",
         total_warmed_sma=total_warmed,
