@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.db.daily_pnl import DailyPnl
 from app.models.db.order_event import OrderEvent
 from app.models.db.signal import Signal
+from app.models.db.signal_snapshot import SignalSnapshot
 from app.models.db.trade import Trade, TradeStatus
 from app.store.database import get_db
 
@@ -89,6 +90,26 @@ class DbWriter:
                 sig.resulted_in_trade = int(resulted_in_trade)
             if abandonment_reason is not None:
                 sig.abandonment_reason = abandonment_reason
+            await session.flush()
+
+    async def write_signal_snapshot(
+        self,
+        signal_id: int | None,
+        symbol: str,
+        event_type: str,
+        context_data: dict[str, Any],
+    ) -> None:
+        """Write a point-in-time snapshot of the market context and setup state."""
+        async with get_db() as session:
+            snapshot = SignalSnapshot(
+                signal_id=signal_id,
+                symbol=symbol,
+                snapshot_time=datetime.datetime.now(datetime.timezone.utc),
+                event_type=event_type,
+                context_data=context_data,
+            )
+            session.add(snapshot)
+            await session.commit()
 
     # ── Trades ─────────────────────────────────────────────────────────────
 
@@ -105,6 +126,7 @@ class DbWriter:
         risk_per_share: float,
         risk_amount: float,
         target_1r2: float,
+        target_1r3: float,
         target_1r4: float,
         sl_order_id: str | None = None,
         notes: str | None = None,
@@ -125,6 +147,7 @@ class DbWriter:
                 risk_per_share=risk_per_share,
                 risk_amount=risk_amount,
                 target_1r2=target_1r2,
+                target_1r3=target_1r3,
                 target_1r4=target_1r4,
                 sl_order_id=sl_order_id,
                 status=TradeStatus.OPEN.value,

@@ -181,10 +181,7 @@ async def get_status():
         if isinstance(control, bytes):
             control = control.decode()
 
-        warmed_raw  = await rs._r.get("engine:scanner:ready_count")
-        warming_raw = await rs._r.get("engine:scanner:warming_count")
-        warmed_up   = int(warmed_raw)  if warmed_raw  else 0
-        warming_up  = int(warming_raw) if warming_raw else 0
+        warmed_up, warming_up = await rs.get_scanner_counts()
 
         # Paper trade override from Redis (runtime toggle)
         pt_override = await rs.get_paper_trade_override()
@@ -607,8 +604,6 @@ async def approve_or_reject_trade(payload: ApprovalAction):
 
 
 @router.post("/emergency_stop")
-
-@router.post("/emergency_stop")
 async def emergency_stop():
     rs = _rs()
     if rs is None:
@@ -662,8 +657,8 @@ class SettingsUpdate(BaseModel):
     max_capital: float | None = None         # global fallback cap
     max_capital_paper: float | None = None   # cap for PAPER trades specifically
     max_capital_live: float | None = None    # cap for LIVE trades specifically
-    config: dict[str, Any] | None = None
     reload_engine: bool = True
+    config: dict[str, Any] | None = None     # Optional env configs
 
 
 _SECRET_SETTING_KEYS = {"KITE_API_KEY", "KITE_API_SECRET"}
@@ -1711,6 +1706,51 @@ async def get_journal():
     except Exception as exc:
         log.debug("journal_query_failed", error=str(exc))
         return {"days": [], "count": 0}
+
+
+# ── Export ──────────────────────────────────────────────────────────────────────
+
+@router.get("/export/snapshots")
+async def export_snapshots(start_date: str | None = None, end_date: str | None = None):
+    from sqlalchemy import select
+    from app.models.db.signal_snapshot import SignalSnapshot
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    try:
+        engine = _get_db_engine()
+        query = select(SignalSnapshot).order_by(SignalSnapshot.snapshot_time.desc())
+
+        try:
+            if start_date:
+                sd = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                query = query.where(SignalSnapshot.snapshot_time >= sd)
+            if end_date:
+                ed = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+                query = query.where(SignalSnapshot.snapshot_time < ed)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        async with AsyncSession(engine) as session:
+            result = await session.execute(query)
+            snapshots = result.scalars().all()
+
+        data = []
+        for row in snapshots:
+            data.append({
+                "id": row.id,
+                "signal_id": row.signal_id,
+                "symbol": row.symbol,
+                "snapshot_time": row.snapshot_time.isoformat(),
+                "event_type": row.event_type,
+                "context_data": row.context_data,
+            })
+
+        return {"status": "ok", "count": len(data), "data": data}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("export_snapshots_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ── Radar helper ────────────────────────────────────────────────────────────────

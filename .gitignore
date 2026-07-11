@@ -34,3 +34,11 @@ trading_bot_architecture.md
 .idea/
 .DS_Store
 
+# AI Assistant and local configs
+.agent/
+anthropic.json
+.claude/settings.local.json
+ui-ux-pro-max-skill/
+
+# Scratch files
+test_dt.py

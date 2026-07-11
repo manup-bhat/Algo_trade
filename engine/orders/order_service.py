@@ -522,6 +522,38 @@ class OrderService:
             log.info("exit_order_placed", symbol=symbol, order_id=result, reason=reason)
         return result
 
+    # ── Entry Order Modification (limit widen) ────────────────────────────────
+
+    async def modify_entry_order(self, order_id: str, price: float) -> bool:
+        """
+        Modify the limit price of an existing entry order (used for limit widen at +5s).
+
+        Paper mode: always succeeds (no exchange order to modify).
+        Live mode: calls kite.modify_order() with retry wrapper.
+
+        Returns True on success, False on failure.
+        """
+        if settings.is_paper_trade:
+            log.info("paper_entry_order_widen_skipped", order_id=order_id, price=price)
+            return True
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", method="modify_entry_order")
+            return False
+
+        result = await _call_with_retry(
+            self._kite,
+            "modify_order",
+            variety="regular",
+            order_id=order_id,
+            price=price,
+        )
+        if result is not None:
+            log.info("entry_order_widened", order_id=order_id, new_price=price)
+            return True
+        log.warning("entry_order_widen_failed", order_id=order_id, price=price)
+        return False
+
     # ── Cancel Order ──────────────────────────────────────────────────────────
 
     async def cancel_order(self, order_id: str, symbol: str = "") -> bool:

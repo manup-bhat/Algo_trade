@@ -23,6 +23,7 @@ from engine.market import calendar as mkt_calendar
 from engine.strategy import scanner
 from engine.strategy.state_machine import SymbolStateMachine, StrategyState
 from engine.strategy.second_spike_detector import SecondSpikeDetector, SecondSpikeEntry
+from engine.strategy.abandoned_setup_tracker import abandoned_setup_tracker, AbandonedRecord
 from engine.store import sma_file_store
 from app.core.config import settings
 
@@ -352,48 +353,20 @@ class Coordinator:
                     builder.current_volume, builder.volume_sma,
                 ))
 
-        # Flush all live tick updates in one Redis pipeline round-trip.
-        # Avoids hundreds of individual SET calls (one per symbol per batch).
+        # Flush all live tick updates via RedisStore (one pipeline round-trip).
+        # flush_live_ticks() also sets engine:last_tick_at inside the same pipeline.
+        now_iso = datetime.datetime.now(IST_TZ).isoformat(timespec="seconds")
         if live_tick_updates:
             try:
-                import json as _json
-                _LIVETICK_TTL = 54000  # 15 hours — matches redis_store._TTL_LIVE_TICK
-                now_iso = datetime.datetime.now(IST_TZ).isoformat(timespec="seconds")
-                pipe = self._redis._r.pipeline(transaction=False)
-                for sym, ltp, day_open, prev_close, cum_vol, min_vol, vol_sma in live_tick_updates:
-                    # pct_chg uses prev_close (= ohlc.close from Kite tick)
-                    # which is the PREVIOUS DAY'S closing price — matches Kite app display
-                    ref = prev_close if prev_close > 0 else day_open
-                    pct_chg = round(((ltp - ref) / ref * 100), 2) if ref > 0 else 0.0
-                    payload: dict = {
-                        "ltp": ltp,
-                        "open": day_open,
-                        "prev_close": prev_close,
-                        "pct_chg": pct_chg,
-                        "volume": cum_vol,
-                        "minute_volume": min_vol,
-                    }
-                    if vol_sma:
-                        payload["volume_sma_500"] = vol_sma
-                        payload["relative_volume"] = round((min_vol or 0) / vol_sma, 2)
-                    encoded = _json.dumps(payload)
-                    # Primary: write to hash (O(1) HGETALL for dashboard)
-                    pipe.hset("livetick_hash", sym, encoded)
-                    # Legacy: per-symbol key (backward compat)
-                    pipe.set(f"livetick:{sym}", encoded, ex=_LIVETICK_TTL)
-                    pipe.set(f"ltp:{sym}", str(ltp))  # backward compat
-                await pipe.execute()
+                await self._redis.flush_live_ticks(live_tick_updates, now_iso)
             except Exception:
                 pass  # Redis blip — dashboard will catch up on next tick batch
-
-        # Always write last_tick_at — outside the symbol pipeline so this key is
-        # updated even when no symbols had live_tick_updates this batch.
-        try:
-            _LIVETICK_TTL = 54000
-            now_iso = datetime.datetime.now(IST_TZ).isoformat(timespec="seconds")
-            await self._redis._r.set("engine:last_tick_at", now_iso, ex=_LIVETICK_TTL)
-        except Exception:
-            pass
+        else:
+            # No symbols this batch — still update the staleness timestamp
+            try:
+                await self._redis.set_last_tick_at(now_iso)
+            except Exception:
+                pass
 
     async def _maybe_publish_monitoring_tick(
         self,
@@ -520,7 +493,39 @@ class Coordinator:
             # This keeps the SL anchor accurate for any eventual second-spike entry.
             self.second_spike_detector.update_inter_spike_low(symbol, candle.low)
 
+            # NEW: Track price low for abandoned setups (re-entry system).
+            # Keeps the inter-session low current in case we need re-entry SL.
+            abandoned_setup_tracker.update_low(symbol, candle.low)
+
             instrument_token = self.symbol_to_token.get(symbol, 0)
+
+            # NEW: Check for re-entry after abandonment FIRST (highest priority idle path).
+            # Re-entry requires a lower volume bar (5x SMA) but the original impact level
+            # must be reclaimed and the candle must be green.
+            if abandoned_setup_tracker.has_record(symbol):
+                volume_sma = builder.volume_sma
+                if volume_sma and volume_sma > 0:
+                    is_re_entry = abandoned_setup_tracker.evaluate(
+                        symbol=symbol,
+                        candle_open=candle.open,
+                        candle_high=candle.high,
+                        candle_low=candle.low,
+                        candle_close=candle.close,
+                        candle_volume=candle.volume,
+                        candle_time=candle.timestamp,
+                        volume_sma=volume_sma,
+                    )
+                    if is_re_entry:
+                        rec = abandoned_setup_tracker.get_impact_data(symbol)
+                        if rec is not None:
+                            await self._handle_re_entry(
+                                symbol=symbol,
+                                instrument_token=instrument_token,
+                                candle=candle,
+                                rec=rec,
+                            )
+                        await self._publish_candle_close(symbol, candle, builder)
+                        return  # Do NOT run second-spike or first-wave scanner
 
             # v3 NEW: Check for second-spike entry BEFORE running first-wave scanner.
             # If a prior spike record exists and today's candle meets all 7 conditions,
@@ -659,7 +664,63 @@ class Coordinator:
             gap_minutes=round(second.gap_minutes, 1),
         )
 
-    # ── WebSocket Lifecycle ────────────────────────────────────────────────
+    async def _handle_re_entry(
+        self,
+        symbol: str,
+        instrument_token: int,
+        candle: Candle,
+        rec: AbandonedRecord,
+    ) -> None:
+        """
+        Direct entry path for re-entry after an abandoned setup. (NEW)
+
+        Triggered when an IDLE symbol's candle meets all re-entry conditions
+        (price above impact close, volume ≥ 5x SMA, green candle, ≥15 min gap).
+
+        Uses the original impact candle's swing low as the SL anchor.
+        All other risk checks still run inside SM._trigger_entry().
+        """
+        # Guard: don't create a second SM if one is already active (race condition)
+        if symbol in self.active_state_machines:
+            log.debug("re_entry_skipped_sm_already_active", symbol=symbol)
+            abandoned_setup_tracker.clear(symbol)
+            return
+
+        try:
+            tick_size = await self._redis.get_tick_size(symbol)
+            if not tick_size:
+                tick_size = 0.05
+        except Exception:
+            tick_size = 0.05
+
+        # Create SM pre-loaded with the original impact candle SL
+        sm = self._create_sm(symbol, instrument_token, is_second_spike=False)
+        sm.set_second_spike_sl(
+            stop_loss=round(rec.inter_session_low - tick_size, 2),
+            prior_spike_time=rec.abandon_time,
+            prior_spike_high=rec.impact_candle_high,
+            prior_spike_low=rec.impact_candle_low,
+        )
+        self.active_state_machines[symbol] = sm
+        self._signal_count += 1
+
+        # Trigger entry immediately on this candle's close
+        await sm._trigger_entry(candle.close, candle.timestamp)
+
+        # If entry was rejected, clean up
+        if sm.state == StrategyState.CLOSED:
+            del self.active_state_machines[symbol]
+
+        log.info(
+            "re_entry_routed",
+            symbol=symbol,
+            entry_close=candle.close,
+            original_reason=rec.abandonment_reason,
+            reentry_count=rec.reentry_count,
+            inter_session_low=rec.inter_session_low,
+        )
+
+
 
     async def on_websocket_connected(self) -> None:
         """Bug 4 fix: reset all baselines on every WS connect."""
@@ -687,6 +748,9 @@ class Coordinator:
             builder.reset()
         # Clear any leftover SMs from previous session
         self.active_state_machines.clear()
+        # v3: reset second spike detector so stale inter-session spike records
+        # don't incorrectly fire second-spike entries after a restart
+        self.second_spike_detector.end_of_day_reset()
         log.info("market_open_builders_reset", symbol_count=len(self.candle_builders))
 
     async def on_squareoff(self) -> None:
@@ -787,6 +851,22 @@ class Coordinator:
 
                     await self._redis.clear_strategy_state(sym)
                     await self._redis.clear_position(sym)
+
+                    # Close the open DB trade record so it doesn't stay OPEN forever
+                    try:
+                        position_data = state_data.get("position") or {}
+                        trade_id = position_data.get("trade_id")
+                        if trade_id is not None:
+                            from app.models.db.trade import TradeStatus
+                            await self._db.close_trade(
+                                trade_id=trade_id,
+                                exit_time=datetime.datetime.now(IST_TZ),
+                                exit_price=exit_price or 0.0,
+                                status=TradeStatus.CLOSED_BROKER,
+                            )
+                    except Exception as _db_exc:
+                        log.warning("ghost_trade_close_db_failed", symbol=sym, error=str(_db_exc))
+
                     log.info(
                         "ghost_state_cleared",
                         symbol=sym,

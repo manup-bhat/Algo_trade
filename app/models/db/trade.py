@@ -45,6 +45,7 @@ class Trade(Base):
 
     # Targets
     target_1r2: Mapped[float] = mapped_column(Float, nullable=False)
+    target_1r3: Mapped[float] = mapped_column(Float, nullable=True)   # 1:3 profit-lock trail
     target_1r4: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Order tracking

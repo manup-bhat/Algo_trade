@@ -326,6 +326,11 @@ async def job_pre_market_setup() -> None:
     })
     log.info("pre_market_setup_complete", **coordinator.get_stats())
 
+    # If the bot is started late (after 09:15 AM), the scheduler won't trigger job_market_open.
+    if is_market_open():
+        log.info("market_already_open_triggering_market_open_job")
+        await job_market_open()
+
 
 async def job_market_open() -> None:
     """09:15 AM IST — Reset all candle builders, activate scanner."""
@@ -485,6 +490,13 @@ async def job_session_end() -> None:
         **coordinator.get_stats(),
     })
 
+    # 6. Clear abandoned setup tracker — re-entry records don't persist across days
+    try:
+        from engine.strategy.abandoned_setup_tracker import abandoned_setup_tracker
+        abandoned_setup_tracker.clear_all()
+    except Exception as exc:
+        log.warning("abandoned_tracker_clear_failed", error=str(exc))
+
     log.info("session_end_complete", **coordinator.get_stats())
 
 
@@ -641,7 +653,7 @@ async def _poll_config() -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
-    global _coordinator, _redis_store, _db_writer, _scheduler
+    global _coordinator, _redis_store, _db_writer, _scheduler, _running
 
     configure_logging(settings.LOG_LEVEL)
     log.info(
@@ -710,14 +722,14 @@ async def main() -> None:
     _scheduler.start()
     log.info("scheduler_started", jobs=[j.id for j in _scheduler.get_jobs()])
     
+    # ── Background Tasks ──────────────────────────────────────────────────────
+    global _poll_config_task
+    _poll_config_task = asyncio.create_task(_poll_config(), name="poll_config")
+
     # ── Initial Engine State Parsing ──────────────────────────────────────────
     log.info("triggering_initial_pre_market_setup", time=now_ist().isoformat())
     await job_pre_market_setup()
     # Note: job_market_open() is specifically scheduled for 09:15 or triggered manually
-    
-    # ── Background Tasks ──────────────────────────────────────────────────────
-    global _poll_config_task
-    _poll_config_task = asyncio.create_task(_poll_config(), name="poll_config")
 
     # ── Engine Status ─────────────────────────────────────────────────────────
     await _redis_store.set_engine_status({

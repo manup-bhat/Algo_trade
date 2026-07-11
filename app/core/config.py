@@ -50,13 +50,24 @@ class Settings(BaseSettings):
     # When True, re-ignition compares volume to the MEAN of all dry-up candles
     # (not just max of last N). This is the correct institutional threshold.
     REIGNITION_USE_AVG_VOLUME: bool = True
+    # NEW: Re-ignition candle must also be at least this fraction of the original
+    # impact candle volume. Prevents noise above a tiny dry-up baseline triggering entry.
+    REIGNITION_MIN_PCT_OF_IMPACT: float = 0.08
     MIN_DRYUP_CANDLES: int = 2
     ASHAPE_RED_CANDLE_PCT: float = 0.5
     ASHAPE_VOLUME_MULTIPLE: float = 1.5
     ASHAPE_MIN_CANDLE_COUNT: int = 2
     # Abandon dryup if any single candle's volume exceeds this fraction of the
     # impact candle's volume — signals institutional selling into the spike.
-    ASHAPE_IMPACT_VOLUME_PCT: float = 0.50
+    ASHAPE_IMPACT_VOLUME_PCT: float = 0.70
+
+    # ── v3 NEW: Re-entry after abandonment (Second Chance Scanner) ─────────────
+    # When enabled: after a setup is abandoned, the symbol is tracked for a
+    # re-entry opportunity using a lower volume threshold than the original scanner.
+    RE_ENTRY_ENABLED: bool = True
+    RE_ENTRY_MIN_GAP_MINUTES: int = 15      # Minimum minutes after abandonment before re-entry
+    RE_ENTRY_VOLUME_MULTIPLE: float = 5.0   # 5x SMA (vs 20x first scan) for re-entry
+    RE_ENTRY_MAX_PER_SYMBOL: int = 2        # Max re-entries per symbol per day
 
     # ── v3 NEW: Opening noise guard ─────────────────────────────────────────
     # Skip candles in the 9 AM hour before this minute (default 30 = 09:30 start).

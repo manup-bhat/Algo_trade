@@ -153,11 +153,16 @@ a { color: var(--blue); text-decoration: none; }
 .profile-dropdown {
   display: none;
   position: fixed;   /* fixed so it escapes navbar stacking context entirely */
-  width: 310px;
-  background: var(--bg-raised); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-  z-index: 9999; padding: 14px;
+  z-index: 10000;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
   animation: card-slide-in 0.18s ease;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  width: 310px;
+  padding: 14px;
 }
 .profile-dropdown.open { display: block; }
 .profile-dropdown-title {
@@ -351,17 +356,20 @@ a { color: var(--blue); text-decoration: none; }
 
 /* TOP NAVBAR */
 .navbar {
-  display: flex; align-items: center; gap: 0;
-  padding: 0 20px;
+  display: flex; align-items: center;
+  padding: 0 16px;
   height: 54px;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   position: sticky; top: 0; z-index: 100;
+  min-width: 0;
+  gap: 0;
 }
 .navbar-brand {
-  display: flex; align-items: center; gap: 10px;
-  margin-right: 24px;
+  display: flex; align-items: center; gap: 8px;
+  margin-right: 16px;
+  flex-shrink: 0;
 }
 .navbar-logo-icon {
   width: 30px; height: 30px;
@@ -373,25 +381,36 @@ a { color: var(--blue); text-decoration: none; }
 }
 .navbar-brand-text {
   font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+  white-space: nowrap;
 }
 .navbar-brand-text span { color: var(--blue); }
 
-/* TABS */
+/* TABS — true flex-1 scrollable middle section */
 .navbar-tabs {
-  display: flex; align-items: center; gap: 2px; flex: 1;
+  display: flex; align-items: center; gap: 1px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  padding-right: 8px;
 }
+.navbar-tabs::-webkit-scrollbar { display: none; }
 .nav-tab {
-  display: flex; align-items: center; gap: 7px;
-  padding: 6px 14px;
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 11px;
+  flex-shrink: 0;
   border-radius: var(--radius-sm);
-  font-size: 13px; font-weight: 500;
+  font-size: 12.5px; font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition);
   border: 1px solid transparent;
   background: none;
   position: relative;
+  white-space: nowrap;
 }
+.nav-tab svg { flex-shrink: 0; }
 .nav-tab:hover { color: var(--text-primary); background: var(--bg-card); }
 .nav-tab.active {
   color: var(--text-primary);
@@ -399,29 +418,35 @@ a { color: var(--blue); text-decoration: none; }
   border-color: var(--border);
 }
 .nav-tab.active::after {
-  content: ''; position: absolute; bottom: -1px; left: 12px; right: 12px;
+  content: ''; position: absolute; bottom: -1px; left: 10px; right: 10px;
   height: 2px; background: var(--blue); border-radius: 2px 2px 0 0;
 }
 .nav-tab .tab-badge {
-  min-width: 18px; height: 18px; padding: 0 5px;
+  min-width: 17px; height: 17px; padding: 0 4px;
   background: var(--blue-dim); color: var(--blue);
   border-radius: 99px; font-size: 10px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .nav-tab .tab-badge.red { background: var(--red-dim); color: var(--red); }
 .nav-tab .tab-badge.green { background: var(--green-dim); color: var(--green); }
+/* Hide tab icons to save space at medium widths */
+@media (max-width: 1400px) { .nav-tab svg { display: none; } }
 
-/* NAVBAR RIGHT */
+/* NAVBAR RIGHT — fixed width, never shrinks, never competes with tabs */
 .navbar-right {
-  display: flex; align-items: center; gap: 10px; margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 .market-clock {
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 12px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-family: var(--mono); font-size: 12px; font-weight: 500;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 .market-clock .clock-dot {
   width: 7px; height: 7px; border-radius: 50%;
@@ -430,6 +455,8 @@ a { color: var(--blue); text-decoration: none; }
 }
 .market-clock.open .clock-dot { background: var(--green); animation: dot-pulse 2s infinite; }
 .market-clock .clock-time { color: var(--text-primary); }
+/* Hide 'IST' text at medium widths to save space */
+@media (max-width: 1300px) { .market-clock .clock-ist { display: none; } }
 
 .mode-pill {
   padding: 4px 10px;
@@ -1339,6 +1366,15 @@ a { color: var(--blue); text-decoration: none; }
         Orders
         <span class="tab-badge" id="badge-orders">0</span>
       </button>
+      <button class="nav-tab" data-tab="approvals" id="tab-btn-approvals">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M10 6v4l2.5 2.5"/><path d="M6 10h.01"/></svg>
+        Approvals
+        <span class="tab-badge" id="badge-approvals" style="background:var(--red,#ef4444);color:#fff">0</span>
+      </button>
+      <button class="nav-tab" data-tab="journal">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="14" height="16" rx="2"/><path d="M7 6h6M7 10h6M7 14h4"/></svg>
+        Journal
+      </button>
       <button class="nav-tab" data-tab="settings">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="2"/><path d="M17.7 11.4a7.8 7.8 0 010-2.8l1.3-1.1a1 1 0 00.2-1.2l-1.5-2.6a1 1 0 00-1.2-.4l-1.6.6a7.9 7.9 0 00-2.4-1.4l-.3-1.7A1 1 0 0011 1H9a1 1 0 00-1 .8l-.3 1.7A7.9 7.9 0 005.3 5L3.7 4.3a1 1 0 00-1.2.4L1 7.3a1 1 0 00.2 1.2l1.3 1.1a7.8 7.8 0 000 2.8L1.2 13.6A1 1 0 001 14.8l1.5 2.6a1 1 0 001.2.4l1.6-.6a7.9 7.9 0 002.4 1.4l.3 1.7A1 1 0 009 21h2a1 1 0 001-.8l.3-1.7a7.9 7.9 0 002.4-1.4l1.6.6a1 1 0 001.2-.4l1.5-2.6a1 1 0 00-.2-1.2l-1.3-1.1z"/></svg>
         Settings
@@ -1349,7 +1385,7 @@ a { color: var(--blue); text-decoration: none; }
       <div class="market-clock" id="market-clock">
         <div class="clock-dot"></div>
         <span class="clock-time" id="clock-time">--:--:--</span>
-        <span style="color:var(--text-muted)">IST</span>
+        <span class="clock-ist" style="color:var(--text-muted)">IST</span>
       </div>
       <div class="mode-pill paper" id="mode-pill">PAPER</div>
       <div class="engine-status-pill" id="engine-status-pill">
@@ -1366,86 +1402,126 @@ a { color: var(--blue); text-decoration: none; }
           <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="4"/><path d="M2 19c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <div class="profile-status-dot" id="profile-status-dot"></div>
         </button>
-        <div class="profile-dropdown" id="profile-dropdown">
-          <div class="profile-dropdown-title">Zerodha Kite Connection</div>
-          <!-- Status badge (same IDs — checkKiteStatus updates these) -->
-          <div class="kite-status-badge loading" id="kite-status-badge">
-            <div class="badge-dot"></div>
-            <div class="badge-info">
-              <div id="kite-status-text">Checking authentication...</div>
-              <div class="badge-user" id="kite-status-user" style="display:none"></div>
-            </div>
-          </div>
-          <!-- Login actions -->
-          <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
-            <button class="btn btn-primary btn-sm btn-full" id="btn-kite-login">
-              <svg viewBox="0 0 20 20" fill="none" width="13" height="13" stroke="currentColor" stroke-width="2"><path d="M11 3H17V9M17 3L8 12M14 13V16H4V6H7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Open Kite Login
-            </button>
-            <button class="btn btn-ghost btn-sm btn-full" id="btn-delete-token" style="font-size:11px;color:var(--text-muted)">
-              Force Re-login (delete saved token)
-            </button>
-          </div>
-          <!-- Trading Mode Panel -->
-          <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
-            <div style="font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Trading Mode</div>
-            <!-- 3-mode selector -->
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:6px;" id="mode-selector">
-              <button id="msel-paper" data-mode="PAPER"
-                style="padding:6px 4px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:0.3px;
-                       border:1.5px solid var(--amber-border);background:var(--amber-dim);color:var(--amber);
-                       cursor:pointer;transition:all 0.15s;opacity:0.45;"
-                onclick="_selectMode('PAPER')">PAPER</button>
-              <button id="msel-simultaneous" data-mode="SIMULTANEOUS"
-                style="padding:6px 4px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:0.3px;
-                       border:1.5px solid rgba(139,92,246,0.35);background:rgba(139,92,246,0.1);color:#a78bfa;
-                       cursor:pointer;transition:all 0.15s;opacity:0.45;"
-                onclick="_selectMode('SIMULTANEOUS')">P+L</button>
-              <button id="msel-live" data-mode="LIVE"
-                style="padding:6px 4px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:0.3px;
-                       border:1.5px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.1);color:var(--red);
-                       cursor:pointer;transition:all 0.15s;opacity:0.45;"
-                onclick="_selectMode('LIVE')">LIVE</button>
-            </div>
-            <div id="mode-desc" style="font-size:10.5px;color:var(--text-muted);min-height:28px;margin-bottom:10px;line-height:1.45;"></div>
-            <!-- Max Capital — Paper -->
-            <div style="margin-bottom:8px;">
-              <label style="font-size:11px;font-weight:600;color:var(--text-primary);display:block;margin-bottom:4px;">Max Capital — Paper (₹)</label>
-              <div style="position:relative;">
-                <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none;">₹</span>
-                <input type="number" id="inp-max-capital-paper" min="0" step="1000"
-                  placeholder="blank = full equity"
-                  style="width:100%;box-sizing:border-box;padding:6px 10px 6px 22px;
-                    background:var(--bg-input);border:1px solid var(--border);
-                    border-radius:6px;font-size:12px;color:var(--text-primary);
-                    font-family:var(--mono);outline:none;"/>
+        <div class="profile-dropdown" id="profile-dropdown" style="padding:20px; width:360px; box-sizing:border-box;">
+          
+          <!-- AUTH SECTION -->
+          <div style="padding-bottom:18px; border-bottom:1px solid var(--border);">
+            <div style="font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:14px;">Broker Connection</div>
+            
+            <!-- Status badge -->
+            <div class="kite-status-badge loading" id="kite-status-badge" style="margin-bottom:14px; background:var(--bg-base); padding:12px 14px; border-radius:10px; border:1px solid var(--border);">
+              <div class="badge-dot"></div>
+              <div class="badge-info">
+                <div id="kite-status-text" style="font-size:13.5px; font-weight:600; color:var(--text-primary);">Checking auth...</div>
+                <div class="badge-user" id="kite-status-user" style="display:none; margin-top:3px; font-size:11.5px; color:var(--text-muted);"></div>
               </div>
             </div>
+
+            <!-- Login actions -->
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <button class="btn btn-primary btn-full" id="btn-kite-login" style="padding:10px; border-radius:8px; font-weight:600; font-size:13px; display:flex; justify-content:center; align-items:center; gap:8px; box-shadow:0 4px 12px rgba(59,130,246,0.3);">
+                <svg viewBox="0 0 20 20" fill="none" width="16" height="16" stroke="currentColor" stroke-width="2"><path d="M11 3H17V9M17 3L8 12M14 13V16H4V6H7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Connect to Kite
+              </button>
+              <button class="btn btn-ghost btn-full" id="btn-delete-token" style="padding:8px; font-size:12px; color:var(--text-muted); border-radius:8px; transition:color var(--transition);">
+                Force Re-login (Clear Token)
+              </button>
+            </div>
+          </div>
+
+          <!-- TRADING SETTINGS SECTION -->
+          <div style="padding-top:18px;">
+            <div style="font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:14px;">Trading Mode</div>
+            
+            <!-- 3-mode selector (Segmented Control Style) -->
+            <div style="display:flex; background:var(--bg-base); padding:5px; border-radius:10px; margin-bottom:10px; border:1px solid var(--border);" id="mode-selector">
+              <button id="msel-paper" data-mode="PAPER"
+                style="flex:1; padding:8px 0; border-radius:6px; font-size:12px; font-weight:600; letter-spacing:0.3px;
+                       border:1px solid transparent; background:transparent; color:var(--text-muted);
+                       cursor:pointer; transition:all var(--transition);"
+                onclick="_selectMode('PAPER')">Paper</button>
+              <button id="msel-simultaneous" data-mode="SIMULTANEOUS"
+                style="flex:1; padding:8px 0; border-radius:6px; font-size:12px; font-weight:600; letter-spacing:0.3px;
+                       border:1px solid transparent; background:transparent; color:var(--text-muted);
+                       cursor:pointer; transition:all var(--transition);"
+                onclick="_selectMode('SIMULTANEOUS')">P + L</button>
+              <button id="msel-live" data-mode="LIVE"
+                style="flex:1; padding:8px 0; border-radius:6px; font-size:12px; font-weight:600; letter-spacing:0.3px;
+                       border:1px solid transparent; background:transparent; color:var(--text-muted);
+                       cursor:pointer; transition:all var(--transition);"
+                onclick="_selectMode('LIVE')">Live</button>
+            </div>
+            <div id="mode-desc" style="font-size:11.5px; color:var(--text-muted); min-height:34px; margin-bottom:16px; line-height:1.5; padding:0 4px;"></div>
+            
+            <!-- Max Capital — Paper -->
+            <div id="row-max-capital-paper" style="margin-bottom:14px;">
+              <label style="font-size:12px; font-weight:500; color:var(--text-primary); display:block; margin-bottom:6px; margin-left:4px;">Paper Capital (₹)</label>
+              <div style="position:relative;">
+                <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); pointer-events:none;">₹</span>
+                <input type="number" id="inp-max-capital-paper" min="0" step="1000"
+                  placeholder="Leave blank for full equity"
+                  style="width:100%; box-sizing:border-box; padding:10px 12px 10px 28px;
+                    background:var(--bg-base); border:1px solid var(--border);
+                    border-radius:8px; font-size:13.5px; color:var(--text-primary);
+                    font-family:var(--sans); outline:none; transition:border-color var(--transition);"/>
+              </div>
+            </div>
+            
             <!-- Max Capital — Live -->
-            <div style="margin-bottom:10px;">
-              <label style="font-size:11px;font-weight:600;color:var(--text-primary);display:block;margin-bottom:4px;">
-                Max Capital — Live (₹) <span style="color:var(--red);font-size:9px;">⚡ REAL MONEY</span>
+            <div id="row-max-capital-live" style="margin-bottom:20px;">
+              <label style="font-size:12px; font-weight:500; color:var(--text-primary); display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; margin-left:4px;">
+                <span>Live Capital (₹)</span>
+                <span style="color:var(--red); font-size:9.5px; font-weight:700; background:var(--red-dim); padding:3px 6px; border-radius:6px; letter-spacing:0.3px;">⚡ REAL MONEY</span>
               </label>
               <div style="position:relative;">
-                <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text-muted);pointer-events:none;">₹</span>
+                <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:13px; color:var(--text-muted); pointer-events:none;">₹</span>
                 <input type="number" id="inp-max-capital-live" min="0" step="1000"
-                  placeholder="blank = full equity"
-                  style="width:100%;box-sizing:border-box;padding:6px 10px 6px 22px;
-                    background:var(--bg-input);border:1px solid var(--border);
-                    border-radius:6px;font-size:12px;color:var(--text-primary);
-                    font-family:var(--mono);outline:none;"/>
+                  placeholder="Leave blank for full equity"
+                  style="width:100%; box-sizing:border-box; padding:10px 12px 10px 28px;
+                    background:var(--bg-base); border:1px solid var(--border);
+                    border-radius:8px; font-size:13.5px; color:var(--text-primary);
+                    font-family:var(--sans); outline:none; transition:border-color var(--transition);"/>
               </div>
             </div>
+            
             <!-- Save Button -->
             <button id="btn-save-trade-settings"
-              style="width:100%;padding:9px 0;background:var(--blue);color:#fff;border:none;
-                     border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;
-                     letter-spacing:0.5px;box-shadow:0 2px 8px rgba(59,130,246,0.35);
-                     transition:opacity 0.15s;">Save Settings</button>
-            <div id="trade-settings-status" style="font-size:11px;text-align:center;margin-top:5px;min-height:14px;"></div>
+              style="width:100%; padding:12px 0; background:var(--blue); color:#fff; border:none;
+                     border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer;
+                     letter-spacing:0.3px; box-shadow:0 4px 12px rgba(59,130,246,0.3);
+                     transition:all var(--transition);">Save Settings</button>
+            <div id="trade-settings-status" style="font-size:11.5px; text-align:center; margin-top:12px; min-height:16px; transition:color var(--transition);"></div>
           </div>
-          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);line-height:1.5;">
-            After login, Zerodha redirects back automatically. Token is valid until 6 AM next day.
+
+          <!-- EXPORT SECTION -->
+          <div style="padding-top:18px; border-top:1px solid var(--border); margin-top:10px;">
+            <div style="font-size:11.5px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:14px;">Data Export</div>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+              <div style="flex:1;">
+                <label style="font-size:11px; font-weight:500; color:var(--text-muted); display:block; margin-bottom:4px; margin-left:2px;">From</label>
+                <input type="date" id="inp-export-start-date"
+                  style="width:100%; box-sizing:border-box; padding:8px 10px;
+                    background:var(--bg-base); border:1px solid var(--border);
+                    border-radius:8px; font-size:12.5px; color:var(--text-primary);
+                    font-family:var(--sans); outline:none; transition:border-color var(--transition);"/>
+              </div>
+              <div style="flex:1;">
+                <label style="font-size:11px; font-weight:500; color:var(--text-muted); display:block; margin-bottom:4px; margin-left:2px;">To (Optional)</label>
+                <input type="date" id="inp-export-end-date"
+                  style="width:100%; box-sizing:border-box; padding:8px 10px;
+                    background:var(--bg-base); border:1px solid var(--border);
+                    border-radius:8px; font-size:12.5px; color:var(--text-primary);
+                    font-family:var(--sans); outline:none; transition:border-color var(--transition);"/>
+              </div>
+            </div>
+            <button id="btn-export-data" onclick="_exportData()"
+              style="width:100%; padding:12px 0; background:var(--bg-raised); color:var(--text-primary); border:1px solid var(--border);
+                     border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer;
+                     display:flex; justify-content:center; align-items:center; gap:8px;
+                     transition:all var(--transition);">
+              <svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download Signal Logs
+            </button>
           </div>
         </div>
       </div>
@@ -1804,6 +1880,55 @@ a { color: var(--blue); text-decoration: none; }
     <!-- ──────────────────────────────────────────────────────────────────────
          TAB: SETTINGS
     ────────────────────────────────────────────────────────────────────── -->
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────────────
+         TAB: APPROVALS  (LIVE mode pending trade confirmations)
+    ────────────────────────────────────────────────────────────────────── -->
+    <div class="tab-panel" id="tab-approvals">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--bg-card);">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--amber)"><path d="M12 2a10 10 0 110 20A10 10 0 0112 2zm0 6v4m0 4h.01"/></svg>
+        <div style="font-size:13px;font-weight:600;">Live Trade Approvals</div>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:4px">LIVE &amp; SIMULTANEOUS mode only</span>
+        <button class="btn btn-ghost btn-sm" id="btn-refresh-approvals" style="margin-left:auto">Refresh</button>
+      </div>
+      <div style="flex:1;overflow:auto;padding:16px;" id="approvals-body">
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--green);opacity:0.7"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <div class="empty-state-title">No pending approvals</div>
+          <div class="empty-state-sub">Pending live trade entries will appear here for approval</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────────────
+         TAB: JOURNAL
+    ────────────────────────────────────────────────────────────────────── -->
+    <div class="tab-panel" id="tab-journal">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--bg-card);">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--teal)"><rect x="3" y="2" width="14" height="16" rx="2"/><path d="M7 6h6M7 10h6M7 14h4"/></svg>
+        <div style="font-size:13px;font-weight:600;">Daily Performance Journal</div>
+        <span style="font-size:11px;color:var(--text-muted);background:var(--bg-input);padding:2px 8px;border-radius:99px;border:1px solid var(--border);" id="journal-count-label">—</span>
+        <button class="btn btn-ghost btn-sm" id="btn-refresh-journal" style="margin-left:auto">Refresh</button>
+      </div>
+      <div style="flex:1;overflow:auto;">
+        <table class="trades-table" id="journal-table" style="font-size:12px">
+          <thead><tr>
+            <th>Date</th><th class="num-col">Capital</th>
+            <th class="num-col">Signals</th><th class="num-col">Trades</th>
+            <th class="num-col">W</th><th class="num-col">L</th><th class="num-col">B/E</th>
+            <th class="num-col">Gross P&amp;L</th><th class="num-col">Charges</th><th class="num-col">Net P&amp;L</th>
+            <th>Notes</th>
+          </tr></thead>
+          <tbody id="journal-tbody">
+            <tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);opacity:0.6"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></div><div class="empty-state-title">No journal data</div><div class="empty-state-sub">Daily summaries are written at 3:25 PM after each session</div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="tab-panel" id="tab-settings">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;margin-bottom:8px;">
         <div style="font-size:15px;font-weight:700;">Runtime Settings</div>
@@ -1987,9 +2112,11 @@ function switchTab(name) {
       renderUniverse();  // re-render with existing data (search/filter may have changed)
     }
   }
-  if (name === 'trades')   loadTrades();
-  if (name === 'orders')   loadOrders();
-  if (name === 'settings') loadSettings();
+  if (name === 'trades')    loadTrades();
+  if (name === 'orders')    loadOrders();
+  if (name === 'settings')  loadSettings();
+  if (name === 'approvals') loadApprovals();
+  if (name === 'journal')   loadJournal();
 }
 $$('.nav-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
@@ -2131,15 +2258,21 @@ safeOn('#btn-profile', 'click', async (e) => {
   }
   // Calculate position from button's viewport coordinates
   const rect  = btn.getBoundingClientRect();
-  const ddW   = 296;
+  
+  // Temporarily show it hidden to measure actual width
+  dd.style.visibility = 'hidden';
+  dd.classList.add('open');
+  const ddW = dd.offsetWidth || 360;
+  
   const margin = 8;
   // Align right edge of dropdown to right edge of button, clamp to viewport
   let left = rect.right - ddW;
   if (left < margin) left = margin;
   if (left + ddW > window.innerWidth - margin) left = window.innerWidth - ddW - margin;
+  
   dd.style.top  = (rect.bottom + 6) + 'px';
   dd.style.left = left + 'px';
-  dd.classList.add('open');
+  dd.style.visibility = 'visible';
 
   // Pre-populate settings fields from backend
   try {
@@ -2227,14 +2360,33 @@ function _syncProfileModeUI(mode) {
   ['PAPER', 'SIMULTANEOUS', 'LIVE'].forEach(m => {
     const btn = document.getElementById('msel-' + m.toLowerCase());
     if (!btn) return;
-    btn.style.opacity = m === mode ? '1' : '0.4';
-    btn.style.transform = m === mode ? 'scale(1.04)' : 'scale(1)';
+    const isActive = m === mode;
+    
+    // Segmented control active styling
+    if (isActive) {
+      btn.style.background = 'var(--bg-raised)';
+      btn.style.color = 'var(--text-primary)';
+      btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+      
+      // Add subtle border tint based on mode
+      if (m === 'PAPER') btn.style.border = '1px solid var(--amber-border)';
+      else if (m === 'SIMULTANEOUS') btn.style.border = '1px solid rgba(139,92,246,0.2)';
+      else btn.style.border = '1px solid rgba(239,68,68,0.2)';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--text-muted)';
+      btn.style.boxShadow = 'none';
+      btn.style.border = '1px solid transparent';
+    }
   });
   const desc = $('#mode-desc');
   if (desc) desc.textContent = _MODE_DESCRIPTIONS[mode] || '';
-  // Live capital input: dim/enable based on whether LIVE trades exist in this mode
-  const liveCapRow = $('#inp-max-capital-live');
-  if (liveCapRow) liveCapRow.disabled = mode === 'PAPER';
+  
+  // Show/Hide capital input rows based on trade mode
+  const paperCapRow = $('#row-max-capital-paper');
+  const liveCapRow  = $('#row-max-capital-live');
+  if (paperCapRow) paperCapRow.style.display = (mode === 'PAPER' || mode === 'SIMULTANEOUS') ? 'block' : 'none';
+  if (liveCapRow)  liveCapRow.style.display  = (mode === 'LIVE'  || mode === 'SIMULTANEOUS') ? 'block' : 'none';
 }
 
 // Saves trade_mode + per-mode capitals to backend via POST /api/v1/settings
@@ -2650,6 +2802,7 @@ function buildDrawerKV(symbol, data, context) {
       <div class="drawer-kv"><div class="dkv-label">P&L</div><div class="dkv-val" style="${pnl>=0?'color:var(--green)':'color:var(--red)'}">${fmtINRSign(pnl)}</div></div>
       <div class="drawer-kv"><div class="dkv-label">SL (Current)</div><div class="dkv-val" style="color:var(--red)">${fmtINR(pos.current_sl)}</div></div>
       <div class="drawer-kv"><div class="dkv-label">1R×2 Target</div><div class="dkv-val" style="color:var(--teal)">${fmtINR(pos.target_1r2)}</div></div>
+      ${pos.target_1r3 ? `<div class="drawer-kv"><div class="dkv-label">1R×3 Target</div><div class="dkv-val" style="color:var(--amber)">${fmtINR(pos.target_1r3)}</div></div>` : ''}
       <div class="drawer-kv"><div class="dkv-label">1R×4 Target</div><div class="dkv-val" style="color:var(--green)">${fmtINR(pos.target_1r4)}</div></div>
     </div>`;
   }
@@ -2709,23 +2862,6 @@ function buildDryupSection(data) {
     </div>`;
 }
 
-function buildPositionSection(pos) {
-  if (!pos) return '';
-  const pnl = parseFloat(pos.unrealized_pnl) || 0;
-  const flags = [
-    pos.cost_trailed  ? '<span class="tag-pill teal">Cost Trailed</span>' : '',
-    pos.profit_locked ? '<span class="tag-pill green">Profit Locked</span>' : '',
-  ].filter(Boolean).join(' ') || '<span style="color:var(--text-muted);font-size:12px">No flags</span>';
-  return `
-    <div class="drawer-section-title">Targets</div>
-    <div class="drawer-kv-grid">
-      <div class="drawer-kv"><div class="dkv-label">1R×2</div><div class="dkv-val" style="color:var(--teal)">${fmtINR(pos.target_1r2)}</div></div>
-      <div class="drawer-kv"><div class="dkv-label">1R×3</div><div class="dkv-val" style="color:var(--amber)">${fmtINR(pos.target_1r3)}</div></div>
-      <div class="drawer-kv"><div class="dkv-label">1R×4</div><div class="dkv-val" style="color:var(--green)">${fmtINR(pos.target_1r4)}</div></div>
-    </div>
-    <div class="drawer-section-title">Flags</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${flags}</div>`;
-}
 
 /* ────────────────────────────────────────────────────────────────────────────
    PIPELINE BOARD
@@ -2744,6 +2880,8 @@ function statePhaseBadge(state) {
   if (s === 'MONITORING') return `<span class="pcard-badge mon">MONITORING</span>`;
   if (s.includes('ENTRY') || s === 'ACTION_PENDING' || s === 'PENDING' || s === 'ENTERED')
     return `<span class="pcard-badge entry">ENTRY</span>`;
+  if (s === 'ACTION_PENDING_APPROVAL')
+    return `<span class="pcard-badge entry" style="background:var(--red-bg,rgba(239,68,68,.15));color:var(--red)">APPROVAL ⚡</span>`;
   if (s === 'MANAGING')  return `<span class="pcard-badge mgmt">MANAGING</span>`;
   if (s === 'ABANDONED') return `<span class="pcard-badge aband">ABANDONED</span>`;
   return `<span class="pcard-badge scan">${s}</span>`;
@@ -2816,6 +2954,7 @@ function stateTag(state) {
   if (s==='MANAGING')    return `<span class="tag-pill green">MANAGING</span>`;
   if (s==='MONITORING')  return `<span class="tag-pill amber">MONITORING</span>`;
   if (s.includes('ENTRY')||s==='ACTION_PENDING') return `<span class="tag-pill teal">ENTRY</span>`;
+  if (s==='ACTION_PENDING_APPROVAL') return `<span class="tag-pill" style="background:var(--red-bg,rgba(239,68,68,.15));color:var(--red)">APPROVAL ⚡</span>`;
   if (s==='SCAN_HIT')    return `<span class="tag-pill blue">SCAN HIT</span>`;
   if (s==='ABANDONED')   return `<span class="tag-pill red">ABANDONED</span>`;
   if (s==='CLOSED')      return `<span class="tag-pill" style="background:var(--border);color:var(--text-muted)">CLOSED</span>`;
@@ -3120,6 +3259,117 @@ safeOn('#btn-refresh-orders', 'click', loadOrders);
 ───────────────────────────────────────────────────────────────────────────── */
 let _settingsData = null;
 
+/* ────────────────────────────────────────────────────────────────────────────
+   APPROVALS — Live trade approval queue
+──────────────────────────────────────────────────────────────────────────── */
+async function loadApprovals() {
+  try {
+    const r = await fetch('/api/v1/approvals');
+    const d = await r.json();
+    const approvals = d.approvals || [];
+    const badge = $('#badge-approvals');
+    if (badge) badge.textContent = approvals.length;
+    renderApprovals(approvals);
+  } catch { /* ignore */ }
+}
+
+function renderApprovals(approvals) {
+  const body = $('#approvals-body');
+  if (!body) return;
+  if (!approvals.length) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-title">No pending approvals</div><div class="empty-state-sub">Pending live trade entries will appear here for approval</div></div>`;
+    return;
+  }
+  body.innerHTML = approvals.map(a => `
+    <div id="approval-card-${CSS.escape(a.symbol)}" style="background:var(--bg-card);border:1px solid var(--amber);border-radius:10px;padding:16px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:15px;font-weight:700">${a.symbol}</span>
+        <span class="tag-pill" style="background:rgba(239,68,68,.15);color:var(--red)">APPROVAL ⚡</span>
+        <span style="font-size:10px;color:var(--text-muted);margin-left:auto">Queued ${a.queued_at ? new Date(a.queued_at).toLocaleTimeString('en-IN') : '—'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+        <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">Limit Price</div><div style="font-size:14px;font-weight:600;font-family:var(--mono)">${fmtINR(a.limit_price)}</div></div>
+        <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">Quantity</div><div style="font-size:14px;font-weight:600;font-family:var(--mono)">${a.quantity || '—'}</div></div>
+        <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">Risk Amount</div><div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--amber)">${fmtINR(a.risk_amount)}</div></div>
+        <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">Stop Loss</div><div style="font-size:14px;font-weight:600;font-family:var(--mono);color:var(--red)">${fmtINR(a.stop_loss)}</div></div>
+        <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">LTP</div><div style="font-size:14px;font-weight:600;font-family:var(--mono)">${a.ltp ? fmtINR(a.ltp) : '—'}</div></div>
+        <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">Risk/Share</div><div style="font-size:14px;font-weight:600;font-family:var(--mono)">${fmtINR(a.risk_per_share)}</div></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1;background:var(--green);border-color:var(--green)" onclick="_approveReject('${a.symbol}','approve')">✓ Approve Entry</button>
+        <button class="btn btn-ghost" style="flex:1;color:var(--red);border-color:var(--red)" onclick="_approveReject('${a.symbol}','reject')">✗ Reject</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function _approveReject(symbol, action) {
+  const card = $(`#approval-card-${CSS.escape(symbol)}`);
+  if (card) { card.style.opacity = '0.5'; card.style.pointerEvents = 'none'; }
+  try {
+    const r = await fetch('/api/v1/approvals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, symbol }),
+    });
+    const d = await r.json();
+    if (d.status === 'approved') {
+      toast(`✓ ${symbol} approved — order placed at ${fmtINR(d.limit_price)}`, 'success', 6000);
+    } else if (d.status === 'rejected') {
+      toast(`${symbol} trade rejected`, 'warning', 4000);
+    } else {
+      toast(`${symbol}: ${d.message || 'Error'}`, 'error', 6000);
+    }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+  setTimeout(loadApprovals, 800);
+}
+
+safeOn('#btn-refresh-approvals', 'click', loadApprovals);
+
+/* ────────────────────────────────────────────────────────────────────────────
+   JOURNAL — Daily P&L history
+──────────────────────────────────────────────────────────────────────────── */
+async function loadJournal() {
+  try {
+    const r = await fetch('/api/v1/journal');
+    const d = await r.json();
+    const days = d.days || [];
+    const label = $('#journal-count-label');
+    if (label) label.textContent = `${days.length} days`;
+    renderJournalTable(days);
+  } catch { /* ignore */ }
+}
+
+function renderJournalTable(days) {
+  const tbody = $('#journal-tbody');
+  if (!tbody) return;
+  if (!days.length) {
+    tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📒</div><div class="empty-state-title">No journal data</div><div class="empty-state-sub">Daily summaries are written at 3:25 PM after each session</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = days.map(d => {
+    const netPnl = parseFloat(d.net_pnl) || 0;
+    const grossPnl = parseFloat(d.gross_pnl) || 0;
+    const charges = parseFloat(d.total_charges) || 0;
+    const winRate = d.trades_taken > 0 ? Math.round(d.winning_trades / d.trades_taken * 100) : 0;
+    return `<tr>
+      <td style="font-family:var(--mono);font-size:11px">${d.trade_date || '—'}</td>
+      <td class="num-col">${fmtINR(d.total_capital, 0)}</td>
+      <td class="num-col">${d.signals_fired ?? '—'}</td>
+      <td class="num-col">${d.trades_taken ?? '—'}${d.trades_taken > 0 ? ` <span style="font-size:10px;color:var(--text-muted)">(${winRate}%W)</span>` : ''}</td>
+      <td class="num-col" style="color:var(--green)">${d.winning_trades ?? '—'}</td>
+      <td class="num-col" style="color:var(--red)">${d.losing_trades ?? '—'}</td>
+      <td class="num-col">${d.breakeven_trades ?? '—'}</td>
+      <td class="num-col" style="font-family:var(--mono);color:${grossPnl>=0?'var(--green)':'var(--red)'}">${fmtINRSign(grossPnl)}</td>
+      <td class="num-col" style="color:var(--text-muted);font-family:var(--mono)">${charges > 0 ? '-' + fmtINR(charges) : '—'}</td>
+      <td class="num-col" style="font-family:var(--mono);font-weight:600;color:${netPnl>=0?'var(--green)':'var(--red)'}">${fmtINRSign(netPnl)}</td>
+      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-muted)">${d.notes || '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+safeOn('#btn-refresh-journal', 'click', loadJournal);
+
 async function loadSettings() {
   try {
     const r = await fetch('/api/v1/settings');
@@ -3315,7 +3565,30 @@ function handleWSMessage(msg) {
 
   if (ev === 'state_change') {
     addScanEvent(`${msg.symbol} → ${msg.new_state || msg.state}`, msg.timestamp, 'amber');
+    // If transitioned to approval state, refresh badge + show urgent toast
+    if ((msg.new_state || msg.state) === 'ACTION_PENDING_APPROVAL') {
+      loadApprovals();
+      toast(`⚡ ${msg.symbol} needs LIVE approval — 60s timeout`, 'warning', 10000);
+      switchTab('approvals');  // auto-switch to approvals tab
+    }
     loadPipeline();
+    return;
+  }
+
+  if (ev === 'approval_queued') {
+    loadApprovals();
+    toast(`⚡ ${msg.symbol} pending LIVE trade approval`, 'warning', 10000);
+    return;
+  }
+
+  if (ev === 'approval_actioned') {
+    loadApprovals();
+    const action = (msg.action || '').toLowerCase();
+    if (action === 'approved') {
+      toast(`✓ ${msg.symbol} approved — order placed`, 'success', 5000);
+    } else {
+      toast(`${msg.symbol} approval rejected/timed out`, 'info', 4000);
+    }
     return;
   }
 
@@ -3910,6 +4183,57 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('#wl-modal-overlay') && $('#wl-modal-overlay').classList.contains('open')) closeWatchlistModal();
 });
 safeOn('#btn-edit-watchlist', 'click', openWatchlistModal);
+// --- EXPORT SNAPSHOTS ---
+async function _exportData() {
+  const btn = $('#btn-export-data');
+  const statusEl = $('#export-status');
+  const startDateStr = $('#inp-export-start-date').value;
+  const endDateStr = $('#inp-export-end-date').value;
+  
+  btn.disabled = true;
+  statusEl.textContent = 'Preparing download...';
+  statusEl.style.color = 'var(--text-muted)';
+  
+  try {
+    let url = '/api/v1/export/snapshots?';
+    if (startDateStr) url += `start_date=${encodeURIComponent(startDateStr)}&`;
+    if (endDateStr) url += `end_date=${encodeURIComponent(endDateStr)}&`;
+    
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.detail || 'Export failed');
+    }
+    
+    const data = await res.json();
+    if (!data.data || data.data.length === 0) {
+      statusEl.textContent = 'No signal logs found for ' + (startDateStr || 'all time');
+      statusEl.style.color = 'var(--red)';
+      btn.disabled = false;
+      return;
+    }
+    
+    const fileName = `signal_snapshots_${startDateStr || 'all'}_to_${endDateStr || 'latest'}.json`;
+    
+    const blob = new Blob([JSON.stringify(data.data, null, 2)], {type: 'application/json'});
+    const dlUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = dlUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(dlUrl);
+    
+    statusEl.textContent = `✅ Exported ${data.count} snapshots`;
+    statusEl.style.color = 'var(--green)';
+  } catch (err) {
+    statusEl.textContent = `❌ ${err.message}`;
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    setTimeout(() => { btn.disabled = false; }, 1000);
+  }
+}
 
 </script>
 </body>

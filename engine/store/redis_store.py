@@ -601,6 +601,53 @@ class RedisStore:
             _ENGINE_SCANNER_WARMING: str(warming),
         })
 
+    async def get_scanner_counts(self) -> tuple[int, int]:
+        """Return (warmed_up, warming_up) symbol counts from Redis."""
+        warmed_raw  = await self._r.get(_ENGINE_SCANNER_READY)
+        warming_raw = await self._r.get(_ENGINE_SCANNER_WARMING)
+        return int(warmed_raw) if warmed_raw else 0, int(warming_raw) if warming_raw else 0
+
+    # ── Live Tick Batch Flush ─────────────────────────────────────────────
+
+    async def flush_live_ticks(
+        self,
+        updates: list[tuple],  # (symbol, ltp, day_open, prev_close, cum_vol, min_vol, vol_sma)
+        now_iso: str,
+    ) -> None:
+        """
+        Write all live tick data for a tick-batch in one Redis pipeline.
+        Writes to both the livetick_hash (O(1) HGETALL) and legacy per-symbol keys.
+        Also updates engine:last_tick_at once per batch.
+        """
+        if not updates:
+            return
+        pipe = self._r.pipeline(transaction=False)
+        for sym, ltp, day_open, prev_close, cum_vol, min_vol, vol_sma in updates:
+            ref = prev_close if prev_close > 0 else day_open
+            pct_chg = round(((ltp - ref) / ref * 100), 2) if ref > 0 else 0.0
+            payload: dict = {
+                "ltp": ltp,
+                "open": day_open,
+                "prev_close": prev_close,
+                "pct_chg": pct_chg,
+                "volume": cum_vol,
+                "minute_volume": min_vol,
+            }
+            if vol_sma:
+                payload["volume_sma_500"] = vol_sma
+                payload["relative_volume"] = round((min_vol or 0) / vol_sma, 2)
+            import json as _json
+            encoded = _json.dumps(payload)
+            pipe.hset(_LIVETICK_HASH, sym, encoded)
+            pipe.set(f"livetick:{sym}", encoded, ex=_TTL_LIVE_TICK)
+            pipe.set(f"ltp:{sym}", str(ltp))
+        pipe.set(_LAST_TICK_TS_KEY, now_iso, ex=_TTL_LIVE_TICK)
+        await pipe.execute()
+
+    async def set_last_tick_at(self, now_iso: str) -> None:
+        """Update the last tick timestamp (even when no symbols changed)."""
+        await self._r.set(_LAST_TICK_TS_KEY, now_iso, ex=_TTL_LIVE_TICK)
+
 
     # ── Pub/Sub ───────────────────────────────────────────────────────────
 

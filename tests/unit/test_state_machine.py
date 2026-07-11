@@ -175,18 +175,23 @@ class TestBugRegressions:
           price_breakout check from the post-update high change.
         """
         # Setup impact candle at 9:15
+        # Realistic NSE large-cap 1-min volumes (per research §3.1):
+        #   impact: 200,000 shares | dry-up: 10k/8k | re-ignition: 30k
         # Bug Fix 3: consolidation.high = impact_candle.close (105), NOT high
-        impact = make_impact(high=110.0, low=95.0, close=105.0, hour=9, minute=15)
+        impact = make_impact(
+            high=110.0, low=95.0, close=105.0, hour=9, minute=15,
+            volume=200_000,
+        )
         await sm.on_scan_hit(impact)
         assert sm.state == StrategyState.SCAN_HIT
 
-        # Set up consolidation with 2 dry-up candles (prev_volumes = [10, 8])
+        # Set up consolidation with 2 dry-up candles
         # Both dry-up candles have h=104 (< 105), so consolidation.high stays 105
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock) as mock_trigger:
-            # First dry-up candle
-            await sm.on_candle(97, 104, 95, 97, 10, make_ts(9, 16))
-            # Second dry-up candle
-            await sm.on_candle(97, 104, 95, 97, 8, make_ts(9, 17))
+            # First dry-up candle: realistic NSE mid-day volume
+            await sm.on_candle(97, 104, 95, 97, 10_000, make_ts(9, 16))
+            # Second dry-up candle: realistic NSE mid-day volume
+            await sm.on_candle(97, 104, 95, 97, 8_000, make_ts(9, 17))
 
             assert mock_trigger.call_count == 0, "Should not have triggered entry yet"
             assert sm.consolidation is not None
@@ -197,20 +202,14 @@ class TestBugRegressions:
             f"Consolidation high should be 105 (from impact_candle.close), got {sm.consolidation.high}"
         )
 
-        # Re-ignition candle: h=105, l=104, c=106, volume=30
-        # If Bug 1 is present: breakout_level would be 105 AFTER update (same value)
-        #   but the bug is about the VOLUME comparison, not price
-        #   volume=30 > avg([10,8]) × 1.5 = 9 → True
-        #   c=106 > pre_update=105 → True
-        # The real test: with h=106 (above 105), Bug 1 would set breakout to 106
-        #   and c=106 > post_update=106 → False → re-ignition BLOCKED
-        # With Bug 1 fix: breakout_level=105 BEFORE update, re-ignition FIRES
+        # Re-ignition candle: realistic NSE volume 30,000 (1.67x dry-up mean)
+        #   30,000 > 9,000 × 1.5 = 13,500 → is_volume_spike=True
+        #   30,000 ≥ 200,000 × 0.08 = 16,000 → absolute floor passes
+        #   c=106 > breakout_level=105 (pre-update) → is_price_breakout=True
+        #   c=106 > o=104 → is_green=True
+        #   time is before 13:30 → is_before_cutoff=True
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock) as mock_trigger:
-            # volume=30 > avg([10,8]) × 1.5 = 13.5 → is_volume_spike=True
-            # c=106 > breakout_level=105 (pre-update) → is_price_breakout=True
-            # c=106 > o=104 → is_green=True
-            # time is before 13:30 → is_before_cutoff=True
-            await sm.on_candle(104, 106, 104, 106, 30, make_ts(9, 18))
+            await sm.on_candle(104, 106, 104, 106, 30_000, make_ts(9, 18))
 
         assert mock_trigger.call_count == 1, (
             "_trigger_entry was not called. Bug 1 may be present: "
@@ -234,25 +233,28 @@ class TestBugRegressions:
           CORRECT (pre-update): max([10,8,12]) × 1.5 = 12 × 1.5 = 18; 30 > 18 → True ✓
           BUG (post-update):    max([10,8,12,30]) × 1.5 = 30 × 1.5 = 45; 30 > 45 → False ✗
         """
-        impact = make_impact(high=100.0, low=95.0, close=98.0, hour=9, minute=15)
+        impact = make_impact(
+            high=100.0, low=95.0, close=98.0, hour=9, minute=15,
+            volume=200_000,
+        )
         await sm.on_scan_hit(impact)
 
-        # Feed 3 dry-up candles to establish prev_volumes = [10, 8, 12]
+        # Feed 3 dry-up candles with realistic NSE volumes
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock):
-            await sm.on_candle(97, 99, 95, 97, 10, make_ts(9, 16))
-            await sm.on_candle(97, 99, 95, 97, 8,  make_ts(9, 17))
-            await sm.on_candle(97, 99, 95, 97, 12, make_ts(9, 18))
+            await sm.on_candle(97, 99, 95, 97, 10_000, make_ts(9, 16))
+            await sm.on_candle(97, 99, 95, 97, 8_000,  make_ts(9, 17))
+            await sm.on_candle(97, 99, 95, 97, 12_000, make_ts(9, 18))
 
         assert sm.consolidation is not None
-        assert sm.consolidation.volume_readings == [10, 8, 12], (
-            f"Expected [10,8,12], got {sm.consolidation.volume_readings}"
+        assert sm.consolidation.volume_readings == [10_000, 8_000, 12_000], (
+            f"Expected [10000,8000,12000], got {sm.consolidation.volume_readings}"
         )
 
-        # Re-ignition candle: volume=30
-        # CORRECT check: 30 > max([10,8,12]) × 1.5 = 18 → True ✓
-        # BUG check:     30 > max([10,8,12,30]) × 1.5 = 45 → False ✗
+        # Re-ignition candle: realistic NSE volume 30,000
+        #   30,000 > mean([10k,8k,12k]) × 1.5 = 10,000 × 1.5 = 15,000 → True ✓
+        #   30,000 ≥ 200,000 × 0.08 = 16,000 → absolute floor passes
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock) as mock_trigger:
-            await sm.on_candle(99, 102, 99, 101, 30, make_ts(9, 19))
+            await sm.on_candle(99, 102, 99, 101, 30_000, make_ts(9, 19))
 
         assert mock_trigger.call_count == 1, (
             "Bug 2 detected: re-ignition not triggered. "
@@ -373,12 +375,14 @@ class TestStateMachineLifecycle:
 
     @pytest.mark.asyncio
     async def test_abandonment_timeout(self, sm):
-        """ABANDON when elapsed > DRYUP_MAX_MINUTES (20 minutes, per config)."""
+        """ABANDON when elapsed > DRYUP_MAX_MINUTES (30 minutes, per .env)."""
         impact = make_impact(hour=9, minute=15)
         await sm.on_scan_hit(impact)
 
-        # Candle at 9:37 → elapsed = 22 minutes > 20 (DRYUP_MAX_MINUTES)
-        await sm.on_candle(498, 502, 495, 499, 5000, make_ts(9, 37))
+        # Candle at 9:46 → elapsed = 31 minutes > 30 (DRYUP_MAX_MINUTES)
+        # Realistic NSE mid-cap dry-up volumes (5,000 vs 200,000 impact).
+        # 5,000 < 200,000 × 0.70 = 140,000 → no institutional exit pressure
+        await sm.on_candle(498, 502, 495, 499, 5_000, make_ts(9, 46))
 
         assert sm.state == StrategyState.CLOSED
         assert sm._abandonment_reason == "timeout"

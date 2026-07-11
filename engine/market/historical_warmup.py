@@ -463,6 +463,11 @@ async def warmup_from_historical(
         errors=errors,
     )
 
+    # Persist the freshly warmed histories immediately so that any subsequent
+    # restarts today will benefit from the cached file and skip the full fetch.
+    if effective_gap > 0:
+        await coordinator.persist_sma_histories()
+
 
 def _log_final_counts(builders: dict, coordinator: "Coordinator") -> None:
     """Update Redis scanner counts and log summary."""

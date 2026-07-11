@@ -259,6 +259,22 @@ class SymbolStateMachine:
                 volume_sma_500=impact_candle.volume_sma_500,
                 volume_spike_multiple=impact_candle.spike_multiple,
             )
+            
+            # Log the impact snapshot
+            await self._db.write_signal_snapshot(
+                signal_id=self._signal_id,
+                symbol=self.symbol,
+                event_type="IMPACT",
+                context_data={
+                    "open": impact_candle.open,
+                    "high": impact_candle.high,
+                    "low": impact_candle.low,
+                    "close": impact_candle.close,
+                    "volume": impact_candle.volume,
+                    "volume_sma_500": impact_candle.volume_sma_500,
+                    "spike_multiple": impact_candle.spike_multiple,
+                }
+            )
         except Exception as exc:
             log.error("signal_db_write_failed", symbol=self.symbol, error=str(exc))
 
@@ -347,6 +363,24 @@ class SymbolStateMachine:
                 candle_time=candle_time.strftime("%H:%M"),
             )
 
+        # Log snapshot for this dry-up candle
+        if self._signal_id is not None:
+            # We fire this in the background (no await) to avoid blocking the tick loop if DB is slow
+            import asyncio
+            asyncio.create_task(
+                self._db.write_signal_snapshot(
+                    signal_id=self._signal_id,
+                    symbol=self.symbol,
+                    event_type="DRY_UP_CANDLE",
+                    context_data={
+                        "open": o, "high": h, "low": l, "close": c, "volume": volume,
+                        "time": candle_time.isoformat(),
+                        "state": self.state.value,
+                        "candles_so_far": len(self.consolidation.volume_readings),
+                    }
+                )
+            )
+
         # ═══════════════════════════════════════════════════════════════
         # STEP 1: SNAPSHOT BEFORE UPDATE (Bug 1 + Bug 2 fix)
         # These snapshots must happen BEFORE consolidation.update()
@@ -392,22 +426,34 @@ class SymbolStateMachine:
                 await self._abandon("a_shape_reversal")
                 return
 
-        # 2d. Institutional exit pressure check (NEW):
-        #     If any single dry-up candle has volume > ASHAPE_IMPACT_VOLUME_PCT × impact volume,
-        #     institutions are actively selling into the spike — the setup has failed.
-        #     This replaces the need to wait for the full timeout to detect a bad setup.
+        # 2d. Institutional exit pressure check:
+        #     Abandon only if the dry-up candle is BOTH high-volume AND bearish.
+        #     Key insight: a high-volume GREEN candle = absorption (institutions BUYing the
+        #     supply), not distribution. Only a high-volume RED candle signals distribution.
+        #     Research: Elder (2002), Wyckoff - large bearish volume INTO a spike = selling.
+        #     Large bullish volume INTO a spike = continuation / absorption.
         assert self.impact_candle is not None  # already checked above
+        is_bearish_candle = c < o  # Must be red (selling candle) to confirm distribution
         impact_vol_threshold = self.impact_candle.volume * settings.ASHAPE_IMPACT_VOLUME_PCT
-        if volume > impact_vol_threshold and self.consolidation.candle_count >= 1:
+        if volume > impact_vol_threshold and is_bearish_candle and self.consolidation.candle_count >= 1:
             log.info(
                 "abandonment_institutional_exit_pressure",
                 symbol=self.symbol,
                 candle_volume=volume,
                 impact_volume=self.impact_candle.volume,
                 threshold_pct=settings.ASHAPE_IMPACT_VOLUME_PCT,
+                candle_direction="bearish",
             )
             await self._abandon("institutional_exit_pressure")
             return
+        elif volume > impact_vol_threshold and not is_bearish_candle:
+            log.debug(
+                "high_volume_green_candle_absorption",
+                symbol=self.symbol,
+                candle_volume=volume,
+                impact_volume=self.impact_candle.volume,
+                note="high-vol but green/flat — absorption, not distribution, continuing dry-up",
+            )
 
         # ═══════════════════════════════════════════════════════════════
         # STEP 3: UPDATE CONSOLIDATION (after abandonment checks)
@@ -438,6 +484,15 @@ class SymbolStateMachine:
                     ref_volume = max(comparison_window)
 
                 is_volume_spike = ref_volume > 0 and volume > ref_volume * settings.REIGNITION_VOLUME_MULTIPLE
+
+                # NEW: Re-ignition must also clear an absolute volume floor tied to the
+                # original impact candle. Prevents noise above a tiny dry-up baseline
+                # from triggering false entries when the dry-up mean is very small.
+                # e.g., impact=500k, floor=0.08 → need ≥40k volume to re-ignite.
+                assert self.impact_candle is not None
+                min_abs_volume = self.impact_candle.volume * settings.REIGNITION_MIN_PCT_OF_IMPACT
+                is_volume_spike = is_volume_spike and volume >= min_abs_volume
+
                 is_price_breakout = c > breakout_level  # Bug 1 fix: pre-update level
                 is_green = c > o
                 is_before_cutoff = candle_time.time() < settings.max_entry_time
@@ -701,15 +756,8 @@ class SymbolStateMachine:
                 return
 
             new_limit = round(original_limit * (1 + settings.ENTRY_BUFFER_PCT), 2)
-            if self._order_service._kite is not None:
-                # Use _call_with_retry (retry wrapper) — not raw kite client directly
-                from engine.orders.order_service import _call_with_retry
-                await _call_with_retry(
-                    self._order_service._kite,
-                    "modify_order",
-                    order_id=order_id,
-                    price=new_limit,
-                )
+            if self._order_service is not None:
+                await self._order_service.modify_entry_order(order_id, new_limit)
             log.info("entry_limit_widened", order_id=order_id, new_limit=new_limit)
         except Exception as exc:
             log.warning("entry_widen_failed", order_id=order_id, error=str(exc))
@@ -824,7 +872,7 @@ class SymbolStateMachine:
         Transitions ACTION_PENDING → MANAGING.
         Also cancels fill timeout watchdog and places SL order.
         """
-        if self.state not in (StrategyState.ACTION_PENDING, StrategyState.ACTION_PENDING_APPROVAL):
+        if self.state != StrategyState.ACTION_PENDING:
             log.warning(
                 "fill_in_wrong_state",
                 symbol=self.symbol,
@@ -924,6 +972,7 @@ class SymbolStateMachine:
                 risk_per_share=risk_per_share,
                 risk_amount=risk_amount,
                 target_1r2=target_1r2,
+                target_1r3=target_1r3,
                 target_1r4=target_1r4,
                 sl_order_id=sl_order_id,
                 trade_mode=self._trade_mode,
@@ -1180,6 +1229,17 @@ class SymbolStateMachine:
         elif self.state in (StrategyState.SCAN_HIT, StrategyState.MONITORING):
             await self._abandon("session_end_time")
 
+        elif self.state == StrategyState.ACTION_PENDING_APPROVAL:
+            # At EOD, auto-reject any trade still waiting for approval
+            log.info("squareoff_approval_pending_auto_rejected", symbol=self.symbol)
+            try:
+                await self._redis.remove_pending_approval(self.symbol)
+            except Exception:
+                pass
+            self.state = StrategyState.CLOSED
+            self._abandonment_reason = "session_end_time"
+            await self._persist_state()
+
         elif self.state == StrategyState.ACTION_PENDING:
             if self._pending_order_id and self._order_service:
                 await self._order_service.cancel_order(self._pending_order_id, symbol=self.symbol)
@@ -1393,6 +1453,35 @@ class SymbolStateMachine:
             reason=reason,
             state_before="MONITORING" if self.consolidation else "SCAN_HIT",
         )
+
+        if self._signal_id is not None:
+            context = {"reason": reason}
+            if self.consolidation:
+                context["candles_so_far"] = len(self.consolidation.volume_readings)
+                context["avg_dry_volume"] = self.consolidation.avg_volume
+            import asyncio
+            asyncio.create_task(
+                self._db.write_signal_snapshot(
+                    signal_id=self._signal_id,
+                    symbol=self.symbol,
+                    event_type="ABANDONED",
+                    context_data=context
+                )
+            )
+
+        # Record in the abandoned setup tracker for potential re-entry later today.
+        # Price-structure failures (price_broke_impact_low) are excluded by the tracker.
+        if self.impact_candle is not None:
+            from engine.strategy.abandoned_setup_tracker import abandoned_setup_tracker
+            abandoned_setup_tracker.record(
+                symbol=self.symbol,
+                abandon_time=datetime.datetime.now(IST_TZ),
+                impact_close=self.impact_candle.close,
+                impact_low=self.impact_candle.low,
+                impact_high=self.impact_candle.high,
+                impact_volume=self.impact_candle.volume,
+                reason=reason,
+            )
 
         # Update signal record with abandonment reason
         if self._signal_id:
