@@ -28,6 +28,11 @@ IVBS_Production_Analysis.md
 institutional_volume_strategy_analysis.md
 ivbs_project_specification_v2.md
 trading_bot_architecture.md
+New_changes.md
+multi_strategy_refactor_plan.md
+
+# Root-level duplicate skill folder (lives under .github/skills/)
+/algo-trading-engine/
 
 # IDEs and OS files
 .vscode/
