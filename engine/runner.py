@@ -160,6 +160,33 @@ async def job_pre_market_setup() -> None:
 
     log.info("kite_authenticated")
 
+    # ── 1.5 Validate SEBI static IP compliance ───────────────────────
+    if not settings.is_paper_trade:
+        try:
+            # Order-related endpoints (like margins) are gated by the static IP whitelist.
+            # A dummy order margin request verifies our egress IP is registered.
+            await _kite_client.order_margins([{
+                "exchange": "NSE",
+                "tradingsymbol": "INFY",
+                "transaction_type": "BUY",
+                "variety": "regular",
+                "product": "MIS",
+                "order_type": "MARKET",
+                "quantity": 1
+            }])
+            log.info("static_ip_compliance_verified")
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if "network" in exc_str or "ip" in exc_str or "not allowed" in exc_str or "permission" in exc_str:
+                log.critical("static_ip_unregistered_or_network_error", error=str(exc))
+                await redis_store.set_engine_status({
+                    "status": "IP_REJECTED",
+                    "timestamp": now_ist().isoformat(),
+                })
+                return
+            else:
+                log.warning("static_ip_check_inconclusive", error=str(exc))
+
     # ── 2. Fetch capital ─────────────────────────────────────────────
     try:
         capital = await _kite_client.get_net_equity()

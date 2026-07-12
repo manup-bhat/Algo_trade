@@ -74,5 +74,5 @@ market_gate:
   nifty_ema_period: 20
   nifty_instrument_token: 256265    # standard NSE Nifty 50 token
   vix_instrument_token: 264969      # standard NSE India VIX token
-  high_vix_threshold: 20.0
+  high_vix_threshold: 18.0
   high_vix_turnover_crore: 12.0

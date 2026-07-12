@@ -388,6 +388,7 @@ class OrderService:
             trigger_price=trigger_price,
             tag=tag,
             variety="regular",
+            market_protection=-1,
             # NO price field for SL-M (spec §9.2)
         )
 
@@ -525,6 +526,7 @@ class OrderService:
             quantity=quantity,
             tag=tag,
             variety="regular",
+            market_protection=-1,
         )
 
         if result:
