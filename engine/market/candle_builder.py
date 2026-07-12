@@ -73,9 +73,10 @@ class CandleBuilder:
             await scanner.evaluate(candle, builder)
     """
 
-    def __init__(self, symbol: str, sma_period: int = 500) -> None:
+    def __init__(self, symbol: str, sma_period: int = 500, atr_period: int = 14) -> None:
         self.symbol = symbol
         self._sma_period = sma_period
+        self._atr_period = atr_period
 
         # ── Candle state ──────────────────────────────────────────────
         self._current_candle_time: datetime.datetime | None = None
@@ -89,6 +90,14 @@ class CandleBuilder:
         # ── SMA history ───────────────────────────────────────────────
         # deque with maxlen enforces the rolling window automatically
         self._volume_history: deque[int] = deque(maxlen=sma_period)
+
+        # ── v4: Volatility (ATR) + VWAP session indicators ────────────
+        # True-range history for ATR(atr_period); session VWAP accumulators.
+        # Reset each session by reset(); recorded on every completed candle.
+        self._tr_history: deque[float] = deque(maxlen=atr_period)
+        self._prev_candle_close: float | None = None
+        self._vwap_cum_pv: float = 0.0   # Σ(typical_price × volume)
+        self._vwap_cum_vol: int = 0      # Σ(volume)
 
         # ── Reconnect guard (Bug 4 fix) ───────────────────────────────
         # Set True on WS reconnect. Next tick is used only to set the
@@ -156,6 +165,9 @@ class CandleBuilder:
             # Append this minute's volume to SMA history
             self._volume_history.append(self._candle_volume)
 
+            # v4: record ATR true-range + VWAP from the completed candle
+            self._record_indicators(completed)
+
             # Start the new minute
             self._reset_for_new_minute(ltp, cum_vol, candle_minute)
 
@@ -198,6 +210,11 @@ class CandleBuilder:
         self._candle_volume = 0
         self._tick_count = 0
         self._awaiting_baseline_reset = True  # Re-establish baseline on next tick
+        # v4: session-scoped indicators reset on a fresh session
+        self._tr_history.clear()
+        self._prev_candle_close = None
+        self._vwap_cum_pv = 0.0
+        self._vwap_cum_vol = 0
         log.debug("candle_builder_reset", symbol=self.symbol)
 
     def load_history(self, volumes: list[int]) -> None:
@@ -219,6 +236,14 @@ class CandleBuilder:
             warmed_up=self.is_warmed_up,
         )
 
+    def record_completed_volume(self, volume: int) -> None:
+        """Append a completed candle's volume to the SMA window.
+
+        Used by the backtest replay engine, which feeds pre-built candles directly
+        (bypassing the tick path) and must still roll the volume SMA forward.
+        """
+        self._volume_history.append(int(volume))
+
     # ── Properties ────────────────────────────────────────────────────────
 
     @property
@@ -236,6 +261,24 @@ class CandleBuilder:
     def is_warmed_up(self) -> bool:
         """True when the SMA has sufficient history to produce valid signals."""
         return len(self._volume_history) >= self._sma_period
+
+    @property
+    def atr(self) -> float | None:
+        """Average True Range over atr_period completed candles (None until full).
+
+        Simple mean of true ranges (Wilder smoothing is unnecessary for a short
+        intraday window). Used by the optional Chandelier trailing stop.
+        """
+        if len(self._tr_history) < self._atr_period:
+            return None
+        return statistics.mean(self._tr_history)
+
+    @property
+    def vwap(self) -> float | None:
+        """Session volume-weighted average price (None before any volume)."""
+        if self._vwap_cum_vol <= 0:
+            return None
+        return self._vwap_cum_pv / self._vwap_cum_vol
 
     @property
     def history_size(self) -> int:
@@ -256,6 +299,22 @@ class CandleBuilder:
         return list(self._volume_history)
 
     # ── Private helpers ───────────────────────────────────────────────────
+
+    def _record_indicators(self, candle: Candle) -> None:
+        """Update ATR true-range history + session VWAP from a completed candle."""
+        if self._prev_candle_close is None:
+            tr = candle.high - candle.low
+        else:
+            tr = max(
+                candle.high - candle.low,
+                abs(candle.high - self._prev_candle_close),
+                abs(candle.low - self._prev_candle_close),
+            )
+        self._tr_history.append(tr)
+        self._prev_candle_close = candle.close
+        typical = (candle.high + candle.low + candle.close) / 3.0
+        self._vwap_cum_pv += typical * candle.volume
+        self._vwap_cum_vol += candle.volume
 
     def _build_candle(self) -> Candle:
         """Construct and return the Candle for the current (just-ended) minute."""

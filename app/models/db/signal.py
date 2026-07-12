@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, Text
+from sqlalchemy import DateTime, Float, Index, Integer, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -16,6 +16,9 @@ class Signal(Base):
     __tablename__ = "signals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_id: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'ivbs'"), default="ivbs"
+    )
     symbol: Mapped[str] = mapped_column(Text, nullable=False)
     instrument_token: Mapped[int] = mapped_column(Integer, nullable=False)
     signal_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
@@ -49,4 +52,5 @@ class Signal(Base):
     __table_args__ = (
         Index("idx_signals_symbol", "symbol"),
         Index("idx_signals_time", "signal_time"),
+        Index("idx_signals_strategy", "strategy_id"),
     )

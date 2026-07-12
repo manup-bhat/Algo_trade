@@ -1,0 +1,34 @@
+# engine/strategies/options_momentum/config.yaml
+# Index-options intraday momentum buyer — authoritative config for this strategy.
+#
+# Signal: N-bar breakout on the underlying's 1-min candles → buy the ATM CE
+# (breakout up) or ATM PE (breakdown) of the nearest expiry. Manage on the option
+# premium with a %-based stop-loss and target; square off at end of day.
+#
+# `enabled: false` by default — this is opt-in. Validate in PAPER mode before
+# enabling. The runner only registers this strategy when enabled is true.
+
+id: options_momentum
+name: Index Options Momentum
+description: N-bar breakout on the underlying → buy ATM CE/PE (nearest expiry), premium SL/target
+asset_class: OPTION
+enabled: false
+
+# Underlying used for chain lookup (Kite instrument `name`, e.g. NIFTY / BANKNIFTY)
+underlying: NIFTY
+# Symbol whose 1-min candles drive the signal (must be subscribed + routed).
+underlying_symbol: "NIFTY 50"
+product: MIS          # MIS (intraday) or NRML
+
+signal:
+  lookback_candles: 5     # breakout window (previous N candles)
+
+risk:
+  stop_loss_pct: 30           # SL = entry_premium * (1 - 30%)
+  target_pct: 60              # target = entry_premium * (1 + 60%)
+  max_lots: 5                 # hard cap on lots per position
+  max_premium_exposure_pct: 10  # premium outlay cap as % of capital
+  max_positions: 1            # concurrent option positions (also entries/day cap)
+
+timing:
+  entry_cutoff: "14:30"       # no new entries after this IST time

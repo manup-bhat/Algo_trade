@@ -27,7 +27,11 @@ import pytz
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core.config import settings
 from engine.market.candle_builder import CandleBuilder, Candle
+from engine.orders.fill_timeout import FillTimeoutManager
+from engine.orders.order_service import OrderService
+from engine.orders.order_tracker import OrderTracker
 from engine.strategy.scanner import ImpactCandle
 from engine.strategy.state_machine import SymbolStateMachine, StrategyState
 from engine.store.redis_store import RedisStore
@@ -67,12 +71,20 @@ def mock_db_writer():
 
 @pytest.fixture
 def sm(redis_store, mock_db_writer):
-    """Fresh SymbolStateMachine in paper mode."""
+    """Fresh SymbolStateMachine in paper mode with execution deps wired.
+
+    Mirrors Coordinator._create_sm(): a paper-mode OrderService (kite=None),
+    an OrderTracker, and a FillTimeoutManager. Without these the paper entry
+    path (_trigger_entry -> order_service.place_entry) has nothing to call.
+    """
     return SymbolStateMachine(
         symbol="RELIANCE",
         instrument_token=738561,
         redis_store=redis_store,
         db_writer=mock_db_writer,
+        order_service=OrderService(kite=None),
+        order_tracker=OrderTracker(),
+        fill_timeout_manager=FillTimeoutManager(),
     )
 
 
@@ -304,7 +316,7 @@ class TestFullPaperTradeCycle:
     @pytest.mark.asyncio
     async def test_abandonment_timeout(self, sm, redis_store, mock_db_writer):
         """
-        If 10 minutes pass without re-ignition → CLOSED (timeout).
+        If more than DRYUP_MAX_MINUTES pass without re-ignition → CLOSED (timeout).
         """
         await redis_store.set_capital(5_00_000.0)
 
@@ -323,12 +335,13 @@ class TestFullPaperTradeCycle:
         )
         await sm.on_scan_hit(impact)
 
-        # Normal dry-up candles for 10 minutes
+        # Normal dry-up candles well within the dry-up window (no re-ignition)
         for i in range(5):
             await sm.on_candle(505.0, 508.0, 503.0, 505.0, 8_000, make_ts(9, 16 + i))
 
-        # Candle at 9:26 (11 minutes after 9:15) → timeout
-        await sm.on_candle(505.0, 508.0, 503.0, 505.0, 8_000, make_ts(9, 26))
+        # One candle past DRYUP_MAX_MINUTES after the 09:15 impact → timeout abandonment
+        timeout_ts = make_ts(9, 15) + datetime.timedelta(minutes=settings.DRYUP_MAX_MINUTES + 1)
+        await sm.on_candle(505.0, 508.0, 503.0, 505.0, 8_000, timeout_ts)
 
         assert sm.state == StrategyState.CLOSED
         assert sm._abandonment_reason == "timeout"

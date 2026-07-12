@@ -123,6 +123,29 @@ class Settings(BaseSettings):
     # Gives the trader time to review while not missing the entry entirely.
     APPROVAL_TIMEOUT_SECONDS: int = 60
 
+    # ── v4 NEW: Volatility-adaptive exit + VWAP filter (opt-in; PAPER-first) ──
+    # Chandelier ATR trailing stop: after breakeven, trail SL up toward
+    # (highest_price − ATR_TRAIL_MULTIPLIER × ATR). Ratchets up only; never
+    # loosens; the fixed 1:4 hard target still applies. Default OFF preserves
+    # the spec's fixed-step 1:4 behaviour exactly.
+    DYNAMIC_TRAILING_ENABLED: bool = False
+    ATR_PERIOD: int = 14
+    ATR_TRAIL_MULTIPLIER: float = 2.5
+    # Require the re-ignition candle to close at/above session VWAP (institutional
+    # demand anchor). Default OFF preserves current entry behaviour.
+    VWAP_ENTRY_FILTER_ENABLED: bool = False
+
+    # Backtest/replay mode: bypass wall-clock market-open + entry-cutoff checks in
+    # pre-trade checks (the candle-TIME cutoff is still enforced in on_candle).
+    # Scoped ON only during a backtest run by run_ivbs_backtest(); never live.
+    BACKTEST_MODE: bool = False
+
+    # ── Strategy selection ──────────────────────────────────────────────────
+    # Comma-separated strategy ids to run (must match engine/strategies/<id>).
+    # Default runs ONLY IVBS. F&O strategies ALSO need their config.yaml
+    # `enabled: true`. e.g. ENABLED_STRATEGIES=ivbs  (run only IVBS).
+    ENABLED_STRATEGIES: str = "ivbs"
+
     # ── Market Direction Gate ───────────────────────────────────────
     # When enabled, new Phase 2 entries are blocked unless Nifty 50
     # is above its rolling 20-period 5-minute EMA.

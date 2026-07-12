@@ -51,6 +51,9 @@ class OrderTracker:
         self.entry_order_registry: dict[str, str] = {}  # order_id → symbol
         self.sl_order_registry: dict[str, str] = {}      # order_id → symbol
         self.exit_order_registry: dict[str, tuple[str, str]] = {}  # order_id → (symbol, reason)
+        # (order_id, status) pairs already routed — idempotency against duplicate
+        # WS postbacks and reconciliation re-surfacing the same status.
+        self._processed: set[tuple[str, str]] = set()
 
     # ── Registry management ────────────────────────────────────────────────
 
@@ -135,6 +138,15 @@ class OrderTracker:
         except Exception as exc:
             log.warning("order_event_write_failed", order_id=order_id, error=str(exc))
 
+        # Idempotency: route each (order_id, status) exactly once. KiteTicker can
+        # deliver duplicate postbacks, and reconciliation can re-surface a status;
+        # without this a duplicate COMPLETE would re-run on_order_filled.
+        dedup_key = (order_id, status)
+        if dedup_key in self._processed:
+            log.debug("postback_duplicate_skipped", order_id=order_id, status=status)
+            return
+        self._processed.add(dedup_key)
+
         # Route to state machine
         if self.is_entry(order_id):
             await self._handle_entry_postback(order_id, status, message, coordinator)
@@ -188,15 +200,42 @@ class OrderTracker:
             await sm.on_order_filled(order_id, avg_price, filled_qty, fill_time)
 
         elif status in ("REJECTED", "CANCELLED", "CANCELLED AMO"):
-            status_msg = message.get("status_message", "")
-            log.warning(
-                "entry_rejected_or_cancelled",
-                order_id=order_id,
-                symbol=symbol,
-                status=status,
-                message=status_msg,
-            )
-            await sm.on_order_rejected(order_id, status_msg)
+            filled_qty = int(message.get("filled_quantity", 0))
+            if filled_qty > 0:
+                # Partial fill then terminal remainder → manage the FILLED portion
+                # instead of abandoning it (otherwise the position is left open and
+                # unmanaged on the exchange).
+                avg_price = float(message.get("average_price", 0.0))
+                fill_time_raw = (
+                    message.get("exchange_update_timestamp")
+                    or message.get("order_timestamp")
+                )
+                try:
+                    fill_time = (
+                        datetime.datetime.fromisoformat(str(fill_time_raw))
+                        if fill_time_raw
+                        else datetime.datetime.now()
+                    )
+                except (ValueError, TypeError):
+                    fill_time = datetime.datetime.now()
+                log.warning(
+                    "entry_partial_fill_then_terminal",
+                    order_id=order_id,
+                    symbol=symbol,
+                    status=status,
+                    filled_qty=filled_qty,
+                )
+                await sm.on_order_filled(order_id, avg_price, filled_qty, fill_time)
+            else:
+                status_msg = message.get("status_message", "")
+                log.warning(
+                    "entry_rejected_or_cancelled",
+                    order_id=order_id,
+                    symbol=symbol,
+                    status=status,
+                    message=status_msg,
+                )
+                await sm.on_order_rejected(order_id, status_msg)
 
     async def _handle_sl_postback(
         self,

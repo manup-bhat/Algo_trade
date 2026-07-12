@@ -184,6 +184,9 @@ class OrderService:
         limit_price: float,
         quantity: int,
         sm: "SymbolStateMachine | None" = None,
+        exchange: str = "NSE",
+        product: str = "MIS",
+        tag: str = "IVBS",
     ) -> str | None:
         """
         Place a LIMIT BUY entry order.
@@ -220,14 +223,14 @@ class OrderService:
             self._kite,
             "place_order",
             tradingsymbol=symbol,
-            exchange="NSE",
+            exchange=exchange,
             transaction_type="BUY",
             order_type="LIMIT",
-            product="MIS",
+            product=product,
             validity="DAY",
             quantity=quantity,
             price=limit_price,
-            tag="IVBS",
+            tag=tag,
             autoslice=True,
             variety="regular",
         )
@@ -338,6 +341,9 @@ class OrderService:
         symbol: str,
         quantity: int,
         trigger_price: float,
+        exchange: str = "NSE",
+        product: str = "MIS",
+        tag: str = "IVBS_SL",
     ) -> str | None:
         """
         Place an SL-M (stop-loss market) SELL order.
@@ -373,14 +379,14 @@ class OrderService:
             self._kite,
             "place_order",
             tradingsymbol=symbol,
-            exchange="NSE",
+            exchange=exchange,
             transaction_type="SELL",
             order_type="SL-M",
-            product="MIS",
+            product=product,
             validity="DAY",
             quantity=quantity,
             trigger_price=trigger_price,
-            tag="IVBS_SL",
+            tag=tag,
             variety="regular",
             # NO price field for SL-M (spec §9.2)
         )
@@ -479,6 +485,9 @@ class OrderService:
         symbol: str,
         quantity: int,
         reason: str = "exit",
+        exchange: str = "NSE",
+        product: str = "MIS",
+        tag: str = "IVBS_EXIT",
     ) -> str | None:
         """
         Place a MARKET SELL exit order.
@@ -508,13 +517,13 @@ class OrderService:
             self._kite,
             "place_order",
             tradingsymbol=symbol,
-            exchange="NSE",
+            exchange=exchange,
             transaction_type="SELL",
             order_type="MARKET",
-            product="MIS",
+            product=product,
             validity="DAY",
             quantity=quantity,
-            tag="IVBS_EXIT",
+            tag=tag,
             variety="regular",
         )
 

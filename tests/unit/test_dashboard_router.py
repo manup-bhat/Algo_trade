@@ -130,3 +130,49 @@ async def test_market_uses_live_ticks_when_market_open(redis_store, monkeypatch)
     assert data["source"] == "live_ticks"
     assert data["count"] == 1
     assert data["ticks"][0]["symbol"] == "XYZ"
+
+
+# ── strategy selector / filter ────────────────────────────────────────────────
+def test_norm_strategy_filter():
+    assert dashboard_router._norm_strategy(None) is None
+    assert dashboard_router._norm_strategy("") is None
+    assert dashboard_router._norm_strategy("all") is None
+    assert dashboard_router._norm_strategy("ALL") is None
+    assert dashboard_router._norm_strategy(" IVBS ") == "ivbs"
+    assert dashboard_router._norm_strategy("options_momentum") == "options_momentum"
+
+
+@pytest.mark.asyncio
+async def test_get_strategies_falls_back_to_ivbs(redis_store):
+    dashboard_router.set_dependencies(redis_store, None)
+    data = await dashboard_router.get_strategies()
+    assert data["strategies"] == ["ivbs"]
+    assert data["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_strategies_reads_published_ids(redis_store):
+    dashboard_router.set_dependencies(redis_store, None)
+    await redis_store.set_active_strategies(["ivbs", "options_momentum"])
+    data = await dashboard_router.get_strategies()
+    assert data["strategies"] == ["ivbs", "options_momentum"]
+    assert data["count"] == 2
+
+
+# ── CSV export ────────────────────────────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_export_csv_unknown_kind_raises_404(redis_store):
+    from fastapi import HTTPException
+    dashboard_router.set_dependencies(redis_store, None)
+    with pytest.raises(HTTPException) as exc:
+        await dashboard_router.export_csv("bogus")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_csv_trades_returns_csv_stream(redis_store):
+    dashboard_router.set_dependencies(redis_store, None)
+    resp = await dashboard_router.export_csv("trades")
+    assert resp.media_type == "text/csv"
+    assert "attachment" in resp.headers["content-disposition"]
+    assert resp.headers["content-disposition"].endswith('.csv"')

@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime
 import enum
 
-from sqlalchemy import DateTime, Float, Index, Integer, Text
+from sqlalchemy import DateTime, Float, Index, Integer, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -29,6 +29,9 @@ class Trade(Base):
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_id: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'ivbs'"), default="ivbs"
+    )
     signal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     symbol: Mapped[str] = mapped_column(Text, nullable=False)
     instrument_token: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -86,4 +89,5 @@ class Trade(Base):
         Index("idx_trades_symbol", "symbol"),
         Index("idx_trades_status", "status"),
         Index("idx_trades_entry_time", "entry_time"),
+        Index("idx_trades_strategy", "strategy_id"),
     )

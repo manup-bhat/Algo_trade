@@ -10,6 +10,8 @@ services:
       redis-server
       --save 60 1
       --save 300 1
+      --appendonly yes
+      --appendfsync everysec
       --loglevel warning
       --maxmemory 512mb
       --maxmemory-policy noeviction

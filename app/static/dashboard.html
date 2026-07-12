@@ -65,6 +65,32 @@
   --bg-secondary: #1a1e2a;
 
   --transition: 0.15s ease;
+
+  /* Typography scale — canonical steps (prefer over ad-hoc px sizes) */
+  --fs-2xs:  10px;
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   14px;
+  --fs-lg:   16px;
+  --fs-xl:   20px;
+  --fs-2xl:  26px;
+  --fw-normal:   400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* Spacing scale — 4px base rhythm */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* Keyboard focus ring */
+  --focus-ring: 0 0 0 1px var(--bg-base), 0 0 0 3px var(--blue);
 }
 [data-theme="light"] {
   --bg-base:       #f0f2f7;
@@ -120,6 +146,40 @@ a { color: var(--blue); text-decoration: none; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* ACCESSIBILITY UTILITIES */
+/* Visually hidden yet exposed to assistive tech */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
+/* Skip-to-content link — appears only on keyboard focus */
+.skip-link {
+  position: absolute; left: 8px; top: -48px;
+  z-index: 3000;
+  background: var(--blue); color: #fff;
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  font-weight: var(--fw-semibold); font-size: var(--fs-sm);
+  transition: top var(--transition);
+}
+.skip-link:focus { top: 8px; outline: none; box-shadow: var(--shadow); }
+/* Consistent keyboard focus indicator (does not affect mouse clicks) */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+/* Honour reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    APP SHELL — always visible; no login gate
 ───────────────────────────────────────────────────────────────────────────── */
@@ -149,6 +209,9 @@ a { color: var(--blue); text-decoration: none; }
 }
 .profile-status-dot.ok  { background: var(--green); }
 .profile-status-dot.bad { background: var(--amber); }
+.uni-pg-btn { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer; }
+.uni-pg-btn:hover:not(:disabled) { background: var(--bg-raised); color: var(--text-primary); }
+.uni-pg-btn:disabled { opacity: 0.4; cursor: default; }
 .profile-dropdown-wrap { position: relative; }
 .profile-dropdown {
   display: none;
@@ -1227,7 +1290,10 @@ a { color: var(--blue); text-decoration: none; }
   .pipeline-board { grid-template-columns: repeat(2,1fr); }
 }
 @media (max-width: 768px) {
-  .navbar-tabs { display: none; }
+  /* Keep tab navigation reachable on mobile: wrap it onto its own
+     full-width, horizontally-scrollable row instead of hiding it. */
+  .navbar { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+  .navbar-tabs { order: 3; flex-basis: 100%; padding-right: 0; }
   .stat-cards { grid-template-columns: 1fr 1fr; }
   .scanner-layout { flex-direction: column; }
   .scanner-right { width: 100%; border-left: none; border-top: 1px solid var(--border); }
@@ -1328,6 +1394,7 @@ a { color: var(--blue); text-decoration: none; }
   </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
      APP SCREEN (loads immediately — auth managed via profile button)
@@ -1335,7 +1402,7 @@ a { color: var(--blue); text-decoration: none; }
 <div id="screen-app">
 
   <!-- NAVBAR -->
-  <nav class="navbar">
+  <nav class="navbar" aria-label="Primary navigation">
     <div class="navbar-brand">
       <div class="navbar-logo-icon">IV</div>
       <div class="navbar-brand-text">IVBS <span>Terminal</span></div>
@@ -1382,6 +1449,11 @@ a { color: var(--blue); text-decoration: none; }
     </div>
 
     <div class="navbar-right">
+      <select id="strategy-filter" title="Filter views by strategy" aria-label="Strategy filter"
+              onchange="_onStrategyFilterChange(this.value)"
+              style="display:none;background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;padding:5px 8px;cursor:pointer;">
+        <option value="all">All strategies</option>
+      </select>
       <div class="market-clock" id="market-clock">
         <div class="clock-dot"></div>
         <span class="clock-time" id="clock-time">--:--:--</span>
@@ -1398,7 +1470,7 @@ a { color: var(--blue); text-decoration: none; }
       </div>
       <!-- PROFILE / AUTH DROPDOWN -->
       <div class="profile-dropdown-wrap" id="profile-wrapper">
-        <button class="profile-icon-btn" id="btn-profile" title="Kite — click to manage auth">
+        <button class="profile-icon-btn" id="btn-profile" title="Kite — click to manage auth" aria-label="Broker connection and account" aria-haspopup="true">
           <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="7" r="4"/><path d="M2 19c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <div class="profile-status-dot" id="profile-status-dot"></div>
         </button>
@@ -1522,6 +1594,11 @@ a { color: var(--blue); text-decoration: none; }
               <svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Download Signal Logs
             </button>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+              <a href="/api/v1/export/trades.csv" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Trades CSV</a>
+              <a href="/api/v1/export/orders.csv" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Orders CSV</a>
+              <a href="/api/v1/export/journal.csv" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Journal CSV</a>
+            </div>
           </div>
         </div>
       </div>
@@ -1613,7 +1690,7 @@ a { color: var(--blue); text-decoration: none; }
   </div>
 
   <!-- CONTENT -->
-  <div class="app-content">
+  <div class="app-content" id="main-content" role="main" tabindex="-1">
 
     <!-- ──────────────────────────────────────────────────────────────────────
          TAB: OVERVIEW
@@ -1807,6 +1884,7 @@ a { color: var(--blue); text-decoration: none; }
           </tbody>
         </table>
       </div>
+      <div id="universe-pager" style="display:none;align-items:center;justify-content:center;gap:14px;padding:8px 0;border-top:1px solid var(--border);"></div>
     </div>
 
     <!-- ──────────────────────────────────────────────────────────────────────
@@ -1913,6 +1991,19 @@ a { color: var(--blue); text-decoration: none; }
         <span style="font-size:11px;color:var(--text-muted);background:var(--bg-input);padding:2px 8px;border-radius:99px;border:1px solid var(--border);" id="journal-count-label">—</span>
         <button class="btn btn-ghost btn-sm" id="btn-refresh-journal" style="margin-left:auto">Refresh</button>
       </div>
+      <!-- STRATEGY ANALYTICS (computed from recorded PAPER/LIVE trades) -->
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg-base);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px;">Strategy Performance</span>
+          <div style="display:flex;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:3px;" role="group" aria-label="Analytics trade mode">
+            <button class="anlz-mode-btn" data-mode="ALL" style="border:none;background:transparent;color:var(--text-muted);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:6px;cursor:pointer;" onclick="_setAnalyticsMode('ALL')">All</button>
+            <button class="anlz-mode-btn" data-mode="PAPER" style="border:none;background:transparent;color:var(--text-muted);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:6px;cursor:pointer;" onclick="_setAnalyticsMode('PAPER')">Paper</button>
+            <button class="anlz-mode-btn" data-mode="LIVE" style="border:none;background:transparent;color:var(--text-muted);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:6px;cursor:pointer;" onclick="_setAnalyticsMode('LIVE')">Live</button>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">last 30 sessions</span>
+        </div>
+        <div id="analytics-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;"></div>
+      </div>
       <div style="flex:1;overflow:auto;">
         <table class="trades-table" id="journal-table" style="font-size:12px">
           <thead><tr>
@@ -1945,10 +2036,10 @@ a { color: var(--blue); text-decoration: none; }
 
 <!-- DRAWER -->
 <div class="drawer-overlay" id="drawer-overlay"></div>
-<div class="drawer" id="detail-drawer">
+<div class="drawer" id="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <div class="drawer-header">
     <div class="drawer-title" id="drawer-title">Symbol Detail</div>
-    <button class="icon-btn" id="btn-close-drawer">
+    <button class="icon-btn" id="btn-close-drawer" aria-label="Close detail panel">
       <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
     </button>
   </div>
@@ -1956,7 +2047,7 @@ a { color: var(--blue); text-decoration: none; }
 </div>
 
 <!-- TOAST CONTAINER -->
-<div id="toast-container"></div>
+<div id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
      JAVASCRIPT
@@ -2049,6 +2140,20 @@ function toast(msg, type = 'info', duration = 3500) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
+   EMPTY-STATE FACTORY (single source of truth for all "no data" placeholders)
+───────────────────────────────────────────────────────────────────────────── */
+function emptyBox(icon, title = '', sub = '', opts = {}) {
+  const boxStyle  = opts.style     ? ` style="${opts.style}"`     : '';
+  const iconStyle = opts.iconStyle ? ` style="${opts.iconStyle}"` : '';
+  const t = title ? `<div class="empty-state-title">${title}</div>` : '';
+  const s = sub   ? `<div class="empty-state-sub">${sub}</div>`     : '';
+  return `<div class="empty-state"${boxStyle}><div class="empty-state-icon"${iconStyle}>${icon}</div>${t}${s}</div>`;
+}
+function emptyRow(colspan, icon, title = '', sub = '') {
+  return `<tr><td colspan="${colspan}">${emptyBox(icon, title, sub)}</td></tr>`;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
    THEME
 ───────────────────────────────────────────────────────────────────────────── */
 let _theme = localStorage.getItem('ivbs-theme') || 'dark';
@@ -2099,7 +2204,11 @@ setInterval(tickClock, 1000);
    TABS
 ───────────────────────────────────────────────────────────────────────────── */
 function switchTab(name) {
-  $$('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  $$('.nav-tab').forEach(t => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
   $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${name}`));
   // Universe: only re-fetch if data is empty or stale (>30s). The 30s setInterval
   // in initApp() handles routine refresh. Switching tabs must NOT clear _universeMap
@@ -2120,22 +2229,71 @@ function switchTab(name) {
 }
 $$('.nav-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
+// A11y: ARIA tab semantics + roving arrow-key navigation (progressive enhancement)
+(function initTabsA11y() {
+  const tablist = document.querySelector('.navbar-tabs');
+  if (!tablist) return;
+  tablist.setAttribute('role', 'tablist');
+  tablist.setAttribute('aria-label', 'Dashboard sections');
+  const tabs = $$('.nav-tab');
+  tabs.forEach((t) => {
+    const name = t.dataset.tab;
+    if (!t.id) t.id = `navtab-${name}`;
+    t.setAttribute('role', 'tab');
+    t.setAttribute('aria-controls', `tab-${name}`);
+    t.setAttribute('aria-selected', t.classList.contains('active') ? 'true' : 'false');
+  });
+  $$('.tab-panel').forEach((p) => {
+    const name = p.id.replace(/^tab-/, '');
+    const tab = document.querySelector(`.nav-tab[data-tab="${name}"]`);
+    p.setAttribute('role', 'tabpanel');
+    p.setAttribute('tabindex', '0');
+    if (tab) p.setAttribute('aria-labelledby', tab.id);
+  });
+  tablist.addEventListener('keydown', (e) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const cur = tabs.indexOf(document.activeElement);
+    let next = cur < 0 ? 0 : cur;
+    if (e.key === 'ArrowRight')     next = (cur + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (cur - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home')      next = 0;
+    else if (e.key === 'End')       next = tabs.length - 1;
+    tabs[next].focus();
+    switchTab(tabs[next].dataset.tab);
+  });
+})();
+
 /* ────────────────────────────────────────────────────────────────────────────
    DRAWER
 ───────────────────────────────────────────────────────────────────────────── */
+let _drawerLastFocus = null;
 function openDrawer(title, bodyHTML) {
+  _drawerLastFocus = document.activeElement;
   $('#drawer-title').textContent = title;
   $('#drawer-body').innerHTML = bodyHTML;
   $('#detail-drawer').classList.add('open');
   $('#drawer-overlay').classList.add('open');
+  const closeBtn = $('#btn-close-drawer');
+  if (closeBtn) closeBtn.focus();   // move keyboard focus into the panel
 }
 function closeDrawer() {
   _currentDrawerSymbol = null;  // stop live WS updates for closed drawer
   $('#detail-drawer').classList.remove('open');
   $('#drawer-overlay').classList.remove('open');
+  if (_drawerLastFocus && typeof _drawerLastFocus.focus === 'function') {
+    _drawerLastFocus.focus();     // restore focus to the trigger
+    _drawerLastFocus = null;
+  }
 }
 safeOn('#btn-close-drawer', 'click', closeDrawer);
 safeOn('#drawer-overlay',   'click', closeDrawer);
+// Escape closes the detail drawer (matches the watchlist modal behaviour)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('#detail-drawer') && $('#detail-drawer').classList.contains('open')) {
+    closeDrawer();
+  }
+});
 
 /* ────────────────────────────────────────────────────────────────────────────
    EMERGENCY STOP — two-press with 3s countdown
@@ -2448,6 +2606,7 @@ let _cbTrippedToastShown = false;  // debounce circuit-breaker trip toast
 async function loadStatus() {
   try {
     const r = await fetch('/api/v1/status');
+    if (!r.ok) return;  // backend hiccup — keep last known status
     const d = await r.json();
     _statusCache = d;
     updateCommandBar(d);
@@ -2565,7 +2724,7 @@ async function loadPositions() {
 function renderPositions(positions) {
   const tbody = $('#positions-tbody');
   if (!positions.length) {
-    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-title">No live positions</div><div class="empty-state-sub">Active trades will appear here</div></div></td></tr>`;
+    tbody.innerHTML = emptyRow(9, '📊', 'No live positions', 'Active trades will appear here');
     return;
   }
   tbody.innerHTML = positions.map(p => {
@@ -2901,7 +3060,7 @@ function renderPipeline(d) {
     total += cards.length;
     $(cnt).textContent = cards.length;
     if (!cards.length) {
-      $(el).innerHTML = `<div class="empty-state" style="padding:20px 8px"><div class="empty-state-icon" style="font-size:20px">—</div><div class="empty-state-sub">None</div></div>`;
+      $(el).innerHTML = emptyBox('—', '', 'None', {style:'padding:20px 8px', iconStyle:'font-size:20px'});
       continue;
     }
     $(el).innerHTML = cards.map(c => {
@@ -2941,7 +3100,7 @@ safeOn('#btn-refresh-pipeline', 'click', () => {
 ───────────────────────────────────────────────────────────────────────────── */
 async function loadScanner() {
   try {
-    const r = await fetch('/api/v1/scanner');
+    const r = await fetch(_sfx('/api/v1/scanner'));
     const d = await r.json();
     const hits = d.hits || [];
     $('#badge-scanner').textContent = hits.length;
@@ -2965,7 +3124,7 @@ function stateTag(state) {
 function renderScannerTable(hits) {
   const tbody = $('#scanner-tbody');
   if (!hits.length) {
-    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-title">No scan hits today</div></div></td></tr>`;
+    tbody.innerHTML = emptyRow(9, '🔍', 'No scan hits today');
     return;
   }
   tbody.innerHTML = hits.map(h => `
@@ -2993,6 +3152,8 @@ let _universeMap  = new Map();    // symbol → object reference (for model upda
 let _universeLastFetchAt = 0;     // epoch ms of last successful loadUniverse() call
 let _uniSortCol = 'symbol', _uniSortDir = 1;
 let _uniSearch = '', _uniFilter = 'all';
+let _uniPage = 1;
+const _uniPageSize = 100;
 let _uniRafPending = false;       // RAF guard — only one flush scheduled at a time
 let _uniPendingTicks = {};        // accumulated tick deltas, flushed each RAF
 let _lastTickBatchAt  = Date.now();  // epoch ms of last received tick_batch WS event
@@ -3003,6 +3164,7 @@ let _lastServerTickAt = null;     // last server-reported engine:last_tick_at ti
 async function loadUniverse() {
   try {
     const r = await fetch('/api/v1/universe');
+    if (!r.ok) return;  // keep existing rows on a transient backend error
     const d = await r.json();
     _universeData = d.symbols || [];
     _universeLastFetchAt = Date.now();
@@ -3040,11 +3202,23 @@ function renderUniverse() {
 
   const tbody = $('#universe-tbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-title">No symbols match filter</div></div></td></tr>`;
+    tbody.innerHTML = emptyRow(7, '📋', 'No symbols match filter');
+    _renderUniPager(0, 1, 0, 0);
     return;
   }
+
+  // Client-side pagination — cap the DOM at _uniPageSize rows. The full data
+  // model (_universeMap) is still tick-updated for off-page symbols, so their
+  // values are current the moment their page is shown.
+  const totalPages = Math.max(1, Math.ceil(rows.length / _uniPageSize));
+  if (_uniPage > totalPages) _uniPage = totalPages;
+  if (_uniPage < 1) _uniPage = 1;
+  const start = (_uniPage - 1) * _uniPageSize;
+  const pageRows = rows.slice(start, start + _uniPageSize);
+  _renderUniPager(rows.length, totalPages, start, pageRows.length);
+
   // data-symbol on each <tr> allows _flushUniTicks() to find rows directly
-  tbody.innerHTML = rows.map(r => {
+  tbody.innerHTML = pageRows.map(r => {
     const rv = parseFloat(r.relative_volume) || 0;
     const rvW = Math.min(rv / 5 * 100, 100);
     const rvClass = rv > 3 ? 'fire' : rv > 1.5 ? 'hot' : '';
@@ -3143,13 +3317,28 @@ function _scheduleUniFlush() {
   requestAnimationFrame(_flushUniTicks);
 }
 
-safeOn('#universe-search', 'input',  (e) => { _uniSearch = e.target.value; renderUniverse(); });
-safeOn('#universe-filter', 'change', (e) => { _uniFilter = e.target.value; renderUniverse(); });
+function _renderUniPager(total, totalPages, start, shown) {
+  const el = $('#universe-pager');
+  if (!el) return;
+  if (total <= _uniPageSize) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  const from = total ? start + 1 : 0;
+  const to = start + shown;
+  el.innerHTML =
+    `<button class="uni-pg-btn" ${_uniPage<=1?'disabled':''} onclick="_uniGoto(_uniPage-1)" aria-label="Previous page">‹ Prev</button>` +
+    `<span style="font-size:12px;color:var(--text-muted)">${from}–${to} of ${total} · page ${_uniPage}/${totalPages}</span>` +
+    `<button class="uni-pg-btn" ${_uniPage>=totalPages?'disabled':''} onclick="_uniGoto(_uniPage+1)" aria-label="Next page">Next ›</button>`;
+}
+function _uniGoto(p) { _uniPage = p; renderUniverse(); }
+
+safeOn('#universe-search', 'input',  (e) => { _uniSearch = e.target.value; _uniPage = 1; renderUniverse(); });
+safeOn('#universe-filter', 'change', (e) => { _uniFilter = e.target.value; _uniPage = 1; renderUniverse(); });
 $$('#universe-table thead th[data-sort]').forEach(th => {
   th.addEventListener('click', () => {
     const col = th.dataset.sort;
     if (_uniSortCol === col) _uniSortDir *= -1;
     else { _uniSortCol = col; _uniSortDir = -1; }
+    _uniPage = 1;
     renderUniverse();
   });
 });
@@ -3159,7 +3348,8 @@ $$('#universe-table thead th[data-sort]').forEach(th => {
 ───────────────────────────────────────────────────────────────────────────── */
 async function loadTrades() {
   try {
-    const r = await fetch('/api/v1/trades');
+    const r = await fetch(_sfx('/api/v1/trades'));
+    if (!r.ok) return;
     const d = await r.json();
     const trades = d.trades || [];
     $('#badge-trades').textContent = trades.length;
@@ -3184,7 +3374,7 @@ async function loadTrades() {
 function renderTradesTable(trades) {
   const tbody = $('#trades-tbody');
   if (!trades.length) {
-    tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-state-icon">📈</div><div class="empty-state-title">No closed trades today</div></div></td></tr>`;
+    tbody.innerHTML = emptyRow(12, '📈', 'No closed trades today');
     return;
   }
   tbody.innerHTML = trades.map(t => {
@@ -3215,7 +3405,7 @@ function renderTradesTable(trades) {
 ───────────────────────────────────────────────────────────────────────────── */
 async function loadOrders() {
   try {
-    const r = await fetch('/api/v1/orders');
+    const r = await fetch(_sfx('/api/v1/orders'));
     const d = await r.json();
     const orders = d.orders || [];
     $('#badge-orders').textContent = orders.length;
@@ -3235,7 +3425,7 @@ function orderStatusColor(s) {
 function renderOrdersTable(orders) {
   const tbody = $('#orders-tbody');
   if (!orders.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-title">No orders today</div></div></td></tr>`;
+    tbody.innerHTML = emptyRow(8, '📋', 'No orders today');
     return;
   }
   tbody.innerHTML = orders.map(o => `
@@ -3277,7 +3467,7 @@ function renderApprovals(approvals) {
   const body = $('#approvals-body');
   if (!body) return;
   if (!approvals.length) {
-    body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✅</div><div class="empty-state-title">No pending approvals</div><div class="empty-state-sub">Pending live trade entries will appear here for approval</div></div>`;
+    body.innerHTML = emptyBox('✅', 'No pending approvals', 'Pending live trade entries will appear here for approval');
     return;
   }
   body.innerHTML = approvals.map(a => `
@@ -3337,6 +3527,7 @@ async function loadJournal() {
     const label = $('#journal-count-label');
     if (label) label.textContent = `${days.length} days`;
     renderJournalTable(days);
+    loadAnalytics();
   } catch { /* ignore */ }
 }
 
@@ -3344,7 +3535,7 @@ function renderJournalTable(days) {
   const tbody = $('#journal-tbody');
   if (!tbody) return;
   if (!days.length) {
-    tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📒</div><div class="empty-state-title">No journal data</div><div class="empty-state-sub">Daily summaries are written at 3:25 PM after each session</div></div></td></tr>`;
+    tbody.innerHTML = emptyRow(11, '📒', 'No journal data', 'Daily summaries are written at 3:25 PM after each session');
     return;
   }
   tbody.innerHTML = days.map(d => {
@@ -3366,6 +3557,74 @@ function renderJournalTable(days) {
       <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-muted)">${d.notes || '—'}</td>
     </tr>`;
   }).join('');
+}
+
+// ── Strategy analytics (computed from recorded trades) ──────────────
+let _analyticsMode = 'ALL';
+function _anlzCard(label, value, color) {
+  return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+    <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${label}</div>
+    <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:${color||'var(--text-primary)'};">${value}</div>
+  </div>`;
+}
+function renderAnalytics(d) {
+  const el = $('#analytics-cards');
+  if (!el) return;
+  const pf = (d.profit_factor === null || d.profit_factor === undefined) ? '∞' : d.profit_factor;
+  const net = d.net_pnl || 0, exp = d.expectancy || 0, avgR = d.avg_r_multiple || 0, wr = d.win_rate_pct || 0;
+  el.innerHTML = [
+    _anlzCard('Trades', d.num_trades ?? 0),
+    _anlzCard('Win Rate', wr + '%', wr >= 20.6 ? 'var(--green)' : 'var(--amber)'),
+    _anlzCard('Profit Factor', pf, (typeof pf === 'number' && pf < 1) ? 'var(--red)' : 'var(--green)'),
+    _anlzCard('Expectancy', fmtINRSign(exp), exp >= 0 ? 'var(--green)' : 'var(--red)'),
+    _anlzCard('Avg R', avgR, avgR >= 0 ? 'var(--green)' : 'var(--red)'),
+    _anlzCard('Net P&L', fmtINRSign(net), net >= 0 ? 'var(--green)' : 'var(--red)'),
+    _anlzCard('Max DD', fmtINR(d.max_drawdown || 0), 'var(--red)'),
+  ].join('');
+}
+function _syncAnalyticsModeUI() {
+  $$('.anlz-mode-btn').forEach(b => {
+    const active = b.dataset.mode === _analyticsMode;
+    b.style.background = active ? 'var(--bg-raised)' : 'transparent';
+    b.style.color = active ? 'var(--text-primary)' : 'var(--text-muted)';
+    b.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+async function loadAnalytics() {
+  try {
+    const r = await fetch(_sfx('/api/v1/analytics?mode=' + _analyticsMode + '&days=30'));
+    renderAnalytics(await r.json());
+  } catch { /* ignore */ }
+  _syncAnalyticsModeUI();
+}
+function _setAnalyticsMode(m) { _analyticsMode = m; loadAnalytics(); }
+
+// ── Strategy filter (multi-strategy views) ──────────────────────
+let _strategyFilter = 'all';
+function _sfx(url) {
+  // Append ?strategy_id= when a specific strategy is selected. No-op for 'all'.
+  if (!_strategyFilter || _strategyFilter === 'all') return url;
+  return url + (url.includes('?') ? '&' : '?') + 'strategy_id=' + encodeURIComponent(_strategyFilter);
+}
+async function loadStrategies() {
+  try {
+    const r = await fetch('/api/v1/strategies');
+    if (!r.ok) return;
+    const d = await r.json();
+    const sel = document.getElementById('strategy-filter');
+    if (!sel) return;
+    // strategy ids are server-controlled slugs; sanitize defensively anyway.
+    const ids = (d.strategies || []).map(s => String(s).replace(/[^a-z0-9_\-]/gi, ''));
+    sel.innerHTML = '<option value="all">All strategies</option>' +
+      ids.map(s => `<option value="${s}">${s}</option>`).join('');
+    // Only show the picker when there is more than one strategy to choose from.
+    sel.style.display = ids.length > 1 ? '' : 'none';
+    if (ids.includes(_strategyFilter)) sel.value = _strategyFilter;
+  } catch { /* ignore */ }
+}
+function _onStrategyFilterChange(v) {
+  _strategyFilter = v || 'all';
+  loadScanner(); loadTrades(); loadOrders(); loadAnalytics();
 }
 
 safeOn('#btn-refresh-journal', 'click', loadJournal);
@@ -3649,6 +3908,7 @@ function initApp() {
   _appInitialized = true;
 
   loadStatus();
+  loadStrategies();
   loadCircuitBreaker();
   loadPipeline();
   loadPositions();
@@ -3844,7 +4104,7 @@ function _wlRenderCurrentList() {
   const active  = entries.filter(([,v]) => v.state !== 'pending_remove').length;
   if (countEl) countEl.textContent = active;
   if (!entries.length) {
-    list.innerHTML = `<div class="empty-state" style="flex:1"><div class="empty-state-icon">📋</div><div class="empty-state-title">Watchlist is empty</div><div class="empty-state-sub">Search and add NSE symbols on the left</div></div>`;
+    list.innerHTML = emptyBox('📋', 'Watchlist is empty', 'Search and add NSE symbols on the left', {style:'flex:1'});
     return;
   }
   const sorted = entries.sort(([as,av],[bs,bv]) => {

@@ -35,6 +35,8 @@ _ENGINE_CONFIG_MAX_CAPITAL_PAPER = "engine:config:max_capital_paper"  # cap for 
 _ENGINE_CONFIG_MAX_CAPITAL_LIVE  = "engine:config:max_capital_live"   # cap for LIVE trades
 _ENGINE_CONFIG_TRADE_MODE = "engine:config:trade_mode"
 _ENGINE_REINIT_TRIGGER    = "engine:reinit_trigger"
+_ENGINE_PENDING_WATCHLIST = "engine:pending_watchlist"
+_ENGINE_ACTIVE_STRATEGIES = "engine:strategies"
 _ENGINE_RUNNER_HEARTBEAT = "engine:runner:heartbeat"
 _ENGINE_PENDING_APPROVAL = "engine:pending_approval"
 _APPROVAL_KEY_PREFIX = "approval:pending:"
@@ -85,7 +87,7 @@ class RedisStore:
     # ── Engine Status / Control ────────────────────────────────────────────
 
     async def set_engine_status(self, status_data: dict[str, Any]) -> None:
-        await self._r.set(_ENGINE_STATUS, json.dumps(status_data))
+        await self._r.set(_ENGINE_STATUS, json.dumps(status_data), ex=_TTL_EOD)
 
     async def get_engine_status(self) -> dict[str, Any] | None:
         val = await self._r.get(_ENGINE_STATUS)
@@ -97,10 +99,22 @@ class RedisStore:
     async def set_engine_control(self, command: str) -> None:
         await self._r.set(_ENGINE_CONTROL, command)
 
+    async def set_active_strategies(self, ids: list[str]) -> None:
+        """Publish the engine's registered strategy ids (read by the dashboard)."""
+        await self._r.set(_ENGINE_ACTIVE_STRATEGIES, json.dumps(list(ids)), ex=_TTL_EOD)
+
+    async def get_active_strategies(self) -> list[str]:
+        raw = await self._r.get(_ENGINE_ACTIVE_STRATEGIES)
+        try:
+            data = json.loads(raw) if raw else []
+            return [str(x) for x in data] if isinstance(data, list) else []
+        except (ValueError, TypeError):
+            return []
+
     # ── Circuit Breaker ────────────────────────────────────────────────────
 
     async def set_circuit_breaker(self, tripped: bool) -> None:
-        await self._r.set(_ENGINE_CIRCUIT_BREAKER, "true" if tripped else "false")
+        await self._r.set(_ENGINE_CIRCUIT_BREAKER, "true" if tripped else "false", ex=_TTL_EOD)
 
     async def is_circuit_breaker_tripped(self) -> bool:
         val = await self._r.get(_ENGINE_CIRCUIT_BREAKER)
@@ -172,6 +186,26 @@ class RedisStore:
         val = await self._r.getdel(_ENGINE_REINIT_TRIGGER)
         return val is not None
 
+    async def set_pending_watchlist(self, symbols: list[str]) -> None:
+        """Signal the engine runner to hot-reload its scanning watchlist.
+
+        Written by the dashboard process after persisting universe.txt; consumed
+        by the engine's _poll_config loop. Expires in 5 minutes so a stale edit
+        is never applied long after the fact.
+        """
+        await self._r.set(_ENGINE_PENDING_WATCHLIST, json.dumps(list(symbols)), ex=300)
+
+    async def consume_pending_watchlist(self) -> list[str] | None:
+        """Return the pending watchlist (and delete the key) or None if unset."""
+        val = await self._r.getdel(_ENGINE_PENDING_WATCHLIST)
+        if not val:
+            return None
+        try:
+            data = json.loads(val)
+            return [str(s) for s in data] if isinstance(data, list) else None
+        except (ValueError, TypeError):
+            return None
+
     async def set_runner_heartbeat(self, status: str, pid: int | None = None) -> None:
         """Short TTL heartbeat proving an engine.runner process is currently alive."""
         payload = {
@@ -222,7 +256,7 @@ class RedisStore:
     # ── Blocked Margin ─────────────────────────────────────────────────────
 
     async def set_blocked_margin(self, amount: float) -> None:
-        await self._r.set(_ENGINE_BLOCKED_MARGIN, str(amount))
+        await self._r.set(_ENGINE_BLOCKED_MARGIN, str(amount), ex=_TTL_EOD)
 
     async def get_blocked_margin(self) -> float:
         val = await self._r.get(_ENGINE_BLOCKED_MARGIN)
@@ -330,7 +364,7 @@ class RedisStore:
     # ── Position (for open positions) ─────────────────────────────────────
 
     async def set_position(self, symbol: str, position_dict: dict[str, Any]) -> None:
-        await self._r.set(f"position:{symbol}", json.dumps(position_dict))
+        await self._r.set(f"position:{symbol}", json.dumps(position_dict), ex=_TTL_EOD)
 
     async def get_position(self, symbol: str) -> dict[str, Any] | None:
         raw = await self._r.get(f"position:{symbol}")
@@ -355,7 +389,7 @@ class RedisStore:
     # ── Last LTP (for entry widen logic + dashboard feed) ─────────────────────
 
     async def set_last_ltp(self, symbol: str, ltp: float) -> None:
-        await self._r.set(f"ltp:{symbol}", str(ltp))
+        await self._r.set(f"ltp:{symbol}", str(ltp), ex=_TTL_LIVE_TICK)
 
     async def get_last_ltp(self, symbol: str) -> float | None:
         val = await self._r.get(f"ltp:{symbol}")
@@ -397,7 +431,7 @@ class RedisStore:
             ex=_TTL_LIVE_TICK,
         )
         # Also keep legacy ltp key for backward compat
-        await self._r.set(f"ltp:{symbol}", str(ltp))
+        await self._r.set(f"ltp:{symbol}", str(ltp), ex=_TTL_LIVE_TICK)
 
     async def _collect_live_ticks(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Collect live ticks using O(1) HGETALL on the livetick_hash.

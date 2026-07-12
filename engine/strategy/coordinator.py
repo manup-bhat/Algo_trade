@@ -19,11 +19,10 @@ import pytz
 import structlog
 
 from engine.market.candle_builder import CandleBuilder, Candle
-from engine.market import calendar as mkt_calendar
 from engine.strategy import scanner
 from engine.strategy.state_machine import SymbolStateMachine, StrategyState
-from engine.strategy.second_spike_detector import SecondSpikeDetector, SecondSpikeEntry
-from engine.strategy.abandoned_setup_tracker import abandoned_setup_tracker, AbandonedRecord
+from engine.core.strategy_router import StrategyRouter
+from engine.strategies.ivbs.strategy import IVBSStrategy
 from engine.store import sma_file_store
 from app.core.config import settings
 
@@ -55,16 +54,21 @@ class Coordinator:
       - Orphan detection and 5-minute reconciliation
     """
 
-    def __init__(self, redis_store: "RedisStore", db_writer: "DbWriter") -> None:
+    def __init__(
+        self,
+        redis_store: "RedisStore",
+        db_writer: "DbWriter",
+        strategy_router: "StrategyRouter | None" = None,
+    ) -> None:
         self._redis = redis_store
         self._db = db_writer
         self.candle_builders: dict[str, CandleBuilder] = {}
         self.token_to_symbol: dict[int, str] = {}
         self.symbol_to_token: dict[str, int] = {}
-        self.active_state_machines: dict[str, SymbolStateMachine] = {}
         self._tick_count: int = 0
         self._candle_count: int = 0
-        self._signal_count: int = 0
+        self._reconcile_count: int = 0
+        self._last_reconcile_at: str | None = None
         self._accept_new_entries: bool = True
         self._monitoring_tick_sent_at: dict[str, float] = {}  # symbol → monotonic timestamp
 
@@ -76,14 +80,40 @@ class Coordinator:
         self._nifty_candle_builder: CandleBuilder | None = None
         self._vix_ltp: float | None = None       # latest India VIX tick
 
-        # Phase 4: wired via inject_dependencies()
+        # Wired via inject_dependencies()
         self._order_service: "OrderService | None" = None
         self._order_tracker: "OrderTracker | None" = None
         self._fill_timeout: "FillTimeoutManager | None" = None
         self._kite: "AsyncKiteClient | None" = None
 
-        # v3 NEW: Second spike detector (singleton per engine process)
-        self.second_spike_detector = SecondSpikeDetector()
+        # ── Strategy plugins ────────────────────────────────────────
+        # The coordinator is a pure data router; strategy decisions live in
+        # BaseStrategy plugins behind the StrategyRouter. If no router is
+        # supplied, default to a single IVBS strategy (legacy behavior).
+        if strategy_router is None:
+            strategy_router = StrategyRouter()
+            strategy_router.register(IVBSStrategy("ivbs", redis_store, db_writer))
+        self.strategy_router = strategy_router
+        # Primary IVBS strategy reference for backward-compatible proxies
+        # (active_state_machines / second_spike_detector) used by the engine-side
+        # reconcile / orphan / dashboard-publish helpers below.
+        self._ivbs = strategy_router.get("ivbs") or (
+            strategy_router.strategies[0] if strategy_router.strategies else None
+        )
+
+    # ── Backward-compatible proxies to the primary strategy ───────────────
+
+    @property
+    def active_state_machines(self) -> dict[str, SymbolStateMachine]:
+        """Proxy to the primary strategy's live state machines (legacy API)."""
+        if self._ivbs is None:
+            return {}
+        return self._ivbs.active_state_machines
+
+    @property
+    def second_spike_detector(self):
+        """Proxy to the primary strategy's second-spike detector (legacy API)."""
+        return self._ivbs.second_spike_detector if self._ivbs is not None else None
 
     # ── Dependency injection ─────────────────────────────────────────────────
 
@@ -102,6 +132,10 @@ class Coordinator:
         self._order_tracker = order_tracker
         self._fill_timeout = fill_timeout_manager
         self._kite = kite
+        # Propagate execution deps to all registered strategies.
+        self.strategy_router.inject_execution(
+            order_service, order_tracker, fill_timeout_manager, kite
+        )
         log.info(
             "coordinator_dependencies_injected",
             order_service=type(order_service).__name__,
@@ -111,6 +145,7 @@ class Coordinator:
     def set_new_entries_enabled(self, enabled: bool) -> None:
         """Enable/disable fresh scanner-to-entry transitions (used by STOP/START control)."""
         self._accept_new_entries = enabled
+        self.strategy_router.set_new_entries_enabled(enabled)
         log.info("coordinator_new_entries_gate", enabled=enabled)
 
     # ── Market Gate: Nifty EMA ──────────────────────────────────────────────
@@ -175,6 +210,74 @@ class Coordinator:
             self.symbol_to_token[symbol] = info.instrument_token
 
         log.info("coordinator_builders_initialized", symbol_count=len(self.candle_builders))
+
+    def apply_watchlist(
+        self,
+        symbols: list[str],
+        resolve: Any,  # Callable[[str], InstrumentInfo | None]
+        sma_period: int = 500,
+    ) -> tuple[list[int], list[int]]:
+        """Reconcile live CandleBuilders to match ``symbols`` (hot watchlist edit).
+
+        ``resolve(symbol)`` returns an InstrumentInfo (with ``instrument_token``)
+        or None for unknown symbols, which are skipped. A symbol currently held
+        by any strategy (open position / live setup) is never removed, so an
+        edit can't strand an in-flight trade.
+
+        Returns ``(added_tokens, removed_tokens)`` for the caller to apply to the
+        WebSocket subscription.
+        """
+        desired = list(dict.fromkeys(symbols))  # de-dupe, preserve order
+        desired_set = set(desired)
+        current_set = set(self.candle_builders.keys())
+
+        added_tokens: list[int] = []
+        removed_tokens: list[int] = []
+        skipped: list[str] = []
+
+        for sym in desired:
+            if sym in current_set:
+                continue
+            info = resolve(sym)
+            if info is None:
+                skipped.append(sym)
+                continue
+            self.candle_builders[sym] = CandleBuilder(sym, sma_period)
+            self.token_to_symbol[info.instrument_token] = sym
+            self.symbol_to_token[sym] = info.instrument_token
+            added_tokens.append(info.instrument_token)
+
+        for sym in current_set - desired_set:
+            if self.strategy_router.any_strategy_has_active_symbol(sym):
+                skipped.append(sym)  # keep — trade/setup in flight
+                continue
+            token = self.symbol_to_token.pop(sym, None)
+            self.candle_builders.pop(sym, None)
+            if token is not None:
+                self.token_to_symbol.pop(token, None)
+                removed_tokens.append(token)
+
+        log.info(
+            "coordinator_watchlist_applied",
+            added=len(added_tokens),
+            removed=len(removed_tokens),
+            skipped=len(skipped),
+            total=len(self.candle_builders),
+        )
+        return added_tokens, removed_tokens
+
+    async def warm_builders(self, symbols: list[str]) -> None:
+        """Best-effort SMA warm for freshly added symbols from persisted Redis history."""
+        for sym in symbols:
+            builder = self.candle_builders.get(sym)
+            if builder is None:
+                continue
+            try:
+                history = await self._redis.load_volume_sma_history(sym)
+                if history:
+                    builder.load_history(history)
+            except Exception as exc:  # pragma: no cover - best effort
+                log.warning("watchlist_warm_failed", symbol=sym, error=str(exc))
 
     async def load_sma_histories(self) -> None:
         """
@@ -332,19 +435,21 @@ class Coordinator:
                 self._candle_count += 1
                 await self._on_candle_complete(symbol, candle)
 
-            # Per-tick SM routing (MANAGING state only)
+            # Per-tick routing: publish monitoring ticks for pre-entry states
+            # (dashboard) and delegate MANAGING management to the owning strategy.
             sm = self.active_state_machines.get(symbol)
-            if sm is not None and sm.state in (
-                StrategyState.SCAN_HIT,
-                StrategyState.MONITORING,
-                StrategyState.ACTION_PENDING,
-                StrategyState.ACTION_PENDING_APPROVAL,
-            ):
-                await self._maybe_publish_monitoring_tick(
-                    symbol, ltp, day_open, prev_close, cum_vol, builder, sm, exch_ts
-                )
-            if sm is not None and sm.state == StrategyState.MANAGING:
-                await sm.on_tick(ltp, exch_ts)
+            if sm is not None:
+                if sm.state in (
+                    StrategyState.SCAN_HIT,
+                    StrategyState.MONITORING,
+                    StrategyState.ACTION_PENDING,
+                    StrategyState.ACTION_PENDING_APPROVAL,
+                ):
+                    await self._maybe_publish_monitoring_tick(
+                        symbol, ltp, day_open, prev_close, cum_vol, builder, sm, exch_ts
+                    )
+                elif sm.state == StrategyState.MANAGING:
+                    await self.strategy_router.on_tick(symbol, ltp, exch_ts)
 
             # Collect for pipeline flush (only if ltp is valid)
             if ltp > 0:
@@ -456,10 +561,11 @@ class Coordinator:
 
     async def _on_candle_complete(self, symbol: str, candle: Candle) -> None:
         """
-        Called when a 1-minute candle is completed for a symbol.
-        Routes to scanner (IDLE symbols) or active SM (non-IDLE symbols).
+        Called when a 1-minute candle completes. Persists engine-level state,
+        delegates strategy decisions to the StrategyRouter, then publishes the
+        candle close (with any active-SM overlay) for the dashboard.
         """
-        # Store last LTP for entry widen logic
+        # Engine-level: persist last LTP + recent candle for dashboard/entry logic.
         try:
             await self._redis.set_last_ltp(symbol, candle.close)
         except Exception:
@@ -475,250 +581,17 @@ class Coordinator:
         except Exception:
             pass
 
-        if symbol not in self.active_state_machines:
-            # IDLE path: run Phase 1 scanner
-            if not self._accept_new_entries:
-                await self._publish_candle_close(symbol, candle, builder)
-                return
+        instrument_token = self.symbol_to_token.get(symbol, 0)
 
-            if not mkt_calendar.is_market_open():
-                await self._publish_candle_close(symbol, candle, builder)
-                return
+        # Capture the SM before/after routing so the dashboard publish reflects
+        # the correct state even when a strategy closes (and removes) the SM on
+        # this candle (sm_after is None → fall back to the pre-routing reference).
+        sm_before = self.active_state_machines.get(symbol)
+        await self.strategy_router.on_candle(symbol, candle, builder, instrument_token)
+        sm_after = self.active_state_machines.get(symbol)
+        sm_for_publish = sm_after if sm_after is not None else sm_before
 
-            if builder is None:
-                await self._publish_candle_close(symbol, candle, builder)
-                return
-
-            # v3 NEW: Track inter-spike consolidation low for ALL idle candles.
-            # This keeps the SL anchor accurate for any eventual second-spike entry.
-            self.second_spike_detector.update_inter_spike_low(symbol, candle.low)
-
-            # NEW: Track price low for abandoned setups (re-entry system).
-            # Keeps the inter-session low current in case we need re-entry SL.
-            abandoned_setup_tracker.update_low(symbol, candle.low)
-
-            instrument_token = self.symbol_to_token.get(symbol, 0)
-
-            # NEW: Check for re-entry after abandonment FIRST (highest priority idle path).
-            # Re-entry requires a lower volume bar (5x SMA) but the original impact level
-            # must be reclaimed and the candle must be green.
-            if abandoned_setup_tracker.has_record(symbol):
-                volume_sma = builder.volume_sma
-                if volume_sma and volume_sma > 0:
-                    is_re_entry = abandoned_setup_tracker.evaluate(
-                        symbol=symbol,
-                        candle_open=candle.open,
-                        candle_high=candle.high,
-                        candle_low=candle.low,
-                        candle_close=candle.close,
-                        candle_volume=candle.volume,
-                        candle_time=candle.timestamp,
-                        volume_sma=volume_sma,
-                    )
-                    if is_re_entry:
-                        rec = abandoned_setup_tracker.get_impact_data(symbol)
-                        if rec is not None:
-                            await self._handle_re_entry(
-                                symbol=symbol,
-                                instrument_token=instrument_token,
-                                candle=candle,
-                                rec=rec,
-                            )
-                        await self._publish_candle_close(symbol, candle, builder)
-                        return  # Do NOT run second-spike or first-wave scanner
-
-            # v3 NEW: Check for second-spike entry BEFORE running first-wave scanner.
-            # If a prior spike record exists and today's candle meets all 7 conditions,
-            # route directly to the second-spike entry path and skip the normal scanner.
-            if self.second_spike_detector.has_record(symbol):
-                volume_sma = builder.volume_sma
-                if volume_sma and volume_sma > 0:
-                    tick_size = await self._redis.get_tick_size(symbol)
-                    second = self.second_spike_detector.evaluate_second_spike(
-                        symbol=symbol,
-                        candle_close=candle.close,
-                        candle_open=candle.open,
-                        candle_low=candle.low,
-                        candle_volume=candle.volume,
-                        candle_time=candle.timestamp,
-                        volume_sma=volume_sma,
-                        tick_size=tick_size if tick_size else 0.05,
-                    )
-                    if second is not None:
-                        await self._handle_second_spike_entry(second, instrument_token)
-                        await self._publish_candle_close(symbol, candle, builder)
-                        return  # Do NOT run first-wave scanner on this candle
-
-            impact = scanner.evaluate(candle, builder, instrument_token)
-
-            if impact is not None:
-                self._signal_count += 1
-                # v3 NEW: Record this first spike for potential second-spike detection later.
-                self.second_spike_detector.record_first_spike(impact)
-
-                sm = self._create_sm(symbol, instrument_token)
-                self.active_state_machines[symbol] = sm
-                await sm.on_scan_hit(impact)
-
-                # Update signal progression for monitoring
-                if sm._signal_id:
-                    try:
-                        await self._db.update_signal_progression(
-                            sm._signal_id, progressed_to_monitor=True
-                        )
-                    except Exception:
-                        pass
-                await self._publish_candle_close(symbol, candle, builder, sm)
-            else:
-                await self._publish_candle_close(symbol, candle, builder)
-        else:
-            # Non-IDLE path: route to existing SM
-            sm = self.active_state_machines[symbol]
-            await sm.on_candle(
-                candle.open,
-                candle.high,
-                candle.low,
-                candle.close,
-                candle.volume,
-                candle.timestamp,
-            )
-            await self._publish_candle_close(symbol, candle, builder, sm)
-
-            # Cleanup CLOSED SMs
-            if sm.state == StrategyState.CLOSED:
-                del self.active_state_machines[symbol]
-                log.debug("sm_cleaned_up", symbol=symbol)
-
-    def _create_sm(self, symbol: str, instrument_token: int, is_second_spike: bool = False) -> SymbolStateMachine:
-        """
-        Create a SymbolStateMachine with all Phase 4 dependencies wired.
-        Pass is_second_spike=True for second-spike direct entry SMs.
-        """
-        sm = SymbolStateMachine(
-            symbol=symbol,
-            instrument_token=instrument_token,
-            redis_store=self._redis,
-            db_writer=self._db,
-            order_service=self._order_service,
-            order_tracker=self._order_tracker,
-            fill_timeout_manager=self._fill_timeout,
-            is_second_spike=is_second_spike,
-        )
-        # Wire kite client and candle builder for pre-trade checks
-        sm._kite = self._kite  # type: ignore[attr-defined]
-        sm._candle_builder = self.candle_builders.get(symbol)  # type: ignore[attr-defined]
-        return sm
-
-    async def _handle_second_spike_entry(
-        self,
-        second: SecondSpikeEntry,
-        instrument_token: int,
-    ) -> None:
-        """
-        Direct entry path for second-spike signals. (v3 NEW)
-
-        Bypasses the scan -> monitoring -> re-ignition cycle entirely because
-        the inter-spike period already served as the dry-up phase.
-
-        SL = second.stop_loss (= inter_spike_low - 1 tick).
-        All other risk checks still run inside SM._trigger_entry().
-        """
-        symbol = second.symbol
-        prior = second.prior_spike
-
-        # Guard: don't create a second SM if one is already active (race condition)
-        if symbol in self.active_state_machines:
-            log.debug("second_spike_skipped_sm_already_active", symbol=symbol)
-            self.second_spike_detector.clear(symbol)
-            return
-
-        # Create SM pre-loaded with the inter-spike SL — no dry-up phase needed
-        sm = self._create_sm(symbol, instrument_token, is_second_spike=True)
-        sm.set_second_spike_sl(
-            stop_loss=second.stop_loss,
-            prior_spike_time=prior.spike_time,
-            prior_spike_high=prior.spike_high,
-            prior_spike_low=prior.spike_low,
-        )
-        self.active_state_machines[symbol] = sm
-        self._signal_count += 1
-
-        # Trigger entry immediately on the second spike candle's close.
-        # This calls the exact same _trigger_entry() used by the normal path,
-        # so all pre-trade checks, position sizing, and order placement run.
-        await sm._trigger_entry(second.entry_close, second.entry_time)
-
-        # If entry was rejected or SM moved to CLOSED, clean up
-        if sm.state == StrategyState.CLOSED:
-            del self.active_state_machines[symbol]
-
-        # Clear the prior spike record — this symbol has been acted on
-        self.second_spike_detector.clear(symbol)
-
-        log.info(
-            "second_spike_entry_routed",
-            symbol=symbol,
-            entry_close=second.entry_close,
-            stop_loss=second.stop_loss,
-            vol_ratio=round(second.vol_ratio, 2),
-            gap_minutes=round(second.gap_minutes, 1),
-        )
-
-    async def _handle_re_entry(
-        self,
-        symbol: str,
-        instrument_token: int,
-        candle: Candle,
-        rec: AbandonedRecord,
-    ) -> None:
-        """
-        Direct entry path for re-entry after an abandoned setup. (NEW)
-
-        Triggered when an IDLE symbol's candle meets all re-entry conditions
-        (price above impact close, volume ≥ 5x SMA, green candle, ≥15 min gap).
-
-        Uses the original impact candle's swing low as the SL anchor.
-        All other risk checks still run inside SM._trigger_entry().
-        """
-        # Guard: don't create a second SM if one is already active (race condition)
-        if symbol in self.active_state_machines:
-            log.debug("re_entry_skipped_sm_already_active", symbol=symbol)
-            abandoned_setup_tracker.clear(symbol)
-            return
-
-        try:
-            tick_size = await self._redis.get_tick_size(symbol)
-            if not tick_size:
-                tick_size = 0.05
-        except Exception:
-            tick_size = 0.05
-
-        # Create SM pre-loaded with the original impact candle SL
-        sm = self._create_sm(symbol, instrument_token, is_second_spike=False)
-        sm.set_second_spike_sl(
-            stop_loss=round(rec.inter_session_low - tick_size, 2),
-            prior_spike_time=rec.abandon_time,
-            prior_spike_high=rec.impact_candle_high,
-            prior_spike_low=rec.impact_candle_low,
-        )
-        self.active_state_machines[symbol] = sm
-        self._signal_count += 1
-
-        # Trigger entry immediately on this candle's close
-        await sm._trigger_entry(candle.close, candle.timestamp)
-
-        # If entry was rejected, clean up
-        if sm.state == StrategyState.CLOSED:
-            del self.active_state_machines[symbol]
-
-        log.info(
-            "re_entry_routed",
-            symbol=symbol,
-            entry_close=candle.close,
-            original_reason=rec.abandonment_reason,
-            reentry_count=rec.reentry_count,
-            inter_session_low=rec.inter_session_low,
-        )
+        await self._publish_candle_close(symbol, candle, builder, sm_for_publish)
 
 
 
@@ -732,39 +605,24 @@ class Coordinator:
         log.warning("ws_reconnecting_in_progress")
 
     async def on_fatal_disconnect(self) -> None:
-        """Emergency: force squareoff all open positions."""
+        """Emergency: force squareoff all open positions (delegated), set status."""
         log.critical("fatal_ws_disconnect_squaring_off_all")
-        for sm in list(self.active_state_machines.values()):
-            if sm.state == StrategyState.MANAGING:
-                await sm.force_squareoff()
+        await self.strategy_router.on_fatal_disconnect()
         await self._redis.set_engine_status({
             "status": "FATAL_DISCONNECT",
             "timestamp": datetime.datetime.now(IST_TZ).isoformat(),
         })
 
     async def on_market_open(self) -> None:
-        """9:15 AM: Reset all builders for new trading session."""
+        """9:15 AM: Reset all builders, then let strategies reset session state."""
         for builder in self.candle_builders.values():
             builder.reset()
-        # Clear any leftover SMs from previous session
-        self.active_state_machines.clear()
-        # v3: reset second spike detector so stale inter-session spike records
-        # don't incorrectly fire second-spike entries after a restart
-        self.second_spike_detector.end_of_day_reset()
+        await self.strategy_router.on_market_open()
         log.info("market_open_builders_reset", symbol_count=len(self.candle_builders))
 
     async def on_squareoff(self) -> None:
-        """3:20 PM: Force close all active positions."""
-        log.info("squareoff_start", active_sms=len(self.active_state_machines))
-        for sm in list(self.active_state_machines.values()):
-            await sm.force_squareoff()
-        # Clean up closed SMs
-        closed = [s for s, m in self.active_state_machines.items()
-                  if m.state == StrategyState.CLOSED]
-        for s in closed:
-            del self.active_state_machines[s]
-        # v3 NEW: Reset second spike detector at end-of-day
-        self.second_spike_detector.end_of_day_reset()
+        """3:20 PM: Force close all active positions (delegated to strategies)."""
+        await self.strategy_router.on_squareoff()
 
     # ── Order Postback Routing (Phase 4) ────────────────────────────────────
 
@@ -886,6 +744,8 @@ class Coordinator:
         1. MANAGING SMs: check if SL was triggered silently
         2. ACTION_PENDING SMs: check if fill arrived without postback
         """
+        self._reconcile_count += 1
+        self._last_reconcile_at = datetime.datetime.now(IST_TZ).isoformat(timespec="seconds")
         if not self.active_state_machines:
             return
 
@@ -1012,17 +872,21 @@ class Coordinator:
 
     def get_stats(self) -> dict:
         warmed = sum(1 for b in self.candle_builders.values() if b.is_warmed_up)
-        managing = sum(
-            1 for sm in self.active_state_machines.values()
-            if sm.state == StrategyState.MANAGING
-        )
+        combined = self.strategy_router.get_combined_stats()
+        active = managing = signals = 0
+        for s in combined.get("strategies", {}).values():
+            active += s.get("active_state_machines", 0)
+            managing += s.get("managing_positions", 0)
+            signals += s.get("total_signals", 0)
         return {
             "total_builders": len(self.candle_builders),
             "warmed_up": warmed,
             "warming_up": len(self.candle_builders) - warmed,
-            "active_state_machines": len(self.active_state_machines),
+            "active_state_machines": active,
             "managing_positions": managing,
-            "total_signals": self._signal_count,
+            "total_signals": signals,
             "total_ticks": self._tick_count,
             "total_candles": self._candle_count,
+            "reconcile_count": self._reconcile_count,
+            "last_reconcile_at": self._last_reconcile_at,
         }

@@ -55,6 +55,8 @@ from engine.risk.circuit_breaker import circuit_breaker
 from engine.store.db_writer import DbWriter
 from engine.store.redis_store import RedisStore
 from engine.strategy.coordinator import Coordinator
+from engine.core.strategy_router import StrategyRouter
+from engine.strategies.ivbs.strategy import IVBSStrategy
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -68,6 +70,7 @@ _scheduler: AsyncIOScheduler | None = None
 _redis_store: RedisStore | None = None
 _db_writer: DbWriter | None = None
 _universe_tokens: list[int] = []
+_instrument_cache: InstrumentCache | None = None
 _running = True
 _poll_config_task: asyncio.Task | None = None  # stored so it can be cancelled on shutdown
 
@@ -107,7 +110,7 @@ async def job_pre_market_setup() -> None:
       7. Orphan check
       8. Set status PRE_MARKET_READY
     """
-    global _kite_client, _ticker, _universe_tokens
+    global _kite_client, _ticker, _universe_tokens, _instrument_cache
 
     coordinator, redis_store, db_writer = _assert_ready()
     log.info("pre_market_setup_start")
@@ -192,6 +195,7 @@ async def job_pre_market_setup() -> None:
         raw_instruments: list[dict] = await load_instruments_async(_kite_client)
         cache = InstrumentCache()
         cache.load(raw_instruments)
+        _instrument_cache = cache  # exposed for watchlist hot-reload in _poll_config
         universe = cache.filter_to_universe(
             raw_symbols,
             min_price=settings.MIN_PRICE,
@@ -593,6 +597,7 @@ async def _poll_config() -> None:
     Exceptions are logged at WARNING (not silently swallowed at DEBUG) so bugs
     are visible; the loop always continues via the finally-sleep.
     """
+    global _universe_tokens
     while True:
         try:
             if _redis_store is not None:
@@ -610,6 +615,36 @@ async def _poll_config() -> None:
                     asyncio.create_task(
                         job_pre_market_setup(),
                         name="reinit_pre_market_setup",
+                    )
+
+                # Pending watchlist edit (from dashboard) — hot-reload builders + WS subscription
+                pending_wl = await _redis_store.consume_pending_watchlist()
+                if pending_wl is not None and _coordinator is not None:
+                    resolve = (
+                        _instrument_cache.get_by_symbol
+                        if _instrument_cache is not None
+                        else (lambda _s: None)
+                    )
+                    added, removed = _coordinator.apply_watchlist(
+                        pending_wl, resolve, sma_period=settings.VOLUME_SMA_PERIOD
+                    )
+                    _universe_tokens = list(_coordinator.token_to_symbol.keys())
+                    if added:
+                        added_syms = [
+                            _coordinator.token_to_symbol[t]
+                            for t in added
+                            if t in _coordinator.token_to_symbol
+                        ]
+                        await _coordinator.warm_builders(added_syms)
+                        if _ticker is not None:
+                            _ticker.add_tokens(added)
+                    if removed and _ticker is not None:
+                        _ticker.remove_tokens(removed)
+                    log.info(
+                        "watchlist_hot_reloaded",
+                        added=len(added),
+                        removed=len(removed),
+                        universe_size=len(_universe_tokens),
                     )
 
                 # Sync TRADE_MODE override from Redis → settings (changed via dashboard)
@@ -687,12 +722,47 @@ async def main() -> None:
     # ── DB Writer ─────────────────────────────────────────────────────────────
     _db_writer = DbWriter()
 
-    # ── Coordinator (without kite deps — wired in job_pre_market_setup) ───────
-    _coordinator = Coordinator(_redis_store, _db_writer)
+    # ── Strategy plugins ─────────────────────────────────────────────
+    # Register strategies here. Adding a new strategy (equity, F&O, ...) is a
+    # one-line change — no coordinator or engine-core modification required.
+    _strategy_router = StrategyRouter()
+    _enabled_ids = {s.strip().lower() for s in settings.ENABLED_STRATEGIES.split(",") if s.strip()}
+    if "ivbs" in _enabled_ids:
+        _strategy_router.register(IVBSStrategy("ivbs", _redis_store, _db_writer))
+
+    # Optional F&O strategies — opt-in via engine/strategies/<id>/config.yaml `enabled`.
+    # NOTE: when enabled, live operation also requires the pre-market NFO chain load
+    # + option/underlying token subscription + underlying-candle routing (Phase 5
+    # live wiring). Validate in PAPER mode first.
+    from engine.core.strategy_config import load_strategy_config
+    if "options_momentum" in _enabled_ids and load_strategy_config("options_momentum").get("enabled"):
+        from engine.strategies.options_momentum.strategy import OptionsMomentumStrategy
+        _strategy_router.register(
+            OptionsMomentumStrategy("options_momentum", _redis_store, _db_writer)
+        )
+        log.warning(
+            "options_momentum_registered_live_data_wiring_pending",
+            note="ensure NFO chain load + option/underlying subscription before live use",
+        )
+
+    if not _strategy_router.strategies:
+        log.warning(
+            "no_strategies_enabled",
+            enabled=sorted(_enabled_ids),
+            note="ENABLED_STRATEGIES matched no registered strategy - engine will not scan",
+        )
+    log.info("strategies_registered", ids=_strategy_router.strategy_ids)
+    await _redis_store.set_active_strategies(_strategy_router.strategy_ids)
+
+    # ── Coordinator (without kite deps — wired in job_pre_market_setup) ───
+    _coordinator = Coordinator(_redis_store, _db_writer, strategy_router=_strategy_router)
 
 
     # ── APScheduler ──────────────────────────────────────────────────────────
-    _scheduler = AsyncIOScheduler(timezone=IST_TZ)
+    _scheduler = AsyncIOScheduler(
+        timezone=IST_TZ,
+        job_defaults={"misfire_grace_time": 300, "coalesce": True, "max_instances": 1},
+    )
 
     _scheduler.add_job(
         job_pre_market_setup, "cron", hour=9, minute=0,

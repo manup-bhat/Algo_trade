@@ -43,7 +43,7 @@ async def test_new_entries_gate_blocks_scanner_evaluation(redis_store, mock_db):
     coord.initialize_builders(universe, sma_period=500)
     coord.set_new_entries_enabled(False)
 
-    with patch("engine.strategy.coordinator.scanner.evaluate") as mock_eval:
+    with patch("engine.strategies.ivbs.strategy.scanner.evaluate") as mock_eval:
         await coord._on_candle_complete("TEST", _make_candle("TEST"))
 
     mock_eval.assert_not_called()
@@ -65,8 +65,8 @@ async def test_new_entries_gate_enabled_allows_scanner(redis_store, mock_db):
     coord.initialize_builders(universe, sma_period=500)
     coord.set_new_entries_enabled(True)
 
-    with patch("engine.strategy.coordinator.mkt_calendar.is_market_open", return_value=True), \
-         patch("engine.strategy.coordinator.scanner.evaluate", return_value=None) as mock_eval:
+    with patch("engine.strategies.ivbs.strategy.mkt_calendar.is_market_open", return_value=True), \
+         patch("engine.strategies.ivbs.strategy.scanner.evaluate", return_value=None) as mock_eval:
         await coord._on_candle_complete("TEST", _make_candle("TEST"))
 
     assert mock_eval.call_count == 1

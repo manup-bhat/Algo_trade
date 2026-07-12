@@ -300,21 +300,35 @@ async def get_positions():
 
 # ── /signals (legacy) ───────────────────────────────────────────────────────────
 
+def _norm_strategy(strategy_id: str | None) -> str | None:
+    """Normalize a ?strategy_id= filter. Returns None for blank/'all' (no filter)."""
+    if not strategy_id:
+        return None
+    s = strategy_id.strip().lower()
+    return None if (not s or s == "all") else s
+
+
 @router.get("/signals")
-async def get_signals():
+async def get_signals(strategy_id: str | None = None):
     try:
         from sqlalchemy import text
         today = _today_ist()
         engine = _get_db_engine()
+        where = ["date(signal_time) = :today"]
+        params: dict[str, Any] = {"today": today}
+        sid = _norm_strategy(strategy_id)
+        if sid:
+            where.append("strategy_id = :sid")
+            params["sid"] = sid
         async with engine.connect() as conn:
             result = await conn.execute(text(
-                "SELECT symbol, signal_time AS candle_time, "
+                "SELECT strategy_id, symbol, signal_time AS candle_time, "
                 "  volume_spike_multiple AS spike_multiple, "
                 "  impact_candle_close AS entry_price, created_at "
                 "FROM signals "
-                "WHERE date(signal_time) = :today "
+                "WHERE " + " AND ".join(where) + " "
                 "ORDER BY created_at DESC LIMIT 50"
-            ), {"today": today})
+            ), params)
             rows = [dict(r._mapping) for r in result]
         return {"signals": rows, "count": len(rows)}
     except Exception as exc:
@@ -325,17 +339,23 @@ async def get_signals():
 # ── /scanner ─────────────────────────────────────────────────────────────────────
 
 @router.get("/scanner")
-async def get_scanner():
+async def get_scanner(strategy_id: str | None = None):
     from sqlalchemy import text
     rs = _rs()
     today = _today_ist()
     rows = []
 
+    where = ["date(signal_time) = :today"]
+    params: dict[str, Any] = {"today": today}
+    sid = _norm_strategy(strategy_id)
+    if sid:
+        where.append("strategy_id = :sid")
+        params["sid"] = sid
     try:
         engine = _get_db_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text(
-                "SELECT symbol, signal_time, "
+                "SELECT strategy_id, symbol, signal_time, "
                 "  impact_candle_open AS open, "
                 "  volume_spike_multiple AS spike_multiple, "
                 "  impact_candle_close AS close, "
@@ -346,9 +366,9 @@ async def get_scanner():
                 "  progressed_to_monitor, progressed_to_action, resulted_in_trade, "
                 "  abandonment_reason, created_at "
                 "FROM signals "
-                "WHERE date(signal_time) = :today "
+                "WHERE " + " AND ".join(where) + " "
                 "ORDER BY signal_time DESC LIMIT 100"
-            ), {"today": today})
+            ), params)
             rows = [dict(r._mapping) for r in result]
     except Exception as exc:
         log.debug("scanner_db_query_failed", error=str(exc))
@@ -388,20 +408,26 @@ async def get_scanner():
 # ── /orders ──────────────────────────────────────────────────────────────────────
 
 @router.get("/orders")
-async def get_orders():
+async def get_orders(strategy_id: str | None = None):
     try:
         from sqlalchemy import text
         today = _today_ist()
         engine = _get_db_engine()
+        where = ["date(event_time) = :today"]
+        params: dict[str, Any] = {"today": today}
+        sid = _norm_strategy(strategy_id)
+        if sid:
+            where.append("strategy_id = :sid")
+            params["sid"] = sid
         async with engine.connect() as conn:
             result = await conn.execute(text(
-                "SELECT order_id, symbol, event_type AS order_type, "
+                "SELECT strategy_id, order_id, symbol, event_type AS order_type, "
                 "  status, average_price AS avg_price, quantity, "
                 "  status_message AS reason, event_time AS timestamp "
                 "FROM order_events "
-                "WHERE date(event_time) = :today "
+                "WHERE " + " AND ".join(where) + " "
                 "ORDER BY event_time DESC LIMIT 100"
-            ), {"today": today})
+            ), params)
             rows = [dict(r._mapping) for r in result]
         return {"orders": rows, "count": len(rows)}
     except Exception as exc:
@@ -412,22 +438,28 @@ async def get_orders():
 # ── /trades ───────────────────────────────────────────────────────────────────────
 
 @router.get("/trades")
-async def get_trades():
+async def get_trades(strategy_id: str | None = None):
     try:
         from sqlalchemy import text
         today = _today_ist()
         engine = _get_db_engine()
+        where = ["date(entry_time) = :today"]
+        params: dict[str, Any] = {"today": today}
+        sid = _norm_strategy(strategy_id)
+        if sid:
+            where.append("strategy_id = :sid")
+            params["sid"] = sid
         async with engine.connect() as conn:
             result = await conn.execute(text(
-                "SELECT symbol, entry_time, entry_price, exit_time, exit_price, "
+                "SELECT strategy_id, symbol, entry_time, entry_price, exit_time, exit_price, "
                 "  quantity, initial_stop_loss, current_stop_loss, risk_per_share, "
                 "  risk_amount, target_1r2, target_1r4, gross_pnl, net_pnl, "
                 "  brokerage, stt, other_charges, cost_trailed, profit_locked, "
                 "  status, notes "
                 "FROM trades "
-                "WHERE date(entry_time) = :today "
+                "WHERE " + " AND ".join(where) + " "
                 "ORDER BY exit_time DESC"
-            ), {"today": today})
+            ), params)
             rows = [dict(r._mapping) for r in result]
         total_net = sum(r.get("net_pnl") or 0 for r in rows)
         wins = sum(1 for r in rows if (r.get("net_pnl") or 0) > 0)
@@ -443,7 +475,146 @@ async def get_trades():
                 "wins": 0, "losses": 0, "win_rate": 0.0}
 
 
-# ── /circuit_breaker ─────────────────────────────────────────────────────────────
+# ── /analytics — strategy performance from recorded trades ─────────────────
+def _compute_trade_analytics(rows: list[dict]) -> dict[str, Any]:
+    """Aggregate closed-trade rows into strategy performance metrics.
+
+    Reuses engine.backtest.metrics.compute_metrics for the core stats (win rate,
+    profit factor, expectancy, max drawdown, Sharpe) and adds R-multiple + charges
+    context. Pure — unit-tested independently of the DB.
+    """
+    import statistics
+
+    from engine.backtest.metrics import compute_metrics
+
+    pnls = [float(r.get("net_pnl") or 0.0) for r in rows]
+    metrics = compute_metrics(pnls)
+
+    r_multiples = [
+        float(r["net_pnl"]) / float(r["risk_amount"])
+        for r in rows
+        if r.get("risk_amount") and float(r["risk_amount"]) > 0 and r.get("net_pnl") is not None
+    ]
+    by_mode: dict[str, int] = {}
+    for r in rows:
+        m = r.get("trade_mode") or "UNKNOWN"
+        by_mode[m] = by_mode.get(m, 0) + 1
+
+    metrics["avg_r_multiple"] = round(statistics.mean(r_multiples), 3) if r_multiples else 0.0
+    metrics["total_charges"] = round(sum(float(r.get("charges") or 0.0) for r in rows), 2)
+    metrics["trades_by_mode"] = by_mode
+    metrics["win_rate_pct"] = round(metrics["win_rate"] * 100, 1)
+    return metrics
+
+
+@router.get("/analytics")
+async def get_analytics(mode: str = "ALL", days: int = 30, strategy_id: str | None = None):
+    """Strategy performance from CLOSED trades. mode = ALL|PAPER|LIVE; days = lookback.
+
+    SIMULTANEOUS entries are stored as their resolved PAPER/LIVE mode, so a PAPER
+    filter captures paper entries even when the engine runs in simultaneous mode.
+    """
+    mode = (mode or "ALL").strip().upper()
+    if mode not in {"ALL", "PAPER", "LIVE", "SIMULTANEOUS"}:
+        mode = "ALL"
+    try:
+        days = max(1, min(int(days), 365))
+    except (TypeError, ValueError):
+        days = 30
+    try:
+        from sqlalchemy import text
+        engine = _get_db_engine()
+        where = [
+            "exit_time IS NOT NULL",
+            "net_pnl IS NOT NULL",
+            f"date(entry_time) >= date('now', '-{days} days')",
+        ]
+        params: dict[str, Any] = {}
+        if mode != "ALL":
+            where.append("trade_mode = :mode")
+            params["mode"] = mode
+        sid = _norm_strategy(strategy_id)
+        if sid:
+            where.append("strategy_id = :sid")
+            params["sid"] = sid
+        sql = (
+            "SELECT net_pnl, risk_amount, trade_mode, status, "
+            "  (COALESCE(brokerage,0)+COALESCE(stt,0)+COALESCE(other_charges,0)) AS charges "
+            "FROM trades WHERE " + " AND ".join(where) + " ORDER BY exit_time"
+        )
+        async with engine.connect() as conn:
+            result = await conn.execute(text(sql), params)
+            rows = [dict(r._mapping) for r in result]
+        data = _compute_trade_analytics(rows)
+        data.update({"mode": mode, "days": days, "strategy_id": sid or "all"})
+        return data
+    except Exception as exc:
+        log.debug("dashboard_analytics_not_available", error=str(exc))
+        return {**_compute_trade_analytics([]), "mode": mode, "days": days}
+
+
+@router.get("/strategies")
+async def get_strategies():
+    """List strategy ids the engine currently has registered (published to Redis
+    at startup). Powers the dashboard's strategy selector/filter. Falls back to
+    ['ivbs'] when the engine hasn't published yet."""
+    rs = _rs()
+    ids: list[str] = []
+    if rs is not None:
+        try:
+            ids = await rs.get_active_strategies()
+        except Exception as exc:
+            log.debug("dashboard_strategies_not_available", error=str(exc))
+    if not ids:
+        ids = ["ivbs"]
+    return {"strategies": ids, "count": len(ids)}
+
+
+def _rows_to_csv(rows: list[dict]) -> str:
+    """Serialize dict rows to CSV text (header taken from the first row). Pure."""
+    import csv as _csv
+    import io as _io
+    buf = _io.StringIO()
+    if rows:
+        writer = _csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    return buf.getvalue()
+
+
+_EXPORT_TABLES = {
+    "trades":  ("trades", "entry_time"),
+    "orders":  ("order_events", "event_time"),
+    "journal": ("daily_pnl", "trade_date"),
+}
+
+
+@router.get("/export/{kind}.csv")
+async def export_csv(kind: str):
+    """Download trades / orders / journal as a CSV file (full history)."""
+    kind = (kind or "").lower()
+    if kind not in _EXPORT_TABLES:
+        raise HTTPException(status_code=404, detail=f"Unknown export kind: {kind}")
+    table, order_col = _EXPORT_TABLES[kind]  # fixed mapping (no SQL injection)
+    rows: list[dict] = []
+    try:
+        from sqlalchemy import text
+        engine = _get_db_engine()
+        async with engine.connect() as conn:
+            result = await conn.execute(text(f"SELECT * FROM {table} ORDER BY {order_col} DESC"))
+            rows = [dict(r._mapping) for r in result]
+    except Exception as exc:
+        log.warning("csv_export_query_failed", kind=kind, error=str(exc))
+    from fastapi.responses import StreamingResponse
+    filename = f"ivbs_{kind}_{_today_ist()}.csv"
+    return StreamingResponse(
+        iter([_rows_to_csv(rows)]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── /circuit_breaker ──────────────────────────────────────────────────────────────
 
 @router.get("/circuit_breaker")
 async def get_circuit_breaker():
@@ -1123,6 +1294,19 @@ async def add_universe_symbols(payload: UniverseSymbolsPayload):
         except Exception as exc:
             log.warning("universe_redis_update_failed", error=str(exc))
 
+        # ── 5b. Hot-reload the running engine (separate subprocess) via Redis ──
+        # The engine runs as a child process, so the in-process ticker/coordinator
+        # calls above are no-ops here. This signal is consumed by the engine's
+        # _poll_config loop, which reconciles live CandleBuilders + WS subscription
+        # without a restart. We send the FULL resulting universe (the engine does
+        # a full reconcile, protecting symbols with active positions/setups).
+        try:
+            full_universe = load_universe()
+            await rs.set_pending_watchlist(full_universe)
+            log.info("watchlist_hot_reload_signalled", full_count=len(full_universe))
+        except Exception as exc:
+            log.warning("watchlist_signal_failed", error=str(exc))
+
     # ── 6. Kick off SMA warmup in background for new symbols ─────────────────
     try:
         from engine import runner as _runner
@@ -1239,6 +1423,20 @@ async def remove_universe_symbols(payload: UniverseSymbolsPayload):
                 log.info("universe_symbols_unsubscribed", tokens=tokens_to_unsub)
     except Exception as exc:
         log.warning("universe_unsubscribe_failed", error=str(exc))
+
+    # ── 4. Hot-reload the running engine subprocess via Redis IPC ────────────
+    # (The in-process unsubscribe above is a no-op across the process boundary;
+    #  the engine's _poll_config loop reconciles from this full-universe signal
+    #  and will NOT drop a symbol that still has an active position/setup.)
+    rs = _rs()
+    if rs is not None:
+        try:
+            from engine.market.universe import load_universe
+            full_universe = load_universe()
+            await rs.set_pending_watchlist(full_universe)
+            log.info("watchlist_hot_reload_signalled", full_count=len(full_universe))
+        except Exception as exc:
+            log.warning("watchlist_signal_failed", error=str(exc))
 
     await broadcast({
         "event": "universe_updated",

@@ -158,5 +158,14 @@ async def load_instruments_async(kite_client: object) -> list[dict]:
     return raw
 
 
+async def load_fno_instruments_async(kite_client: object) -> list[dict]:
+    """
+    Fetch the NFO (NSE F&O) instrument dump asynchronously — futures & options.
+    Fed to engine.market.option_chain.OptionChainResolver.load() by F&O strategies.
+    """
+    raw: list[dict] = await kite_client.instruments("NFO")  # type: ignore[attr-defined]
+    return raw
+
+
 # Module-level singleton — populated during pre-market setup
 instrument_cache = InstrumentCache()

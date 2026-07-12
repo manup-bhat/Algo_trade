@@ -130,6 +130,7 @@ class OpenPosition:
     _exit_initiated: bool = False
     max_favorable_excursion: float | None = None
     max_adverse_excursion: float | None = None
+    highest_price: float = 0.0   # v4: peak LTP since entry (Chandelier trailing anchor)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -182,9 +183,11 @@ class SymbolStateMachine:
         order_tracker: "OrderTracker | None" = None,
         fill_timeout_manager: "FillTimeoutManager | None" = None,
         is_second_spike: bool = False,
+        strategy_id: str = "ivbs",
     ) -> None:
         self.symbol = symbol
         self.instrument_token = instrument_token
+        self.strategy_id = strategy_id
         self._redis = redis_store
         self._db = db_writer
         self._order_service = order_service
@@ -203,6 +206,7 @@ class SymbolStateMachine:
         self._trade_mode: str = "PAPER"
         self._entry_count: int = 0
         self._is_paper_entry: bool = False
+        self._fill_in_progress: bool = False  # idempotency guard for on_order_filled
 
     # ── Phase 1: Scan Hit ─────────────────────────────────────────────────────
 
@@ -258,6 +262,7 @@ class SymbolStateMachine:
                 impact_turnover=impact_candle.turnover,
                 volume_sma_500=impact_candle.volume_sma_500,
                 volume_spike_multiple=impact_candle.spike_multiple,
+                strategy_id=self.strategy_id,
             )
             
             # Log the impact snapshot
@@ -497,7 +502,17 @@ class SymbolStateMachine:
                 is_green = c > o
                 is_before_cutoff = candle_time.time() < settings.max_entry_time
 
-                if is_volume_spike and is_price_breakout and is_green and is_before_cutoff:
+                # v4: optional VWAP confirmation — require close >= session VWAP
+                # (institutional demand anchor). No-op unless enabled + builder present.
+                _builder = getattr(self, "_candle_builder", None)
+                _vwap = (
+                    _builder.vwap
+                    if (settings.VWAP_ENTRY_FILTER_ENABLED and _builder is not None)
+                    else None
+                )
+                is_vwap_ok = _vwap is None or c >= _vwap
+
+                if is_volume_spike and is_price_breakout and is_green and is_before_cutoff and is_vwap_ok:
                     log.info(
                         "reignition_detected",
                         symbol=self.symbol,
@@ -881,6 +896,18 @@ class SymbolStateMachine:
             )
             return
 
+        # Idempotency guard: claim the fill synchronously (before any await) so a
+        # duplicate/racing postback or reconciliation cannot double-place the SL
+        # order or double-block margin (spec §12.2 hardening).
+        if self.position is not None or self._fill_in_progress:
+            log.warning(
+                "fill_already_processed",
+                symbol=self.symbol,
+                order_id=order_id,
+            )
+            return
+        self._fill_in_progress = True
+
         # Cancel fill timeout — order arrived
         if self._fill_timeout is not None:
             self._fill_timeout.cancel_timeout(order_id)
@@ -976,6 +1003,7 @@ class SymbolStateMachine:
                 target_1r4=target_1r4,
                 sl_order_id=sl_order_id,
                 trade_mode=self._trade_mode,
+                strategy_id=self.strategy_id,
             )
         except Exception as exc:
             log.error("trade_db_write_failed", symbol=self.symbol, error=str(exc))
@@ -995,6 +1023,7 @@ class SymbolStateMachine:
             entry_order_id=order_id,
             sl_order_id=sl_order_id,
             margin_blocked=margin_blocked,
+            highest_price=fill_price,
         )
 
         self.state = StrategyState.MANAGING
@@ -1122,6 +1151,10 @@ class SymbolStateMachine:
         if pos.max_adverse_excursion is None or unrealized < pos.max_adverse_excursion:
             pos.max_adverse_excursion = unrealized
 
+        # v4: track peak price since entry for Chandelier trailing
+        if ltp > pos.highest_price:
+            pos.highest_price = ltp
+
         # ── Paper mode SL check ───────────────────────────────────────
         if self._is_paper_entry and ltp <= pos.current_sl and not pos._exit_initiated:
             reason = "CLOSED_TRAILSTOP" if pos.cost_trailed else "CLOSED_STOPLOSS"
@@ -1192,6 +1225,38 @@ class SymbolStateMachine:
                 pass
 
         # ── Full exit at 1:4 ─────────────────────────────────────────
+        # v4: Chandelier ATR trailing (opt-in; only after breakeven). Ratchets
+        # the stop UP toward price by (highest_price - k x ATR). Never loosens,
+        # never sits at/above LTP. Coexists with the fixed 1:4 hard target.
+        if (
+            settings.DYNAMIC_TRAILING_ENABLED
+            and pos.cost_trailed
+            and not pos._exit_initiated
+        ):
+            _b = getattr(self, "_candle_builder", None)
+            _atr = _b.atr if _b is not None else None
+            if _atr:
+                chandelier_sl = round(pos.highest_price - settings.ATR_TRAIL_MULTIPLIER * _atr, 2)
+                if chandelier_sl > pos.current_sl and chandelier_sl < ltp:
+                    pos.current_sl = chandelier_sl
+                    log.info(
+                        "sl_trailed_chandelier",
+                        symbol=self.symbol,
+                        ltp=ltp,
+                        atr=round(_atr, 2),
+                        new_sl=chandelier_sl,
+                    )
+                    if not self._is_paper_entry and self._order_service and pos.sl_order_id:
+                        ok = await self._order_service.modify_stop_loss(
+                            pos.sl_order_id, new_trigger=chandelier_sl, symbol=self.symbol, sm=self
+                        )
+                        if not ok:
+                            log.warning("sl_chandelier_modify_failed", symbol=self.symbol)
+                    try:
+                        await self._redis.set_position(self.symbol, pos.to_dict())
+                    except Exception:
+                        pass
+
         if ltp >= pos.target_1r4 and not pos._exit_initiated:
             log.info(
                 "target_1r4_reached",

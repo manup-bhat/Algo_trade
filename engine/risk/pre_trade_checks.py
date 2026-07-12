@@ -78,12 +78,12 @@ class PreTradeChecks:
             return False, f"max_concurrent_positions:{managing_count}>={settings.MAX_CONCURRENT_POSITIONS}"
 
         # ── Check 3: Market open ──────────────────────────────────────
-        if not mkt_calendar.is_market_open():
+        if not settings.BACKTEST_MODE and not mkt_calendar.is_market_open():
             return False, "market_closed"
 
         # ── Check 4: Entry cutoff ─────────────────────────────────────
         now_ist = datetime.datetime.now(IST_TZ)
-        if now_ist.time() >= settings.max_entry_time:
+        if not settings.BACKTEST_MODE and now_ist.time() >= settings.max_entry_time:
             return False, "after_entry_cutoff"
 
         # ── Check 5: Risk per share minimum ───────────────────────────

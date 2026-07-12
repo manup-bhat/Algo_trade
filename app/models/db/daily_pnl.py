@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, Text
+from sqlalchemy import Date, DateTime, Float, Integer, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -16,6 +16,9 @@ class DailyPnl(Base):
     __tablename__ = "daily_pnl"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strategy_id: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'ivbs'"), default="ivbs"
+    )
     trade_date: Mapped[datetime.date] = mapped_column(Date, nullable=False, unique=True)
     total_capital: Mapped[float] = mapped_column(Float, nullable=False)
 

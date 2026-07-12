@@ -127,6 +127,34 @@ class AsyncKiteTicker:
         self._ticker.unsubscribe(tokens)
         log.info("kite_ticker_unsubscribed", count=len(tokens))
 
+    def add_tokens(self, tokens: list[int]) -> None:
+        """Incrementally subscribe to new tokens (QUOTE mode) for a hot watchlist add.
+
+        Unlike ``subscribe`` (which replaces the tracked token set), this appends
+        to ``_subscribed_tokens`` so an in-session watchlist edit does not drop
+        existing subscriptions.
+        """
+        current = list(getattr(self, "_subscribed_tokens", []) or [])
+        new = [t for t in tokens if t not in current]
+        if not new:
+            return
+        self._subscribed_tokens = current + new
+        if self._ticker is not None:
+            self._ticker.subscribe(new)
+            self._ticker.set_mode(MODE_QUOTE, new)
+        log.info("kite_ticker_tokens_added", added=len(new))
+
+    def remove_tokens(self, tokens: list[int]) -> None:
+        """Incrementally unsubscribe tokens for a hot watchlist removal."""
+        drop = set(tokens)
+        if not drop:
+            return
+        current = list(getattr(self, "_subscribed_tokens", []) or [])
+        self._subscribed_tokens = [t for t in current if t not in drop]
+        if self._ticker is not None:
+            self._ticker.unsubscribe(list(drop))
+        log.info("kite_ticker_tokens_removed", removed=len(drop))
+
     # ── KiteTicker callbacks (all run on background thread) ───────────────
     # Rule: NEVER do async work here. Always use _dispatch().
 

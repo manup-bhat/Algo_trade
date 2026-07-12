@@ -318,7 +318,7 @@ trading_bot/
     ├── conftest.py                   ← Shared fixtures: FakeRedis, mock KiteConnect, test DB
     ├── unit/
     │   ├── test_candle_builder.py    ← Tick accumulation, reconnect handling, SMA calculation
-    │   ├── test_scanner.py           ← Filter validation at exact boundaries (10x, 20x, 8Cr)
+    │   ├── test_scanner.py           ← Filter validation at exact boundaries (15x, 8Cr, price)
     │   ├── test_state_machine.py     ← All state transitions, Bug 1+2 regression tests
     │   ├── test_position_sizer.py    ← 1% rule, zero-risk edge case, minimum quantity
     │   ├── test_circuit_breaker.py   ← Trip at 3%, reset on new day
@@ -710,7 +710,7 @@ reset_cumulative_baseline():
 
 **9:15 AM opening candle handling:** The first candle of the day (9:15 AM) will show cumulative volume from 0. The pre-open session (9:00–9:15 AM) may or may not contribute to cumulative volume depending on how Kite delivers it. The CandleBuilder must be fully reset at 9:15 AM by the coordinator's `on_market_open()` handler. This means calling `reset()` on every builder to clear the current candle state and start fresh.
 
-**Important:** The 9:15 AM opening candle almost always has very high volume due to pre-open order matching. This candle WILL trigger the 20x scanner filter for many stocks almost every day. The scanner's `volume_sma` will return None for the first 500 candles after engine start (or after SMA history is loaded), so this is handled correctly — no false signals on day 1 of a fresh start. On subsequent days with loaded SMA history, the 9:15 candle volume will be compared against the historical SMA and may legitimately spike 20x+. This is expected and desired — institutions do trade heavily at open. The dry-up filter will then determine if it's a real accumulation setup.
+**Important:** The 9:15 AM opening candle almost always has very high volume due to pre-open order matching. This candle WILL trigger the 15× volume-spike scanner filter for many stocks almost every day. The scanner's `volume_sma` will return None for the first 500 candles after engine start (or after SMA history is loaded), so this is handled correctly — no false signals on day 1 of a fresh start. On subsequent days with loaded SMA history, the 9:15 candle volume will be compared against the historical SMA and may legitimately spike 20x+. This is expected and desired — institutions do trade heavily at open. The dry-up filter will then determine if it's a real accumulation setup.
 
 ### 7.6 engine/market/calendar.py
 **Purpose:** Determine if the market is currently open.
@@ -1516,7 +1516,7 @@ All must pass; fail on first failure:
    → Failure: "market_closed"
 
 4. Before entry cutoff time
-   now_IST.time() < MAX_ENTRY_TIME (14:00)
+   now_IST.time() < MAX_ENTRY_TIME (13:30)
    → Failure: "after_entry_cutoff"
 
 5. Risk per share above minimum
@@ -1686,8 +1686,8 @@ P&L in paper mode:
 - Volume SMA is correct mean of last 500 candles
 
 **test_scanner.py (boundary conditions):**
-- volume = 20x SMA exactly → PASS (boundary inclusive)
-- volume = 19.9x SMA → FAIL
+- volume = 15x SMA exactly → PASS (boundary inclusive)
+- volume = 14.9x SMA → FAIL
 - turnover = ₹8,00,00,000 exactly → PASS
 - turnover = ₹7,99,99,999 → FAIL
 - close = open × 0.995 exactly → PASS (flat candle)
@@ -1983,6 +1983,159 @@ Build in this order to maintain a testable, deployable state at every phase:
 32. Maximum 1 concurrent position for first 2 weeks
 33. Review every trade log manually for first month
 34. After 50+ trades: recalibrate Group D config values based on actual data
+
+---
+
+## PART 21: STRATEGY VALIDATION ADDENDUM & v3/v4 ENHANCEMENTS
+
+> Added 2026-07-11 after a full pipeline audit + web research. This part records
+> (a) evidence that the strategy is structurally sound, (b) the honest test status,
+> (c) the v3 features actually implemented beyond the original 4-phase spec, and
+> (d) the new v4 volatility-adaptive improvements. Where this part conflicts with
+> earlier narrative, this part is authoritative.
+
+### 21.1 Is IVBS a *sound* strategy? — Evidence-based verdict
+
+**Verdict: structurally sound with a real microstructure rationale; edge is
+unproven for retail after costs and MUST be validated empirically (backtest +
+paper) before scaling. The strategy is coherent, not arbitrary.**
+
+Web-researched facts that *support* the design:
+- **Volume confirms breakouts.** Breakouts on high *relative* volume "show
+  conviction and interest, and therefore the price is more likely to continue";
+  "breakouts on low relative volume are more prone to failure" (Investopedia,
+  *Breakout*). IVBS's 15× volume filter is exactly this relative-volume conviction test.
+- **False breakouts are the #1 breakout risk**, and "even after a high-volume
+  breakout, the price will often retrace to the breakout point before moving in
+  the breakout direction again" (Investopedia, *Breakout*). IVBS mitigates this
+  precisely: it does NOT buy the first spike — it waits through the retrace
+  (the **dry-up / consolidation**) and enters on the confirmed **re-ignition**
+  (second leg). This is the documented way to avoid fakeouts.
+- **Wyckoff accumulation** (spring → secondary test → sign-of-strength / LPS) is
+  the classical framing of "impulse → low-volume re-test → renewed buying." The
+  IVBS dry-up→re-ignition and the re-entry tracker are direct implementations.
+- **Institutional order flow is detectable via volume** (market microstructure:
+  Kyle 1985 price-impact λ; institutions leg into positions in tranches — Keim &
+  Madhavan 1995). The two-spike / secondary-test logic is consistent with this.
+
+Honest caveats (documented, not hidden):
+- No academic result guarantees a *retail* edge net of costs/slippage. Section 19
+  shows break-even ≈ 20–21.5% win rate after costs+slippage; **slippage, not
+  fees, is the dominant risk.**
+- Parameters (15×, ₹8Cr, 2.0× re-ignition, 1:4) risk **overfitting** — they must
+  be validated on out-of-sample data and re-reviewed after 50+ live trades (Part 18).
+- Fixed **1:4** is a deliberate, defensible choice (institutional intraday moves
+  rarely run >4R same session); v4 adds an *optional* volatility-adaptive trail.
+
+### 21.2 Implementation status vs. this spec (v3 — already built)
+
+The live code implements the 4 phases **plus** these enhancements (config-driven):
+| Feature | Config keys | Notes |
+|---|---|---|
+| **Re-entry after abandonment** (Wyckoff secondary test) | `RE_ENTRY_ENABLED`, `RE_ENTRY_MIN_GAP_MINUTES=15`, `RE_ENTRY_VOLUME_MULTIPLE=5.0`, `RE_ENTRY_MAX_PER_SYMBOL=2` | Re-watches discarded symbols all day; lower 5× bar; excludes `price_broke_impact_low`; caps churn. `engine/strategy/abandoned_setup_tracker.py`. |
+| **Second-spike direct entry** (Path B) | `SECOND_SPIKE_*` | `engine/strategy/second_spike_detector.py`. |
+| **Re-ignition absolute floor** | `REIGNITION_MIN_PCT_OF_IMPACT=0.08` | Prevents noise above a tiny dry-up baseline triggering entry. |
+| **Institutional exit-pressure abandon** | `ASHAPE_IMPACT_VOLUME_PCT=0.70` | Abandon if a dry-up candle's volume ≥ 70% of the impact volume. |
+| **Nifty market-direction gate** | `NIFTY_GATE_ENABLED`, `NIFTY_EMA_PERIOD=20` | Blocks entries when Nifty < 20-EMA (5-min). |
+| **High-VIX turnover raise** | `HIGH_VIX_THRESHOLD=18`, `HIGH_VIX_TURNOVER_CRORE=12` | Raises the turnover floor in volatile regimes. |
+| **Late-session scan cutoff** | `SCAN_CUTOFF_HOUR=14` | No new scan hits after 14:00 IST. |
+| **LIVE approval flow** | `TRADE_MODE` (PAPER/LIVE/SIMULTANEOUS), `APPROVAL_TIMEOUT_SECONDS=60` | LIVE entries hold for trader approval. |
+| **Historical warmup** | `HISTORICAL_WARMUP_*` | Builds 500-SMA from Kite history on (even late) startup. |
+
+**Entry cutoff is `MAX_ENTRY_TIME = 13:30`** (not 14:00). `SCAN_CUTOFF_HOUR = 14`
+is a separate, later scan-hit guard. (Earlier text that said "14:00" for the
+entry cutoff was corrected.)
+
+### 21.3 Test status — what IS and ISN'T validated
+
+- **280 automated tests pass** (`.\.venv\Scripts\python.exe -m pytest tests -q`).
+  Scanner boundaries, state-machine bug regressions + transitions + abandonment,
+  second-spike (14 conditions), pre-trade checks (9), position sizing, circuit
+  breaker, reconciliation (orphan/ghost/missed postbacks), full paper cycle.
+- **Re-entry tracker is now tested** (`tests/unit/test_abandoned_setup_tracker.py`)
+  — this closes a previously-untested v3 path that fires real entries.
+- **STILL PENDING: empirical/historical backtest of IVBS.** The backtest engine
+  exists (`engine/backtest/`) and is validated with a minimal + an options
+  strategy, but IVBS has not been replayed on historical NSE data. **The win-rate
+  table in Section 1.5 is a hypothesis, not a measured result.** Running a
+  historical IVBS backtest is the top remaining validation task before LIVE scaling.
+
+### 21.4 v4 NEW — volatility-adaptive exit + VWAP filter (opt-in; default OFF)
+
+Two research-backed improvements, **flag-gated and OFF by default** so the spec's
+fixed-step 1:4 behaviour is unchanged until explicitly enabled and PAPER-validated.
+
+**(a) Chandelier ATR dynamic trailing stop** — `DYNAMIC_TRAILING_ENABLED`
+(default `False`), `ATR_PERIOD=14`, `ATR_TRAIL_MULTIPLIER=2.5`.
+- Rationale (Investopedia *ATR* / *Trailing Stop*; LeBeau's Chandelier Exit):
+  a fixed R-step trail ignores volatility — too tight in fast names (whipsawed),
+  too loose in quiet ones. An ATR trail adapts the stop distance to realized
+  volatility.
+- Behaviour: **after breakeven** (2R), trail the stop up toward
+  `highest_price − ATR_TRAIL_MULTIPLIER × ATR(14)`. It only **ratchets up**,
+  never loosens, never sits at/above LTP; the fixed **1:4 hard target still
+  applies**. Implemented in `SymbolStateMachine.on_tick`; ATR from
+  `CandleBuilder.atr`.
+- Tests: `tests/unit/test_v4_improvements.py` (ratchets up when enabled, no-op
+  when disabled, never loosens).
+
+**(b) VWAP entry confirmation** — `VWAP_ENTRY_FILTER_ENABLED` (default `False`).
+- Rationale (Investopedia *VWAP*): institutions anchor to VWAP (buy below / sell
+  above); price above session VWAP corroborates genuine demand, filtering weak
+  breakouts. Implemented as an additional re-ignition gate
+  (`close ≥ session VWAP`); `CandleBuilder.vwap` is a session VWAP.
+
+**How to adopt (mandatory sequence):** enable ONE flag → run ≥5 PAPER sessions →
+compare win-rate / expectancy / max-adverse-excursion vs. the fixed-step baseline
+→ only then consider LIVE. Never enable both simultaneously on the first trial.
+
+### 21.5 Configuration additions since Part 4
+
+Add to `.env` (all have safe defaults; unknown keys raise at startup):
+```bash
+# v3 (already active)
+REIGNITION_MIN_PCT_OF_IMPACT=0.08
+ASHAPE_IMPACT_VOLUME_PCT=0.70
+RE_ENTRY_ENABLED=true
+RE_ENTRY_MIN_GAP_MINUTES=15
+RE_ENTRY_VOLUME_MULTIPLE=5.0
+RE_ENTRY_MAX_PER_SYMBOL=2
+SECOND_SPIKE_EXTENDED_GAP_MINUTES=30
+SECOND_SPIKE_PRICE_ABOVE_HIGH_PCT=0.005
+SCAN_CUTOFF_HOUR=14
+APPROVAL_TIMEOUT_SECONDS=60
+NIFTY_GATE_ENABLED=true
+NIFTY_EMA_PERIOD=20
+NIFTY_INSTRUMENT_TOKEN=256265
+VIX_INSTRUMENT_TOKEN=264969
+HIGH_VIX_THRESHOLD=18.0
+HIGH_VIX_TURNOVER_CRORE=12.0
+HISTORICAL_WARMUP_ENABLED=true
+HISTORICAL_WARMUP_TRADING_DAYS=5
+TRADE_MODE=PAPER
+
+# v4 (opt-in, default OFF)
+DYNAMIC_TRAILING_ENABLED=false
+ATR_PERIOD=14
+ATR_TRAIL_MULTIPLIER=2.5
+VWAP_ENTRY_FILTER_ENABLED=false
+```
+
+### 21.6 Known limitations & pre-LIVE validation checklist
+
+Production-hardening items identified by the audit (see remediation roadmap):
+- **Redis TTL hygiene**: `position:{symbol}`, `ltp:{symbol}`, `engine:blocked_margin`,
+  `engine:status`, `engine:circuit_breaker` have no TTL — add expiry + flush
+  `ltp:*` at session end to prevent cross-day stale data.
+- **Scheduler**: set `misfire_grace_time` + `coalesce` on the APScheduler jobs.
+- **Redis durability**: enable AOF (`--appendonly yes`) for crash safety.
+- **Multi-strategy dashboard**: endpoints/UI assume a single strategy; add a
+  `strategy_id` filter + selector before running IVBS alongside other strategies.
+
+Pre-LIVE checklist: (1) run a historical IVBS backtest; (2) ≥5 clean PAPER
+sessions; (3) verify APScheduler jobs fire at correct IST times incl. 15:20
+squareoff; (4) confirm no cross-day stale Redis state after a restart; (5) start
+LIVE at ₹2L, `MAX_CONCURRENT_POSITIONS=1`, review every trade for a month.
 
 ---
 

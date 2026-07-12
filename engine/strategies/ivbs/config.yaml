@@ -1,0 +1,70 @@
+# engine/strategies/ivbs/config.yaml
+# Per-strategy configuration for the IVBS plugin.
+#
+# NOTE (migration status): IVBS internals (scanner.py, state_machine.py,
+# second_spike_detector.py, abandoned_setup_tracker.py) currently read these
+# values from app/core/config.py (the global pydantic Settings). The values below
+# MIRROR those defaults and establish the canonical per-strategy config home.
+# Making this file authoritative (redirecting the ~45 settings reads) is a
+# mechanical follow-up; new strategies (e.g. options) use their config.yaml
+# directly from the start.
+
+id: ivbs
+name: Institutional Volume Breakout Strategy
+description: First-wave volume spike + dry-up re-ignition (NSE equity intraday)
+asset_class: EQUITY
+enabled: true
+timeframe: 1m
+
+# ── Scanner (first-wave impact detection) ──────────────────────────────────
+scanner:
+  volume_spike_multiple: 15.0     # candle volume >= SMA * this
+  volume_sma_period: 500
+  min_turnover_crore: 8.0
+  min_price: 50.0
+  max_price: 5000.0
+  scanner_start_minute: 30        # skip pre-09:30 opening noise
+  scan_cutoff_hour: 14            # no fresh scan hits after 14:00
+
+# ── Re-ignition (dry-up breakout entry) ────────────────────────────────────
+reignition:
+  volume_multiple: 2.0
+  lookback_candles: 3
+  use_avg_volume: true
+  min_pct_of_impact: 0.08
+
+# ── A-shape reversal abandonment ───────────────────────────────────────────
+ashape:
+  red_candle_pct: 0.5
+  volume_multiple: 1.5
+  min_candle_count: 2
+  impact_volume_pct: 0.70
+
+# ── Second-spike (Wyckoff secondary test) ──────────────────────────────────
+second_spike:
+  min_ratio: 0.50
+  max_ratio: 1.00
+  min_gap_minutes: 15
+  extended_gap_minutes: 30
+  volume_floor: 10.0
+
+# ── Re-entry after abandonment ─────────────────────────────────────────────
+re_entry:
+  enabled: true
+  min_gap_minutes: 15
+  volume_multiple: 5.0
+  max_per_symbol: 2
+
+# ── Monitoring / entry timing ──────────────────────────────────────────────
+timing:
+  dryup_max_minutes: 20
+  max_entry_time: "13:30"
+  entry_abandon_pct: 0.015
+  approval_timeout_seconds: 60
+
+# ── Market-direction gate (Nifty EMA) ──────────────────────────────────────
+market_gate:
+  nifty_gate_enabled: true
+  nifty_ema_period: 20
+  high_vix_threshold: 20.0
+  high_vix_turnover_crore: 12.0

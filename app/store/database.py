@@ -46,7 +46,14 @@ async def init_db() -> None:
     """Initialize SQLite tables based on SQLAlchemy models."""
     from app.models.db.base import Base
     # Import all models to ensure they are registered with Base.metadata
-    from app.models.db import daily_pnl, order_event, signal, trade  # noqa: F401
-    
+    from app.models.db import (  # noqa: F401
+        daily_pnl,
+        order_event,
+        signal,
+        signal_snapshot,
+        strategy,
+        trade,
+    )
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
