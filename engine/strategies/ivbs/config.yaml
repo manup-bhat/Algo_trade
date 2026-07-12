@@ -25,6 +25,7 @@ scanner:
   max_price: 5000.0
   scanner_start_minute: 30        # skip pre-09:30 opening noise
   scan_cutoff_hour: 14            # no fresh scan hits after 14:00
+  min_dryup_candles: 2            # minimum candles needed to confirm dry-up
 
 # ── Re-ignition (dry-up breakout entry) ────────────────────────────────────
 reignition:
@@ -47,6 +48,7 @@ second_spike:
   min_gap_minutes: 15
   extended_gap_minutes: 30
   volume_floor: 10.0
+  price_above_high_threshold: 0.80  # at >=80% vol ratio, require close > spike1.high
 
 # ── Re-entry after abandonment ─────────────────────────────────────────────
 re_entry:
@@ -59,12 +61,18 @@ re_entry:
 timing:
   dryup_max_minutes: 20
   max_entry_time: "13:30"
+  entry_buffer_pct: 0.001           # limit order buffer above trigger price
+  entry_widen_after_seconds: 5      # widen limit after N seconds unfilled
   entry_abandon_pct: 0.015
+  order_fill_timeout_seconds: 30
   approval_timeout_seconds: 60
+  abandon_price_buffer_pct: 0.003   # wick penetration tolerance before abandonment
 
 # ── Market-direction gate (Nifty EMA) ──────────────────────────────────────
 market_gate:
   nifty_gate_enabled: true
   nifty_ema_period: 20
+  nifty_instrument_token: 256265    # standard NSE Nifty 50 token
+  vix_instrument_token: 264969      # standard NSE India VIX token
   high_vix_threshold: 20.0
   high_vix_turnover_crore: 12.0
