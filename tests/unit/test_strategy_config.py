@@ -27,7 +27,7 @@ class TestStrategyConfigLoader:
         assert cfg["asset_class"] == "EQUITY"
         # Nested sections present
         assert cfg["scanner"]["volume_spike_multiple"] == 15.0
-        assert cfg["timing"]["dryup_max_minutes"] == 20
+        assert cfg["timing"]["dryup_max_minutes"] == 25  # Updated: 20→25 per NSE mid-cap research
 
     def test_missing_config_returns_empty_dict(self):
         assert load_strategy_config("does_not_exist_xyz") == {}

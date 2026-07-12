@@ -26,10 +26,10 @@ import structlog
 
 from engine.core.base_strategy import BaseStrategy
 from engine.market import calendar as mkt_calendar
-from engine.strategy import scanner
-from engine.strategy.abandoned_setup_tracker import AbandonedRecord, abandoned_setup_tracker
-from engine.strategy.second_spike_detector import SecondSpikeDetector, SecondSpikeEntry
-from engine.strategy.state_machine import StrategyState, SymbolStateMachine
+from engine.strategies.ivbs import scanner
+from engine.strategies.ivbs.abandoned_setup_tracker import AbandonedRecord, abandoned_setup_tracker
+from engine.strategies.ivbs.second_spike_detector import SecondSpikeDetector, SecondSpikeEntry
+from engine.strategies.ivbs.state_machine import StrategyState, SymbolStateMachine
 
 if TYPE_CHECKING:
     import datetime

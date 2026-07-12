@@ -59,7 +59,7 @@ re_entry:
 
 # ── Monitoring / entry timing ──────────────────────────────────────────────
 timing:
-  dryup_max_minutes: 20
+  dryup_max_minutes: 25
   max_entry_time: "13:30"
   entry_buffer_pct: 0.001           # limit order buffer above trigger price
   entry_widen_after_seconds: 5      # widen limit after N seconds unfilled
