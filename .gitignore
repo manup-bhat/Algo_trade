@@ -23,13 +23,8 @@ build/
 # SMA history snapshots (machine-local, rebuilt from Kite each day)
 data/
 
-# Keep only final strategy spec among working analysis docs
-IVBS_Production_Analysis.md
-institutional_volume_strategy_analysis.md
-ivbs_project_specification_v2.md
-trading_bot_architecture.md
-New_changes.md
-multi_strategy_refactor_plan.md
+# Archive folder — working/scratch docs (only IVBS_Final_Spec.md + README.md are tracked)
+docs/archive/
 
 # Root-level duplicate skill folder (lives under .github/skills/)
 /algo-trading-engine/
