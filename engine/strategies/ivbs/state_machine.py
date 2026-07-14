@@ -25,6 +25,7 @@ import pytz
 import structlog
 
 from app.core.config import settings
+from engine.strategies.ivbs.ivbs_config import cfg
 from engine.strategies.ivbs.scanner import ImpactCandle
 
 if TYPE_CHECKING:
@@ -403,23 +404,23 @@ class SymbolStateMachine:
         # by 0.1-0.3% to trigger retail stops, then absorb that selling.
         # A wick through the low that closes above = normal accumulation.
         # Buffer = ABANDON_PRICE_BUFFER_PCT (default 0.3%).
-        abandon_floor = self.impact_candle.low * (1.0 - settings.ABANDON_PRICE_BUFFER_PCT)
+        abandon_floor = self.impact_candle.low * (1.0 - cfg.ABANDON_PRICE_BUFFER_PCT)
         if l < abandon_floor:
             await self._abandon("price_broke_impact_low")
             return
 
         # 2b. Timeout check — use total_seconds() for robustness (spec Part 8.3)
         elapsed_minutes = (candle_time - self.impact_candle.time).total_seconds() / 60
-        if elapsed_minutes > settings.DRYUP_MAX_MINUTES:
+        if elapsed_minutes > cfg.DRYUP_MAX_MINUTES:
             await self._abandon("timeout")
             return
 
         # 2c. A-shape reversal check (only after minimum dry-up candles)
-        if self.consolidation.candle_count >= settings.ASHAPE_MIN_CANDLE_COUNT:
+        if self.consolidation.candle_count >= cfg.ASHAPE_MIN_CANDLE_COUNT:
             candle_range_pct = (h - l) / self.impact_candle.close * 100
-            is_large_red = (c < o) and (candle_range_pct > settings.ASHAPE_RED_CANDLE_PCT)
+            is_large_red = (c < o) and (candle_range_pct > cfg.ASHAPE_RED_CANDLE_PCT)
             avg_vol = self.consolidation.avg_volume
-            volume_elevated = avg_vol > 0 and volume > (avg_vol * settings.ASHAPE_VOLUME_MULTIPLE)
+            volume_elevated = avg_vol > 0 and volume > (avg_vol * cfg.ASHAPE_VOLUME_MULTIPLE)
             if is_large_red and volume_elevated:
                 log.info(
                     "abandonment_ashape",
@@ -439,14 +440,14 @@ class SymbolStateMachine:
         #     Large bullish volume INTO a spike = continuation / absorption.
         assert self.impact_candle is not None  # already checked above
         is_bearish_candle = c < o  # Must be red (selling candle) to confirm distribution
-        impact_vol_threshold = self.impact_candle.volume * settings.ASHAPE_IMPACT_VOLUME_PCT
+        impact_vol_threshold = self.impact_candle.volume * cfg.ASHAPE_IMPACT_VOLUME_PCT
         if volume > impact_vol_threshold and is_bearish_candle and self.consolidation.candle_count >= 1:
             log.info(
                 "abandonment_institutional_exit_pressure",
                 symbol=self.symbol,
                 candle_volume=volume,
                 impact_volume=self.impact_candle.volume,
-                threshold_pct=settings.ASHAPE_IMPACT_VOLUME_PCT,
+                threshold_pct=cfg.ASHAPE_IMPACT_VOLUME_PCT,
                 candle_direction="bearish",
             )
             await self._abandon("institutional_exit_pressure")
@@ -470,7 +471,7 @@ class SymbolStateMachine:
         # STEP 4: RE-IGNITION CHECK (using PRE-UPDATE snapshots)
         # ═══════════════════════════════════════════════════════════════
         # Minimum dry-up candles needed before re-ignition is valid
-        if self.consolidation.candle_count >= settings.MIN_DRYUP_CANDLES:
+        if self.consolidation.candle_count >= cfg.MIN_DRYUP_CANDLES:
             # Need at least 2 prev_volumes to form a meaningful comparison window
             if len(prev_volumes) >= 2:
                 # ── Re-ignition volume threshold (Problem 2 fix) ─────────────────
@@ -480,34 +481,34 @@ class SymbolStateMachine:
                 # NEW: mean(all_dry-up_candles) × 3.0 — requires an obvious
                 # institutional second leg, not random noise. This is controlled by
                 # REIGNITION_USE_AVG_VOLUME (default True) and REIGNITION_VOLUME_MULTIPLE.
-                if settings.REIGNITION_USE_AVG_VOLUME:
+                if cfg.REIGNITION_USE_AVG_VOLUME:
                     # Use mean of ALL dry-up volumes seen so far (pre-update snapshot)
                     ref_volume = statistics.mean(prev_volumes) if prev_volumes else 0.0
                 else:
                     # Legacy: max of last N candles
-                    comparison_window = prev_volumes[-settings.REIGNITION_LOOKBACK_CANDLES:]
+                    comparison_window = prev_volumes[-cfg.REIGNITION_LOOKBACK_CANDLES:]
                     ref_volume = max(comparison_window)
 
-                is_volume_spike = ref_volume > 0 and volume > ref_volume * settings.REIGNITION_VOLUME_MULTIPLE
+                is_volume_spike = ref_volume > 0 and volume > ref_volume * cfg.REIGNITION_VOLUME_MULTIPLE
 
                 # NEW: Re-ignition must also clear an absolute volume floor tied to the
                 # original impact candle. Prevents noise above a tiny dry-up baseline
                 # from triggering false entries when the dry-up mean is very small.
                 # e.g., impact=500k, floor=0.08 → need ≥40k volume to re-ignite.
                 assert self.impact_candle is not None
-                min_abs_volume = self.impact_candle.volume * settings.REIGNITION_MIN_PCT_OF_IMPACT
+                min_abs_volume = self.impact_candle.volume * cfg.REIGNITION_MIN_PCT_OF_IMPACT
                 is_volume_spike = is_volume_spike and volume >= min_abs_volume
 
                 is_price_breakout = c > breakout_level  # Bug 1 fix: pre-update level
                 is_green = c > o
-                is_before_cutoff = candle_time.time() < settings.max_entry_time
+                is_before_cutoff = candle_time.time() < cfg.max_entry_time
 
                 # v4: optional VWAP confirmation — require close >= session VWAP
                 # (institutional demand anchor). No-op unless enabled + builder present.
                 _builder = getattr(self, "_candle_builder", None)
                 _vwap = (
                     _builder.vwap
-                    if (settings.VWAP_ENTRY_FILTER_ENABLED and _builder is not None)
+                    if (cfg.VWAP_ENTRY_FILTER_ENABLED and _builder is not None)
                     else None
                 )
                 is_vwap_ok = _vwap is None or c >= _vwap
@@ -523,7 +524,7 @@ class SymbolStateMachine:
                         breakout_level=breakout_level,
                         close=c,
                         dry_up_candles=self.consolidation.candle_count,
-                        method="avg" if settings.REIGNITION_USE_AVG_VOLUME else "max",
+                        method="avg" if cfg.REIGNITION_USE_AVG_VOLUME else "max",
                     )
                     await self._trigger_entry(c, candle_time)
                     return
@@ -594,7 +595,7 @@ class SymbolStateMachine:
         stop_loss = round(self.consolidation.swing_low - tick_size, 2)
 
         # Entry price: close × (1 + ENTRY_BUFFER_PCT)
-        limit_price = round(entry_close * (1 + settings.ENTRY_BUFFER_PCT), 2)
+        limit_price = round(entry_close * (1 + cfg.ENTRY_BUFFER_PCT), 2)
         risk_per_share = limit_price - stop_loss
 
         # Pre-trade risk check
@@ -731,13 +732,13 @@ class SymbolStateMachine:
         This prevents approvals from hanging indefinitely while the setup
         still has a chance to re-trigger on a subsequent candle.
         """
-        await asyncio.sleep(settings.APPROVAL_TIMEOUT_SECONDS)
+        await asyncio.sleep(cfg.APPROVAL_TIMEOUT_SECONDS)
 
         if self.state == StrategyState.ACTION_PENDING_APPROVAL:
             log.warning(
                 "approval_timeout_auto_reverting",
                 symbol=self.symbol,
-                timeout_sec=settings.APPROVAL_TIMEOUT_SECONDS,
+                timeout_sec=cfg.APPROVAL_TIMEOUT_SECONDS,
             )
             # Remove from pending approval queue
             await self._redis.remove_pending_approval(self.symbol)
@@ -749,7 +750,7 @@ class SymbolStateMachine:
         too far away, widen the limit by another ENTRY_BUFFER_PCT (spec §8.5).
         Routes through the order_service retry wrapper (not the raw kite client).
         """
-        await asyncio.sleep(settings.ENTRY_WIDEN_AFTER_SECONDS)
+        await asyncio.sleep(cfg.ENTRY_WIDEN_AFTER_SECONDS)
 
         if self.state != StrategyState.ACTION_PENDING:
             return  # Already filled or timed out
@@ -758,7 +759,7 @@ class SymbolStateMachine:
 
         try:
             current_ltp = await self._redis.get_last_ltp(self.symbol)
-            if current_ltp and current_ltp > original_limit * (1 + settings.ENTRY_ABANDON_PCT):
+            if current_ltp and current_ltp > original_limit * (1 + cfg.ENTRY_ABANDON_PCT):
                 # Price ran too far — abandon rather than chase
                 log.warning(
                     "entry_price_moved_away_abandoning",
@@ -770,7 +771,7 @@ class SymbolStateMachine:
                 await self._handle_fill_timeout(order_id)  # Reverts to MONITORING
                 return
 
-            new_limit = round(original_limit * (1 + settings.ENTRY_BUFFER_PCT), 2)
+            new_limit = round(original_limit * (1 + cfg.ENTRY_BUFFER_PCT), 2)
             if self._order_service is not None:
                 await self._order_service.modify_entry_order(order_id, new_limit)
             log.info("entry_limit_widened", order_id=order_id, new_limit=new_limit)
@@ -1089,7 +1090,7 @@ class SymbolStateMachine:
             "fill_timeout_order_not_filled_reverting",
             symbol=self.symbol,
             order_id=order_id,
-            timeout_sec=settings.ORDER_FILL_TIMEOUT_SECONDS,
+            timeout_sec=cfg.ORDER_FILL_TIMEOUT_SECONDS,
         )
         self._pending_order_id = None
         if self.state == StrategyState.ACTION_PENDING_APPROVAL:
@@ -1229,14 +1230,14 @@ class SymbolStateMachine:
         # the stop UP toward price by (highest_price - k x ATR). Never loosens,
         # never sits at/above LTP. Coexists with the fixed 1:4 hard target.
         if (
-            settings.DYNAMIC_TRAILING_ENABLED
+            cfg.DYNAMIC_TRAILING_ENABLED
             and pos.cost_trailed
             and not pos._exit_initiated
         ):
             _b = getattr(self, "_candle_builder", None)
             _atr = _b.atr if _b is not None else None
             if _atr:
-                chandelier_sl = round(pos.highest_price - settings.ATR_TRAIL_MULTIPLIER * _atr, 2)
+                chandelier_sl = round(pos.highest_price - cfg.ATR_TRAIL_MULTIPLIER * _atr, 2)
                 if chandelier_sl > pos.current_sl and chandelier_sl < ltp:
                     pos.current_sl = chandelier_sl
                     log.info(
@@ -1355,7 +1356,7 @@ class SymbolStateMachine:
                 await self._order_service.cancel_order(pos.sl_order_id, symbol=self.symbol)
 
             # Wait for cancel to propagate
-            await asyncio.sleep(settings.EXIT_SL_CANCEL_DELAY_MS / 1000)
+            await asyncio.sleep(settings.EXIT_SL_CANCEL_DELAY_MS / 1000)  # engine-global setting
 
             # Guard: SL may have triggered during the wait
             if self.state == StrategyState.CLOSED:

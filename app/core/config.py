@@ -34,62 +34,21 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./trading.db"
     UNIVERSE_FILE: str = "universe.txt"
 
-    # ── Group A: Strategy Filter Values ────────────────────────────
-    VOLUME_SPIKE_MULTIPLE: float = 15.0
-    VOLUME_SMA_PERIOD: int = 500
+    # ── Group A: Historical Warmup (engine-wide) ────────────────────
     HISTORICAL_WARMUP_ENABLED: bool = True
-    HISTORICAL_WARMUP_TRADING_DAYS: int = 5
-    HISTORICAL_WARMUP_CONCURRENCY: int = 3
-    HISTORICAL_WARMUP_BATCH_DELAY_SEC: float = 0.4
+    HISTORICAL_WARMUP_TRADING_DAYS: int = 3
+    HISTORICAL_WARMUP_CONCURRENCY: int = 8
+    HISTORICAL_WARMUP_BATCH_DELAY_SEC: float = 0.2
     HISTORICAL_WARMUP_RECENT_CANDLES: int = 180
-    MIN_TURNOVER_CRORE: float = 8.0
-    MIN_PRICE: float = 50.0
-    MAX_PRICE: float = 5000.0
-    REIGNITION_VOLUME_MULTIPLE: float = 2.0
-    REIGNITION_LOOKBACK_CANDLES: int = 3
-    # When True, re-ignition compares volume to the MEAN of all dry-up candles
-    # (not just max of last N). This is the correct institutional threshold.
-    REIGNITION_USE_AVG_VOLUME: bool = True
-    # NEW: Re-ignition candle must also be at least this fraction of the original
-    # impact candle volume. Prevents noise above a tiny dry-up baseline triggering entry.
-    REIGNITION_MIN_PCT_OF_IMPACT: float = 0.08
-    MIN_DRYUP_CANDLES: int = 2
-    ASHAPE_RED_CANDLE_PCT: float = 0.5
-    ASHAPE_VOLUME_MULTIPLE: float = 1.5
-    ASHAPE_MIN_CANDLE_COUNT: int = 2
-    # Abandon dryup if any single candle's volume exceeds this fraction of the
-    # impact candle's volume — signals institutional selling into the spike.
-    ASHAPE_IMPACT_VOLUME_PCT: float = 0.70
 
-    # ── v3 NEW: Re-entry after abandonment (Second Chance Scanner) ─────────────
-    # When enabled: after a setup is abandoned, the symbol is tracked for a
-    # re-entry opportunity using a lower volume threshold than the original scanner.
-    RE_ENTRY_ENABLED: bool = True
-    RE_ENTRY_MIN_GAP_MINUTES: int = 15      # Minimum minutes after abandonment before re-entry
-    RE_ENTRY_VOLUME_MULTIPLE: float = 5.0   # 5x SMA (vs 20x first scan) for re-entry
-    RE_ENTRY_MAX_PER_SYMBOL: int = 2        # Max re-entries per symbol per day
+    # ── NSE Instrument Tokens (engine-wide, fixed NSE constants) ────
+    # Used by Coordinator for Nifty/VIX ticks regardless of strategy.
+    NIFTY_INSTRUMENT_TOKEN: int = 256265
+    VIX_INSTRUMENT_TOKEN: int = 264969
 
-    # ── v3 NEW: Opening noise guard ─────────────────────────────────────────
-    # Skip candles in the 9 AM hour before this minute (default 30 = 09:30 start).
-    # Research: NSE pre-open queue clears 15-30 min post-open; volume structurally
-    # elevated, dry-up is impossible in this window.
-    SCANNER_START_MINUTE: int = 30
-
-    # ── v3 NEW: Abandonment price buffer ─────────────────────────────────────
-    # Chan & Lakonishok (1993): stop-hunt wicks 0.1-0.3% below key levels are
-    # normal NSE institutional behaviour. Use candle wick (not close) + buffer.
-    ABANDON_PRICE_BUFFER_PCT: float = 0.003
-
-    # ── v3 NEW: Second spike detection ─────────────────────────────────────
-    # Keim & Madhavan (1995): institutions leg into positions in tranches.
-    # The inter-spike quiet period is the Wyckoff secondary test at 5-min TF.
-    SECOND_SPIKE_MIN_RATIO: float = 0.50
-    SECOND_SPIKE_MAX_RATIO: float = 1.00
-    SECOND_SPIKE_MIN_GAP_MINUTES: int = 15
-    SECOND_SPIKE_EXTENDED_GAP_MINUTES: int = 30
-    SECOND_SPIKE_VOLUME_FLOOR: float = 10.0
-    SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD: float = 0.80
-    SECOND_SPIKE_PRICE_ABOVE_HIGH_PCT: float = 0.005
+    # ── Strategy selection ──────────────────────────────────────────
+    # Comma-separated strategy ids to run (must match engine/strategies/<id>).
+    ENABLED_STRATEGIES: str = "ivbs"
 
     # ── Group B: SEBI / Regulatory Values ──────────────────────────
     STT_INTRADAY_SELL_PCT: float = 0.00025
@@ -105,60 +64,17 @@ class Settings(BaseSettings):
     WS_MAX_RECONNECT_ATTEMPTS: int = 10
     WS_RECONNECT_DELAY_SEC: int = 5
     MAX_WS_INSTRUMENTS: int = 3000
+    # Delay (ms) between SL cancel and MARKET sell in _initiate_exit()
     EXIT_SL_CANCEL_DELAY_MS: int = 500
 
-    # ── Group D: Strategy Calibration Values ───────────────────────
-    DRYUP_MAX_MINUTES: int = 20
-    MAX_ENTRY_TIME: str = "13:30"
-    ENTRY_BUFFER_PCT: float = 0.003
-    ENTRY_WIDEN_AFTER_SECONDS: int = 5
-    ENTRY_ABANDON_PCT: float = 0.015
-    ORDER_FILL_TIMEOUT_SECONDS: int = 30
-    # After this hour, no new scan hits are accepted. Conservative cutoff
-    # at 14:00 (40 min before 15:20 square-off) ensures setups have time to
-    # progress through dry-up before the session ends.
-    SCAN_CUTOFF_HOUR: int = 14
-    # In LIVE mode (PAPER_TRADE=False), entries hold in ACTION_PENDING_APPROVAL
-    # for this many seconds before auto-reverting to MONITORING.
-    # Gives the trader time to review while not missing the entry entirely.
-    APPROVAL_TIMEOUT_SECONDS: int = 60
-
-    # ── v4 NEW: Volatility-adaptive exit + VWAP filter (opt-in; PAPER-first) ──
-    # Chandelier ATR trailing stop: after breakeven, trail SL up toward
-    # (highest_price − ATR_TRAIL_MULTIPLIER × ATR). Ratchets up only; never
-    # loosens; the fixed 1:4 hard target still applies. Default OFF preserves
-    # the spec's fixed-step 1:4 behaviour exactly.
-    DYNAMIC_TRAILING_ENABLED: bool = False
-    ATR_PERIOD: int = 14
-    ATR_TRAIL_MULTIPLIER: float = 2.5
-    # Require the re-ignition candle to close at/above session VWAP (institutional
-    # demand anchor). Default OFF preserves current entry behaviour.
-    VWAP_ENTRY_FILTER_ENABLED: bool = False
-
-    # Backtest/replay mode: bypass wall-clock market-open + entry-cutoff checks in
-    # pre-trade checks (the candle-TIME cutoff is still enforced in on_candle).
-    # Scoped ON only during a backtest run by run_ivbs_backtest(); never live.
+    # ── Group D: Global Risk / Execution ────────────────────────────
+    # These are engine-wide: they apply across ALL strategies and positions.
+    # Strategy-specific parameters (scanner thresholds, dry-up timing, etc.)
+    # are in engine/strategies/<id>/config.yaml.
+    MAX_ENTRY_TIME: str = "13:30"   # Last allowable entry time (engine-wide squareoff fence)
+    # Backtest/replay mode: bypasses wall-clock market-open + entry-cutoff checks
+    # in pre-trade checks. Scoped ON only during a backtest run; never live.
     BACKTEST_MODE: bool = False
-
-    # ── Strategy selection ──────────────────────────────────────────────────
-    # Comma-separated strategy ids to run (must match engine/strategies/<id>).
-    # Default runs ONLY IVBS. F&O strategies ALSO need their config.yaml
-    # `enabled: true`. e.g. ENABLED_STRATEGIES=ivbs  (run only IVBS).
-    ENABLED_STRATEGIES: str = "ivbs"
-
-    # ── Market Direction Gate ───────────────────────────────────────
-    # When enabled, new Phase 2 entries are blocked unless Nifty 50
-    # is above its rolling 20-period 5-minute EMA.
-    NIFTY_GATE_ENABLED: bool = True
-    NIFTY_EMA_PERIOD: int = 20
-    # Nifty 50 instrument token on NSE (Kite standard)
-    NIFTY_INSTRUMENT_TOKEN: int = 256265
-    # India VIX instrument token on NSE (Kite standard)
-    VIX_INSTRUMENT_TOKEN: int = 264969
-    # During high-VIX environments, raise the minimum turnover filter
-    # to exclude noise spikes from highly volatile stocks.
-    HIGH_VIX_THRESHOLD: float = 18.0
-    HIGH_VIX_TURNOVER_CRORE: float = 12.0
 
     # ── Group E: Market Structure Values ───────────────────────────
     MARKET_OPEN_TIME: str = "09:15"
@@ -170,7 +86,7 @@ class Settings(BaseSettings):
     RISK_PER_TRADE_PCT: float = 1.0
     MAX_CONCURRENT_POSITIONS: int = 2
     DAILY_LOSS_LIMIT_PCT: float = 3.0
-    MIN_RISK_PER_SHARE_INR: float = 5.0
+    MIN_RISK_PER_SHARE_INR: float = 5.0  # Global floor — rejects entries with too-small risk-per-share
     PEAK_MARGIN_SAFETY_BUFFER_PCT: float = 15.0
 
     # ── Mode Selection ──────────────────────────────────────────────────────────
@@ -195,13 +111,6 @@ class Settings(BaseSettings):
     DASHBOARD_WS_HEARTBEAT_INTERVAL_MS: int = 2000
 
     # ── Validators ──────────────────────────────────────────────────
-
-    @field_validator("MIN_TURNOVER_CRORE")
-    @classmethod
-    def validate_min_turnover(cls, v: float) -> float:
-        if v < 4.0:
-            raise ValueError("MIN_TURNOVER_CRORE must be >= 4.0 (strategy safety floor)")
-        return v
 
     @field_validator("HISTORICAL_WARMUP_TRADING_DAYS", "HISTORICAL_WARMUP_CONCURRENCY",
                      "HISTORICAL_WARMUP_RECENT_CANDLES", "DASHBOARD_TICK_FLUSH_INTERVAL_MS",

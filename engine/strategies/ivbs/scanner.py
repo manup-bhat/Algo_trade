@@ -28,7 +28,7 @@ import structlog
 if TYPE_CHECKING:
     from engine.market.candle_builder import Candle, CandleBuilder
 
-from app.core.config import settings
+from engine.strategies.ivbs.ivbs_config import cfg
 
 log = structlog.get_logger(__name__)
 _IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -97,7 +97,7 @@ def evaluate(
     # structurally impossible. Skip every candle before SCANNER_START_MINUTE
     # (default 30 = 09:30 AM IST).
     candle_ist = candle.timestamp.astimezone(_IST_TZ)
-    if candle_ist.hour == 9 and candle_ist.minute < settings.SCANNER_START_MINUTE:
+    if candle_ist.hour == 9 and candle_ist.minute < cfg.SCANNER_START_MINUTE:
         return None
 
     # ── Filter 0b: Late-session guard ────────────────────────────────────
@@ -105,14 +105,14 @@ def evaluate(
     # consistent regardless of when tests run. After SCAN_CUTOFF_HOUR, skip
     # new scan hits because the remaining window before 3:20 PM square-off
     # is too short for the institutional move to complete.
-    if candle_ist.hour >= settings.SCAN_CUTOFF_HOUR:
+    if candle_ist.hour >= cfg.SCAN_CUTOFF_HOUR:
         return None
 
     # ── Filter 1 (was 0): Market direction gate (Nifty EMA) ──────────────
     # Block all new scan hits if Nifty is below its 5-min EMA.
     # This prevents entries into a broad bearish session.
     # Gate defaults to OPEN if no EMA has been computed yet (cold start safety).
-    if settings.NIFTY_GATE_ENABLED and not _nifty_gate_open:
+    if cfg.NIFTY_GATE_ENABLED and not _nifty_gate_open:
         return None  # Market gate closed — skip entire symbol this candle
 
     # ── Filter 1: SMA warmup ──────────────────────────────────────────
@@ -127,7 +127,7 @@ def evaluate(
 
     # ── Filter 3: Volume spike multiple ───────────────────────────────
     spike_multiple = candle.volume / volume_sma
-    if spike_multiple < settings.VOLUME_SPIKE_MULTIPLE:
+    if spike_multiple < cfg.VOLUME_SPIKE_MULTIPLE:
         return None  # Most candles fail here — hot path exit
 
     # ── Filter 4: Minimum turnover (VIX-aware) ────────────────────────
@@ -135,10 +135,10 @@ def evaluate(
     # bar to filter out noise spikes that won't survive the dry-up phase.
     # Falls back to MIN_TURNOVER_CRORE if VIX data is unavailable.
     vix = _cached_vix
-    if vix is not None and vix > settings.HIGH_VIX_THRESHOLD:
-        effective_turnover_crore = settings.HIGH_VIX_TURNOVER_CRORE
+    if vix is not None and vix > cfg.HIGH_VIX_THRESHOLD:
+        effective_turnover_crore = cfg.HIGH_VIX_TURNOVER_CRORE
     else:
-        effective_turnover_crore = settings.MIN_TURNOVER_CRORE
+        effective_turnover_crore = cfg.MIN_TURNOVER_CRORE
     effective_turnover_rupees = effective_turnover_crore * 1e7
 
     if candle.turnover < effective_turnover_rupees:
@@ -153,13 +153,13 @@ def evaluate(
         return None
 
     # ── Filter 5: Price range ─────────────────────────────────────────
-    if candle.close < settings.MIN_PRICE or candle.close > settings.MAX_PRICE:
+    if candle.close < cfg.MIN_PRICE or candle.close > cfg.MAX_PRICE:
         log.debug(
             "scanner_price_range_miss",
             symbol=candle.symbol,
             close=candle.close,
-            min_price=settings.MIN_PRICE,
-            max_price=settings.MAX_PRICE,
+            min_price=cfg.MIN_PRICE,
+            max_price=cfg.MAX_PRICE,
         )
         return None
 

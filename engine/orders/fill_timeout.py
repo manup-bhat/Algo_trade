@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from app.core.config import settings
+from engine.strategies.ivbs.ivbs_config import cfg
 
 if TYPE_CHECKING:
     from engine.orders.order_service import OrderService
@@ -63,7 +63,7 @@ class FillTimeoutManager:
             "fill_timeout_started",
             order_id=order_id,
             symbol=sm.symbol,
-            timeout_sec=settings.ORDER_FILL_TIMEOUT_SECONDS,
+            timeout_sec=cfg.ORDER_FILL_TIMEOUT_SECONDS,
         )
         return task
 
@@ -78,7 +78,7 @@ class FillTimeoutManager:
         Cleans itself from _tasks on completion.
         """
         try:
-            await asyncio.sleep(settings.ORDER_FILL_TIMEOUT_SECONDS)
+            await asyncio.sleep(cfg.ORDER_FILL_TIMEOUT_SECONDS)
 
             # Import here to avoid circular
             from engine.strategy.state_machine import StrategyState
@@ -88,7 +88,7 @@ class FillTimeoutManager:
                     "fill_timeout_triggered",
                     order_id=order_id,
                     symbol=sm.symbol,
-                    timeout_sec=settings.ORDER_FILL_TIMEOUT_SECONDS,
+                    timeout_sec=cfg.ORDER_FILL_TIMEOUT_SECONDS,
                 )
                 cancel_ok = await order_service.cancel_order(order_id, symbol=sm.symbol)
                 if cancel_ok:

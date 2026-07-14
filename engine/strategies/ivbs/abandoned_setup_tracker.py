@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 import pytz
 import structlog
 
-from app.core.config import settings
+from engine.strategies.ivbs.ivbs_config import cfg
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -112,7 +112,7 @@ class AbandonedSetupTracker:
         If a record already exists for this symbol, it is overwritten by the
         newest abandonment (keeps the most recent state as the reference).
         """
-        if not settings.RE_ENTRY_ENABLED:
+        if not cfg.RE_ENTRY_ENABLED:
             return
 
         # Skip non-recoverable abandonment reasons
@@ -126,12 +126,12 @@ class AbandonedSetupTracker:
 
         # Check daily re-entry limit
         existing = self._records.get(symbol)
-        if existing and existing.reentry_count >= settings.RE_ENTRY_MAX_PER_SYMBOL:
+        if existing and existing.reentry_count >= cfg.RE_ENTRY_MAX_PER_SYMBOL:
             log.debug(
                 "re_entry_skipped_daily_limit",
                 symbol=symbol,
                 reentry_count=existing.reentry_count,
-                max=settings.RE_ENTRY_MAX_PER_SYMBOL,
+                max=cfg.RE_ENTRY_MAX_PER_SYMBOL,
             )
             return
 
@@ -190,7 +190,7 @@ class AbandonedSetupTracker:
         if rec is None:
             return False
 
-        if not settings.RE_ENTRY_ENABLED:
+        if not cfg.RE_ENTRY_ENABLED:
             return False
 
         if volume_sma is None or volume_sma <= 0:
@@ -198,7 +198,7 @@ class AbandonedSetupTracker:
 
         # Condition 1: Minimum gap since abandonment
         elapsed = (candle_time - rec.abandon_time).total_seconds() / 60
-        if elapsed < settings.RE_ENTRY_MIN_GAP_MINUTES:
+        if elapsed < cfg.RE_ENTRY_MIN_GAP_MINUTES:
             return False
 
         # Condition 2: Price is still above the original impact candle's LOW
@@ -214,7 +214,7 @@ class AbandonedSetupTracker:
             return False
 
         # Condition 3: Volume must meet the re-entry threshold (lower than 20x scan)
-        re_entry_vol_threshold = volume_sma * settings.RE_ENTRY_VOLUME_MULTIPLE
+        re_entry_vol_threshold = volume_sma * cfg.RE_ENTRY_VOLUME_MULTIPLE
         if candle_volume < re_entry_vol_threshold:
             return False
 
@@ -228,11 +228,11 @@ class AbandonedSetupTracker:
             return False
 
         # Condition 6: Before entry cutoff
-        if candle_time.time() >= settings.max_entry_time:
+        if candle_time.time() >= cfg.max_entry_time:
             return False
 
         # Condition 7: Daily re-entry limit
-        if rec.reentry_count >= settings.RE_ENTRY_MAX_PER_SYMBOL:
+        if rec.reentry_count >= cfg.RE_ENTRY_MAX_PER_SYMBOL:
             return False
 
         # ALL CONDITIONS MET — log the re-entry signal

@@ -130,10 +130,10 @@ def _managing_sm(redis_store, atr_value: float | None):
 
 @pytest.mark.asyncio
 async def test_chandelier_trailing_ratchets_sl_when_enabled(redis_store, monkeypatch):
-    from app.core.config import settings
+    from engine.strategies.ivbs.ivbs_config import cfg
 
-    monkeypatch.setattr(settings, "DYNAMIC_TRAILING_ENABLED", True)
-    monkeypatch.setattr(settings, "ATR_TRAIL_MULTIPLIER", 2.5)
+    monkeypatch.setattr(cfg, "DYNAMIC_TRAILING_ENABLED", True)
+    monkeypatch.setattr(cfg, "ATR_TRAIL_MULTIPLIER", 2.5)
 
     sm = _managing_sm(redis_store, atr_value=2.0)
     await sm.on_tick(110.0, ts(11, 0))
@@ -152,12 +152,13 @@ async def test_chandelier_disabled_by_default(redis_store):
 
 @pytest.mark.asyncio
 async def test_chandelier_never_loosens(redis_store, monkeypatch):
-    from app.core.config import settings
+    from engine.strategies.ivbs.ivbs_config import cfg
 
-    monkeypatch.setattr(settings, "DYNAMIC_TRAILING_ENABLED", True)
-    monkeypatch.setattr(settings, "ATR_TRAIL_MULTIPLIER", 2.5)
+    monkeypatch.setattr(cfg, "DYNAMIC_TRAILING_ENABLED", True)
+    monkeypatch.setattr(cfg, "ATR_TRAIL_MULTIPLIER", 2.5)
 
     sm = _managing_sm(redis_store, atr_value=2.0)
     sm.position.current_sl = 106.0  # already tighter than chandelier(105)
     await sm.on_tick(110.0, ts(11, 0))
     assert sm.position.current_sl == 106.0  # not loosened downward
+

@@ -1,13 +1,14 @@
 # engine/strategies/ivbs/config.yaml
 # Per-strategy configuration for the IVBS plugin.
 #
-# NOTE (migration status): IVBS internals (scanner.py, state_machine.py,
-# second_spike_detector.py, abandoned_setup_tracker.py) currently read these
-# values from app/core/config.py (the global pydantic Settings). The values below
-# MIRROR those defaults and establish the canonical per-strategy config home.
-# Making this file authoritative (redirecting the ~45 settings reads) is a
-# mechanical follow-up; new strategies (e.g. options) use their config.yaml
-# directly from the start.
+# This file is the SINGLE SOURCE OF TRUTH for all IVBS strategy parameters.
+# Loaded by engine/strategies/ivbs/ivbs_config.py into the `cfg` singleton.
+# scanner.py, state_machine.py, second_spike_detector.py, and
+# abandoned_setup_tracker.py all read from `cfg`, NOT from app.core.config.
+#
+# Migration complete (2026-07-14): all ~45 settings.* reads in IVBS modules
+# have been redirected to this file. Strategy-specific keys have been removed
+# from app/core/config.py and .env.
 
 id: ivbs
 name: Institutional Volume Breakout Strategy
@@ -49,6 +50,7 @@ second_spike:
   extended_gap_minutes: 30
   volume_floor: 10.0
   price_above_high_threshold: 0.80  # at >=80% vol ratio, require close > spike1.high
+  price_above_high_pct: 0.005       # additional 0.5% above prior high required
 
 # ── Re-entry after abandonment ─────────────────────────────────────────────
 re_entry:
@@ -61,18 +63,26 @@ re_entry:
 timing:
   dryup_max_minutes: 25
   max_entry_time: "13:30"
-  entry_buffer_pct: 0.001           # limit order buffer above trigger price
+  entry_buffer_pct: 0.001           # limit order buffer above trigger price (0.1%)
   entry_widen_after_seconds: 5      # widen limit after N seconds unfilled
   entry_abandon_pct: 0.015
   order_fill_timeout_seconds: 30
   approval_timeout_seconds: 60
   abandon_price_buffer_pct: 0.003   # wick penetration tolerance before abandonment
+  # v4 ATR trailing stop (opt-in; default off — test with paper before enabling)
+  dynamic_trailing_enabled: false
+  atr_period: 14                    # lookback for ATR on 1-min candles
+  atr_trail_multiplier: 2.5         # within day-trading band (1.5-2.5x per research)
+  # VWAP entry filter (opt-in; default off)
+  vwap_entry_filter_enabled: false
+  # Backtest mode: bypasses wall-clock checks (never enable on live session)
+  backtest_mode: false
 
 # ── Market-direction gate (Nifty EMA) ──────────────────────────────────────
 market_gate:
   nifty_gate_enabled: true
   nifty_ema_period: 20
-  nifty_instrument_token: 256265    # standard NSE Nifty 50 token
-  vix_instrument_token: 264969      # standard NSE India VIX token
-  high_vix_threshold: 18.0
+  nifty_instrument_token: 256265    # standard NSE Nifty 50 token — do not change
+  vix_instrument_token: 264969      # standard NSE India VIX token — do not change
+  high_vix_threshold: 18.0          # 18.0 > current regime (9-15 band); conservative
   high_vix_turnover_crore: 12.0

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from engine.strategies.ivbs.ivbs_config import cfg
 from engine.market.candle_builder import CandleBuilder, Candle
 from engine.orders.fill_timeout import FillTimeoutManager
 from engine.orders.order_service import OrderService
@@ -340,7 +341,7 @@ class TestFullPaperTradeCycle:
             await sm.on_candle(505.0, 508.0, 503.0, 505.0, 8_000, make_ts(9, 16 + i))
 
         # One candle past DRYUP_MAX_MINUTES after the 09:15 impact → timeout abandonment
-        timeout_ts = make_ts(9, 15) + datetime.timedelta(minutes=settings.DRYUP_MAX_MINUTES + 1)
+        timeout_ts = make_ts(9, 15) + datetime.timedelta(minutes=cfg.DRYUP_MAX_MINUTES + 1)
         await sm.on_candle(505.0, 508.0, 503.0, 505.0, 8_000, timeout_ts)
 
         assert sm.state == StrategyState.CLOSED

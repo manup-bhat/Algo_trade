@@ -36,7 +36,7 @@ from typing import Optional
 
 import structlog
 
-from app.core.config import settings
+from engine.strategies.ivbs.ivbs_config import cfg
 from engine.strategies.ivbs.scanner import ImpactCandle
 
 log = structlog.get_logger(__name__)
@@ -159,12 +159,12 @@ class SecondSpikeDetector:
 
         # Condition 1: gap >= minimum (proves real consolidation)
         gap_minutes = (candle_time - record.spike_time).total_seconds() / 60.0
-        if gap_minutes < settings.SECOND_SPIKE_MIN_GAP_MINUTES:
+        if gap_minutes < cfg.SECOND_SPIKE_MIN_GAP_MINUTES:
             log.debug(
                 "second_spike_rejected_gap_too_small",
                 symbol=symbol,
                 gap_minutes=round(gap_minutes, 1),
-                required=settings.SECOND_SPIKE_MIN_GAP_MINUTES,
+                required=cfg.SECOND_SPIKE_MIN_GAP_MINUTES,
             )
             return None
 
@@ -172,22 +172,22 @@ class SecondSpikeDetector:
         if record.spike_volume <= 0:
             return None
         vol_ratio = candle_volume / record.spike_volume
-        if not (settings.SECOND_SPIKE_MIN_RATIO <= vol_ratio <= settings.SECOND_SPIKE_MAX_RATIO):
+        if not (cfg.SECOND_SPIKE_MIN_RATIO <= vol_ratio <= cfg.SECOND_SPIKE_MAX_RATIO):
             log.debug(
                 "second_spike_rejected_vol_ratio",
                 symbol=symbol,
                 vol_ratio=round(vol_ratio, 2),
-                required_range=(settings.SECOND_SPIKE_MIN_RATIO, settings.SECOND_SPIKE_MAX_RATIO),
+                required_range=(cfg.SECOND_SPIKE_MIN_RATIO, cfg.SECOND_SPIKE_MAX_RATIO),
             )
             return None
 
         # Condition 3: absolute volume floor
-        if volume_sma > 0 and (candle_volume / volume_sma) < settings.SECOND_SPIKE_VOLUME_FLOOR:
+        if volume_sma > 0 and (candle_volume / volume_sma) < cfg.SECOND_SPIKE_VOLUME_FLOOR:
             log.debug(
                 "second_spike_rejected_abs_volume_floor",
                 symbol=symbol,
                 actual_multiple=round(candle_volume / volume_sma, 1),
-                required=settings.SECOND_SPIKE_VOLUME_FLOOR,
+                required=cfg.SECOND_SPIKE_VOLUME_FLOOR,
             )
             return None
 
@@ -211,10 +211,10 @@ class SecondSpikeDetector:
         # Research: At 80%+ volume the Wyckoff secondary test rule is borderline —
         # price must compensate by confirming absorption with a new high.
         # If it doesn't clear the 0.5% hurdle, require a 30+ min extended gap.
-        if vol_ratio >= settings.SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD:
-            required_price = record.spike_high * (1 + settings.SECOND_SPIKE_PRICE_ABOVE_HIGH_PCT)
+        if vol_ratio >= cfg.SECOND_SPIKE_PRICE_ABOVE_HIGH_THRESHOLD:
+            required_price = record.spike_high * (1 + cfg.SECOND_SPIKE_PRICE_ABOVE_HIGH_PCT)
             if candle_close < required_price:
-                if gap_minutes < settings.SECOND_SPIKE_EXTENDED_GAP_MINUTES:
+                if gap_minutes < cfg.SECOND_SPIKE_EXTENDED_GAP_MINUTES:
                     log.debug(
                         "second_spike_rejected_high_ratio_no_price_confirm",
                         symbol=symbol,
