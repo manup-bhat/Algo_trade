@@ -5,8 +5,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IVBS — Institutional Volume Breakout Scanner</title>
-  <meta name="description" content="NSE intraday algorithmic trading terminal — IVBS Strategy" />
+  <title>Algo Trading Terminal — NSE Intraday Platform</title>
+  <meta name="description" content="NSE intraday algorithmic trading terminal — multi-strategy: IVBS, Options Momentum" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -1404,8 +1404,9 @@ a { color: var(--blue); text-decoration: none; }
   <!-- NAVBAR -->
   <nav class="navbar" aria-label="Primary navigation">
     <div class="navbar-brand">
-      <div class="navbar-logo-icon">IV</div>
-      <div class="navbar-brand-text">IVBS <span>Terminal</span></div>
+      <div class="navbar-logo-icon">AT</div>
+      <div class="navbar-brand-text">Algo <span>Terminal</span></div>
+      <div id="active-strategy-badge" style="display:none;margin-left:8px;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-border);border-radius:5px;padding:2px 7px;"></div>
     </div>
 
     <div class="navbar-tabs">
@@ -3612,14 +3613,28 @@ async function loadStrategies() {
     if (!r.ok) return;
     const d = await r.json();
     const sel = document.getElementById('strategy-filter');
+    const badge = document.getElementById('active-strategy-badge');
     if (!sel) return;
-    // strategy ids are server-controlled slugs; sanitize defensively anyway.
+    // strategy ids are server-controlled slugs; sanitize defensively.
     const ids = (d.strategies || []).map(s => String(s).replace(/[^a-z0-9_\-]/gi, ''));
     sel.innerHTML = '<option value="all">All strategies</option>' +
-      ids.map(s => `<option value="${s}">${s}</option>`).join('');
-    // Only show the picker when there is more than one strategy to choose from.
-    sel.style.display = ids.length > 1 ? '' : 'none';
+      ids.map(s => `<option value="${s}">${s.toUpperCase()}</option>`).join('');
+    // Always show the picker so the user can see what strategy is running.
+    // Hide only when no strategies are registered at all.
+    sel.style.display = ids.length > 0 ? '' : 'none';
     if (ids.includes(_strategyFilter)) sel.value = _strategyFilter;
+    // Update the navbar strategy badge
+    if (badge) {
+      if (ids.length === 1) {
+        badge.textContent = ids[0].toUpperCase();
+        badge.style.display = '';
+      } else if (ids.length > 1) {
+        badge.textContent = `${ids.length} strategies`;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
   } catch { /* ignore */ }
 }
 function _onStrategyFilterChange(v) {

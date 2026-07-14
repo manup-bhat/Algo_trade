@@ -179,12 +179,6 @@ class Settings(BaseSettings):
         return self
 
     # ── Computed Properties ─────────────────────────────────────────
-
-    @property
-    def min_turnover_rupees(self) -> float:
-        """MIN_TURNOVER_CRORE converted to rupees for hot-path comparison."""
-        return self.MIN_TURNOVER_CRORE * 1e7
-
     @property
     def is_paper_trade(self) -> bool:
         return self.TRADE_MODE == "PAPER"

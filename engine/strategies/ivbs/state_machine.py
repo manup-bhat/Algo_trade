@@ -936,6 +936,9 @@ class SymbolStateMachine:
                 symbol=self.symbol,
                 quantity=fill_qty,
                 trigger_price=stop_loss,
+                exchange="NSE",      # IVBS is NSE equity only
+                product="MIS",      # intraday — auto-squared at 3:20 PM
+                tag=f"IVBS_SL_{self.strategy_id}",
             )
             if sl_order_id is None:
                 log.critical(
@@ -946,7 +949,11 @@ class SymbolStateMachine:
                 # Emergency: close position immediately
                 if self._order_service:
                     await self._order_service.place_exit_market(
-                        self.symbol, fill_qty, reason="sl_placement_failed"
+                        self.symbol, fill_qty,
+                        reason="sl_placement_failed",
+                        exchange="NSE",
+                        product="MIS",
+                        tag=f"IVBS_EXIT_{self.strategy_id}",
                     )
                 self.state = StrategyState.CLOSED
                 await self._persist_state()
@@ -1369,6 +1376,9 @@ class SymbolStateMachine:
                     symbol=self.symbol,
                     quantity=pos.quantity,
                     reason=reason,
+                    exchange="NSE",      # IVBS is NSE equity only
+                    product="MIS",      # intraday — auto-squared at 3:20 PM
+                    tag=f"IVBS_EXIT_{self.strategy_id}",
                 )
             else:
                 exit_order_id = None

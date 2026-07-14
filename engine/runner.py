@@ -57,6 +57,7 @@ from engine.store.redis_store import RedisStore
 from engine.strategy.coordinator import Coordinator
 from engine.core.strategy_router import StrategyRouter
 from engine.strategies.ivbs.strategy import IVBSStrategy
+from engine.strategies.ivbs.ivbs_config import cfg as _ivbs_cfg  # universe filter params
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -223,12 +224,15 @@ async def job_pre_market_setup() -> None:
         cache = InstrumentCache()
         cache.load(raw_instruments)
         _instrument_cache = cache  # exposed for watchlist hot-reload in _poll_config
+        # Universe price filter + SMA period are IVBS-specific parameters.
+        # Read from the IVBS config singleton so runner.py stays strategy-agnostic
+        # and there is a single source of truth for these values.
         universe = cache.filter_to_universe(
             raw_symbols,
-            min_price=settings.MIN_PRICE,
-            max_price=settings.MAX_PRICE,
+            min_price=_ivbs_cfg.MIN_PRICE,
+            max_price=_ivbs_cfg.MAX_PRICE,
         )
-        coordinator.initialize_builders(universe, sma_period=settings.VOLUME_SMA_PERIOD)
+        coordinator.initialize_builders(universe, sma_period=_ivbs_cfg.VOLUME_SMA_PERIOD)
 
         # Store tick_size and token in Redis for each symbol
         for symbol, info in universe.items():
@@ -653,7 +657,7 @@ async def _poll_config() -> None:
                         else (lambda _s: None)
                     )
                     added, removed = _coordinator.apply_watchlist(
-                        pending_wl, resolve, sma_period=settings.VOLUME_SMA_PERIOD
+                        pending_wl, resolve, sma_period=_ivbs_cfg.VOLUME_SMA_PERIOD
                     )
                     _universe_tokens = list(_coordinator.token_to_symbol.keys())
                     if added:

@@ -272,6 +272,7 @@ class OrderService:
 
         # Try to get the real current LTP from the WebSocket feed
         fill_price: float
+        ltp: float | None = None  # initialise before the try block (name-before-assignment guard)
         try:
             # Redis is injected into the module via the engine runner startup.
             # Import here to avoid circular dependency at module load time.
@@ -317,7 +318,7 @@ class OrderService:
                 quantity=quantity,
                 filled_quantity=quantity,
                 average_price=fill_price,
-                status_message=f"Paper fill at LTP={ltp}",
+                status_message=f"Paper fill at LTP={ltp or limit_price}",
                 trade_mode="PAPER",
             )
         except Exception:
@@ -350,6 +351,12 @@ class OrderService:
 
         CRITICAL: SL-M has NO price field — omitting it is spec-mandated (§9.2).
         Including a price field would silently downgrade to SL-Limit on Kite.
+
+        IMPORTANT: Callers MUST pass `exchange` and `product` explicitly for any
+        asset class other than NSE equity. Defaults are NSE/MIS which work for
+        IVBS equity intraday only. For NFO (options/futures) pass exchange="NFO"
+        and product="MIS" or "NRML" as appropriate — using the wrong exchange
+        will cause Kite to reject the order.
 
         Paper mode: returns a fake SL order ID. SL checking happens via on_tick().
         """
