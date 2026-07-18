@@ -39,7 +39,7 @@ class DailyPnl(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default="(datetime('now'))", nullable=False
+        DateTime, server_default=text("(datetime('now'))"), nullable=False
     )
 
     __table_args__ = (
