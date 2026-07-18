@@ -553,21 +553,213 @@ async def get_analytics(mode: str = "ALL", days: int = 30, strategy_id: str | No
         return {**_compute_trade_analytics([]), "mode": mode, "days": days}
 
 
+def _load_all_strategy_configs() -> list[dict[str, Any]]:
+    """Load config.yaml for every strategy directory under engine/strategies/."""
+    base = Path(__file__).resolve().parents[2] / "engine" / "strategies"
+    results = []
+    if not base.is_dir():
+        return results
+    try:
+        import yaml as _yaml
+    except ImportError:
+        return results
+    for d in sorted(base.iterdir()):
+        if not d.is_dir() or d.name.startswith("_") or d.name.startswith("."):
+            continue
+        cfg_file = d / "config.yaml"
+        if not cfg_file.is_file():
+            continue
+        try:
+            with cfg_file.open("r", encoding="utf-8") as fh:
+                raw = _yaml.safe_load(fh) or {}
+            results.append({
+                "strategy_id": d.name,
+                "name": raw.get("name", d.name),
+                "description": raw.get("description", ""),
+                "asset_class": raw.get("asset_class", "EQUITY"),
+                "enabled": bool(raw.get("enabled", True)),
+                "config": raw,
+            })
+        except Exception as exc:
+            log.warning("strategy_config_load_failed", strategy=d.name, error=str(exc))
+    return results
+
+
 @router.get("/strategies")
 async def get_strategies():
-    """List strategy ids the engine currently has registered (published to Redis
-    at startup). Powers the dashboard's strategy selector/filter. Falls back to
-    ['ivbs'] when the engine hasn't published yet."""
+    """List all registered strategies with metadata from their config.yaml.
+
+    Falls back to the engine's Redis-published list for id ordering, but enriches
+    each entry with name / description / asset_class / enabled from config.yaml.
+    Returns ALL strategy directories found on disk (not just enabled ones).
+    """
     rs = _rs()
-    ids: list[str] = []
+    active_ids: list[str] = []
     if rs is not None:
         try:
-            ids = await rs.get_active_strategies()
+            active_ids = await rs.get_active_strategies()
         except Exception as exc:
             log.debug("dashboard_strategies_not_available", error=str(exc))
-    if not ids:
-        ids = ["ivbs"]
-    return {"strategies": ids, "count": len(ids)}
+
+    all_configs = _load_all_strategy_configs()
+    if not all_configs:
+        # Hard fallback — return bare id list so the navbar selector always works.
+        ids = active_ids or ["ivbs"]
+        return {
+            "strategies": [{"strategy_id": sid, "name": sid.upper(), "enabled": True} for sid in ids],
+            "count": len(ids),
+            "active_ids": active_ids,
+        }
+
+    # Mark which are currently active in the running engine
+    active_set = set(active_ids)
+    for s in all_configs:
+        s["running"] = s["strategy_id"] in active_set
+
+    return {
+        "strategies": all_configs,
+        "count": len(all_configs),
+        "active_ids": active_ids,
+    }
+
+
+# ── /strategies/{id}/config ───────────────────────────────────────────────────────
+
+def _strategy_config_path(strategy_id: str) -> Path:
+    """Return the config.yaml path for a given strategy id."""
+    base = Path(__file__).resolve().parents[2] / "engine" / "strategies"
+    # Only allow safe directory names (no path traversal)
+    safe = strategy_id.replace("/", "").replace("\\", "").replace("..", "")
+    return base / safe / "config.yaml"
+
+
+def _flatten_yaml(node: Any, prefix: str = "") -> list[dict[str, Any]]:
+    """Recursively flatten a nested YAML dict into a list of {key, value, kind} records."""
+    result: list[dict[str, Any]] = []
+    if not isinstance(node, dict):
+        return result
+    for k, v in node.items():
+        full_key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict):
+            result.extend(_flatten_yaml(v, full_key))
+        else:
+            kind = "bool" if isinstance(v, bool) else (
+                "int" if isinstance(v, int) else (
+                "float" if isinstance(v, float) else "str"))
+            result.append({"key": full_key, "value": v, "kind": kind})
+    return result
+
+
+@router.get("/strategies/{strategy_id}/config")
+async def get_strategy_config(strategy_id: str):
+    """Return per-strategy config.yaml as structured JSON for the settings UI.
+
+    Returns both the raw nested dict (config) and a flat list of fields (schema)
+    suitable for rendering editable form inputs.
+    """
+    cfg_path = _strategy_config_path(strategy_id)
+    if not cfg_path.is_file():
+        raise HTTPException(status_code=404, detail=f"config.yaml not found for strategy '{strategy_id}'")
+    try:
+        import yaml as _yaml
+        with cfg_path.open("r", encoding="utf-8") as fh:
+            raw = _yaml.safe_load(fh) or {}
+        schema = _flatten_yaml(raw)
+        return {
+            "strategy_id": strategy_id,
+            "name": raw.get("name", strategy_id),
+            "description": raw.get("description", ""),
+            "asset_class": raw.get("asset_class", "EQUITY"),
+            "enabled": bool(raw.get("enabled", True)),
+            "config": raw,
+            "schema": schema,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load config: {exc}")
+
+
+class StrategyConfigUpdate(BaseModel):
+    """Payload for PATCH /strategies/{id}/config."""
+    # A flat dict of dotted-key paths to new values.
+    # e.g. {"scanner.volume_spike_multiple": 12.0, "timing.dryup_max_minutes": 30}
+    updates: dict[str, Any]
+    reload_engine: bool = True
+
+
+@router.post("/strategies/{strategy_id}/config")
+async def update_strategy_config(strategy_id: str, payload: StrategyConfigUpdate):
+    """Update per-strategy config.yaml from the dashboard settings UI.
+
+    Accepts a flat dict of dotted-path keys → new values, navigates the YAML
+    structure and updates them in place, then writes the file back.
+    Sends a Redis reinit_trigger if reload_engine=True.
+    """
+    cfg_path = _strategy_config_path(strategy_id)
+    if not cfg_path.is_file():
+        raise HTTPException(status_code=404, detail=f"config.yaml not found for strategy '{strategy_id}'")
+    try:
+        import yaml as _yaml
+        with cfg_path.open("r", encoding="utf-8") as fh:
+            raw: dict[str, Any] = _yaml.safe_load(fh) or {}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {exc}")
+
+    # Apply updates: dotted path e.g. "scanner.volume_spike_multiple" → raw["scanner"]["volume_spike_multiple"]
+    applied: list[str] = []
+    errors: list[str] = []
+    for dotted_key, new_value in payload.updates.items():
+        parts = dotted_key.split(".")
+        node = raw
+        try:
+            for part in parts[:-1]:
+                if part not in node or not isinstance(node[part], dict):
+                    node[part] = {}
+                node = node[part]
+            leaf = parts[-1]
+            # Preserve original type (int/float/bool/str)
+            orig = node.get(leaf)
+            if isinstance(orig, bool):
+                node[leaf] = str(new_value).strip().lower() in {"true", "1", "yes", "on"}
+            elif isinstance(orig, int):
+                node[leaf] = int(new_value)
+            elif isinstance(orig, float):
+                node[leaf] = float(new_value)
+            else:
+                node[leaf] = new_value
+            applied.append(dotted_key)
+        except Exception as exc:
+            errors.append(f"{dotted_key}: {exc}")
+
+    try:
+        with cfg_path.open("w", encoding="utf-8") as fh:
+            _yaml.dump(raw, fh, default_flow_style=False, allow_unicode=True)
+        log.info("strategy_config_updated", strategy=strategy_id, keys=applied)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to write config: {exc}")
+
+    # Trigger engine reinit via Redis if requested
+    rs = _rs()
+    if rs is not None and payload.reload_engine:
+        try:
+            await rs.set_reinit_trigger()
+        except Exception:
+            pass
+
+    await broadcast({
+        "event": "strategy_config_updated",
+        "strategy_id": strategy_id,
+        "updated_keys": applied,
+        "timestamp": datetime.now(IST_TZ).isoformat(),
+    })
+
+    return {
+        "status": "success",
+        "strategy_id": strategy_id,
+        "applied": applied,
+        "errors": errors,
+        "reload_engine": payload.reload_engine,
+        "note": "Changes written to config.yaml. Engine reinit triggered. Strategy will reload params on next tick cycle.",
+    }
 
 
 def _rows_to_csv(rows: list[dict]) -> str:
@@ -590,8 +782,11 @@ _EXPORT_TABLES = {
 
 
 @router.get("/export/{kind}.csv")
-async def export_csv(kind: str):
-    """Download trades / orders / journal as a CSV file (full history)."""
+async def export_csv(kind: str, strategy_id: str | None = None):
+    """Download trades / orders / journal as a CSV file (full history).
+
+    Optional ?strategy_id= filter scopes the export to a single strategy.
+    """
     kind = (kind or "").lower()
     if kind not in _EXPORT_TABLES:
         raise HTTPException(status_code=404, detail=f"Unknown export kind: {kind}")
@@ -600,13 +795,18 @@ async def export_csv(kind: str):
     try:
         from sqlalchemy import text
         engine = _get_db_engine()
+        sid = _norm_strategy(strategy_id)
+        where_clause = f"WHERE strategy_id = '{sid}'" if sid else ""
         async with engine.connect() as conn:
-            result = await conn.execute(text(f"SELECT * FROM {table} ORDER BY {order_col} DESC"))
+            result = await conn.execute(text(
+                f"SELECT * FROM {table} {where_clause} ORDER BY {order_col} DESC"
+            ))
             rows = [dict(r._mapping) for r in result]
     except Exception as exc:
         log.warning("csv_export_query_failed", kind=kind, error=str(exc))
     from fastapi.responses import StreamingResponse
-    filename = f"ivbs_{kind}_{_today_ist()}.csv"
+    strat_prefix = f"{sid}_" if (sid := _norm_strategy(strategy_id)) else ""
+    filename = f"trading_{strat_prefix}{kind}_{_today_ist()}.csv"
     return StreamingResponse(
         iter([_rows_to_csv(rows)]),
         media_type="text/csv",
@@ -834,45 +1034,75 @@ class SettingsUpdate(BaseModel):
 
 _SECRET_SETTING_KEYS = {"KITE_API_KEY", "KITE_API_SECRET"}
 
+# NOTE: Strategy-specific settings (scanner thresholds, dry-up timing, re-ignition,
+# ashape, second-spike, re-entry, market gate) are configured per-strategy in:
+#   engine/strategies/ivbs/config.yaml
+#   engine/strategies/<other>/config.yaml
+# The Settings class (app/core/config.py) contains ONLY global/engine-wide values.
+
 _SETTING_GROUPS: dict[str, list[str]] = {
     "Kite Credentials": [
         "KITE_API_KEY", "KITE_API_SECRET", "KITE_REDIRECT_URL", "KITE_TOKEN_PATH",
     ],
-    "Infrastructure": ["REDIS_URL", "DATABASE_URL", "UNIVERSE_FILE"],
-    "Scanner Filters": [
-        "VOLUME_SPIKE_MULTIPLE", "VOLUME_SMA_PERIOD", "HISTORICAL_WARMUP_ENABLED",
-        "HISTORICAL_WARMUP_TRADING_DAYS", "HISTORICAL_WARMUP_CONCURRENCY",
-        "HISTORICAL_WARMUP_BATCH_DELAY_SEC", "HISTORICAL_WARMUP_RECENT_CANDLES",
-        "MIN_TURNOVER_CRORE", "MIN_PRICE", "MAX_PRICE", "REIGNITION_VOLUME_MULTIPLE",
-        "REIGNITION_LOOKBACK_CANDLES", "MIN_DRYUP_CANDLES",
-        "ASHAPE_RED_CANDLE_PCT", "ASHAPE_VOLUME_MULTIPLE", "ASHAPE_MIN_CANDLE_COUNT",
+    "Infrastructure": [
+        "REDIS_URL", "DATABASE_URL", "UNIVERSE_FILE",
     ],
-    "Risk Controls": [
-        "RISK_PER_TRADE_PCT", "MAX_CONCURRENT_POSITIONS", "DAILY_LOSS_LIMIT_PCT",
-        "MIN_RISK_PER_SHARE_INR", "PEAK_MARGIN_SAFETY_BUFFER_PCT",
+    "Historical Warmup": [
+        # Engine-wide warmup settings — apply to all strategies' SMA pre-load.
+        "HISTORICAL_WARMUP_ENABLED",
+        "HISTORICAL_WARMUP_TRADING_DAYS",
+        "HISTORICAL_WARMUP_CONCURRENCY",
+        "HISTORICAL_WARMUP_BATCH_DELAY_SEC",
+        "HISTORICAL_WARMUP_RECENT_CANDLES",
     ],
-    "Regulatory Values": [
-        "STT_INTRADAY_SELL_PCT", "NSE_TXFEE_PER_LAKH_INR",
-        "SEBI_TXFEE_PER_CRORE_INR", "GST_ON_BROKERAGE_PCT", "STAMP_DUTY_BUY_PCT",
+    "Global Risk Controls": [
+        # Engine-wide risk limits — apply across ALL active strategies combined.
+        "RISK_PER_TRADE_PCT",
+        "MAX_CONCURRENT_POSITIONS",
+        "DAILY_LOSS_LIMIT_PCT",
+        "MIN_RISK_PER_SHARE_INR",
+        "PEAK_MARGIN_SAFETY_BUFFER_PCT",
+    ],
+    "Regulatory Costs": [
+        # Statutory charges — review after Union Budget. Affects net P&L calculation.
+        "STT_INTRADAY_SELL_PCT",
+        "NSE_TXFEE_PER_LAKH_INR",
+        "SEBI_TXFEE_PER_CRORE_INR",
+        "GST_ON_BROKERAGE_PCT",
+        "STAMP_DUTY_BUY_PCT",
     ],
     "Broker API": [
-        "BROKERAGE_PER_ORDER_INR", "ORDER_MAX_RETRIES", "ORDER_RETRY_BASE_DELAY_SEC",
-        "WS_MAX_RECONNECT_ATTEMPTS", "WS_RECONNECT_DELAY_SEC",
-        "MAX_WS_INSTRUMENTS", "EXIT_SL_CANCEL_DELAY_MS",
+        "BROKERAGE_PER_ORDER_INR",
+        "ORDER_MAX_RETRIES",
+        "ORDER_RETRY_BASE_DELAY_SEC",
+        "WS_MAX_RECONNECT_ATTEMPTS",
+        "WS_RECONNECT_DELAY_SEC",
+        "MAX_WS_INSTRUMENTS",
+        "EXIT_SL_CANCEL_DELAY_MS",
     ],
-    "Strategy Calibration": [
-        "DRYUP_MAX_MINUTES", "MAX_ENTRY_TIME", "ENTRY_BUFFER_PCT",
-        "ENTRY_WIDEN_AFTER_SECONDS", "ENTRY_ABANDON_PCT", "ORDER_FILL_TIMEOUT_SECONDS",
-    ],
-    "Market Structure": [
-        "MARKET_OPEN_TIME", "SQUARE_OFF_TIME", "MASS_SQUAREOFF_START_TIME",
+    "Market Hours": [
+        # NSE session boundaries — only change if SEBI modifies trading hours.
+        "MARKET_OPEN_TIME",
+        "SQUARE_OFF_TIME",
+        "MASS_SQUAREOFF_START_TIME",
         "SESSION_END_TIME",
+        "MAX_ENTRY_TIME",  # engine-wide last-entry fence (strategy config.yaml can tighten further)
+    ],
+    "Trade Mode": [
+        "TRADE_MODE",
+        "ENABLED_STRATEGIES",
     ],
     "Server Operations": [
-        "API_HOST", "API_PORT", "DEBUG", "LOG_LEVEL",
-        "AUTO_START_ENGINE_WITH_BACKEND", "AUTO_STOP_ENGINE_WITH_BACKEND",
-        "ENGINE_RUNNER_CMD", "DASHBOARD_TICK_FLUSH_INTERVAL_MS",
-        "DASHBOARD_WS_TICK_INTERVAL_MS", "DASHBOARD_WS_HEARTBEAT_INTERVAL_MS",
+        "API_HOST",
+        "API_PORT",
+        "DEBUG",
+        "LOG_LEVEL",
+        "AUTO_START_ENGINE_WITH_BACKEND",
+        "AUTO_STOP_ENGINE_WITH_BACKEND",
+        "ENGINE_RUNNER_CMD",
+        "DASHBOARD_TICK_FLUSH_INTERVAL_MS",
+        "DASHBOARD_WS_TICK_INTERVAL_MS",
+        "DASHBOARD_WS_HEARTBEAT_INTERVAL_MS",
     ],
 }
 
@@ -883,26 +1113,36 @@ _SETTING_WARNINGS = {
     "GST_ON_BROKERAGE_PCT": "review after Union Budget",
     "STAMP_DUTY_BUY_PCT": "review after Union Budget",
     "BROKERAGE_PER_ORDER_INR": "review if brokerage plan changes",
+    "ENABLED_STRATEGIES": "restart engine after changing; strategy ids must match engine/strategies/<id>/ directories",
+    "MAX_ENTRY_TIME": "global engine-wide fence; individual strategies can set a tighter cutoff in their config.yaml",
 }
 
 _SETTING_DESCRIPTIONS = {
     "UNIVERSE_FILE": "Universe source file loaded before Kite instrument filtering.",
-    "VOLUME_SPIKE_MULTIPLE": "Minimum volume multiple versus 500-period SMA for scan hits.",
     "HISTORICAL_WARMUP_ENABLED": "Use Kite historical minute candles to pre-warm SMA builders before scanning.",
     "HISTORICAL_WARMUP_TRADING_DAYS": "Trading sessions requested from Kite for warmup history.",
     "HISTORICAL_WARMUP_CONCURRENCY": "Parallel Kite historical requests during warmup.",
     "HISTORICAL_WARMUP_BATCH_DELAY_SEC": "Pause between warmup request batches to avoid broker throttling.",
     "HISTORICAL_WARMUP_RECENT_CANDLES": "Historical candles stored per symbol for dashboard charts.",
-    "MIN_TURNOVER_CRORE": "Minimum one-minute turnover in crore required for scan hits.",
-    "RISK_PER_TRADE_PCT": "Capital risked per accepted trade.",
-    "MAX_CONCURRENT_POSITIONS": "Maximum simultaneous live positions.",
+    "RISK_PER_TRADE_PCT": "Capital risked per accepted trade (across all strategies).",
+    "MAX_CONCURRENT_POSITIONS": "Maximum simultaneous live positions across all strategies.",
     "DAILY_LOSS_LIMIT_PCT": "Circuit breaker loss threshold as percent of capital.",
-    "DRYUP_MAX_MINUTES": "Maximum time a setup can remain in dry-up validation.",
-    "ORDER_FILL_TIMEOUT_SECONDS": "Entry order timeout before reverting to monitoring.",
+    "MIN_RISK_PER_SHARE_INR": "Global floor — rejects entries with too-small risk-per-share.",
+    "PEAK_MARGIN_SAFETY_BUFFER_PCT": "Margin buffer before blocking new positions.",
+    "MAX_ENTRY_TIME": "Global last-allowable entry time (HH:MM). Strategies can tighten further in their config.yaml.",
     "AUTO_START_ENGINE_WITH_BACKEND": "Start engine.runner automatically with FastAPI.",
     "DASHBOARD_TICK_FLUSH_INTERVAL_MS": "Minimum interval for persisting live ticks to Redis.",
     "DASHBOARD_WS_TICK_INTERVAL_MS": "WebSocket interval for live market tick batches.",
     "DASHBOARD_WS_HEARTBEAT_INTERVAL_MS": "WebSocket interval for status, positions, and scanner snapshots.",
+    "ENABLED_STRATEGIES": "Comma-separated strategy IDs to run (must match engine/strategies/<id>/ directories).",
+    "TRADE_MODE": "PAPER = simulated fills; LIVE = real orders with approval; SIMULTANEOUS = alternates PAPER/LIVE per signal.",
+    "STT_INTRADAY_SELL_PCT": "Securities Transaction Tax on sell-side (intraday). Budget 2026: 0.025%.",
+    "NSE_TXFEE_PER_LAKH_INR": "NSE exchange transaction fee per ₹1 lakh turnover.",
+    "SEBI_TXFEE_PER_CRORE_INR": "SEBI regulatory fee per ₹1 crore turnover.",
+    "GST_ON_BROKERAGE_PCT": "GST applied on brokerage amount.",
+    "BROKERAGE_PER_ORDER_INR": "Flat brokerage charged per order by broker.",
+    "MAX_WS_INSTRUMENTS": "Maximum instruments on Kite WebSocket (Kite limit: 3000).",
+    "EXIT_SL_CANCEL_DELAY_MS": "Delay between SL cancel and MARKET sell in emergency exit.",
 }
 
 
@@ -992,6 +1232,23 @@ async def get_settings():
         pass
 
     trade_mode = trade_mode_override if trade_mode_override is not None else settings.TRADE_MODE
+
+    # Load per-strategy config sections for the settings page
+    strategy_configs: list[dict[str, Any]] = []
+    try:
+        for sc in _load_all_strategy_configs():
+            raw = sc.get("config") or {}
+            strategy_configs.append({
+                "strategy_id": sc["strategy_id"],
+                "name": sc["name"],
+                "description": sc.get("description", ""),
+                "asset_class": sc.get("asset_class", "EQUITY"),
+                "enabled": sc.get("enabled", True),
+                "schema": _flatten_yaml(raw),
+            })
+    except Exception as exc:
+        log.debug("settings_strategy_configs_failed", error=str(exc))
+
     return {
         "trade_mode": trade_mode,
         "paper_trade": trade_mode == "PAPER",   # convenience bool for navbar pill
@@ -1000,6 +1257,7 @@ async def get_settings():
         "max_capital_live": max_capital_live,
         "daily_loss_limit_pct": settings.DAILY_LOSS_LIMIT_PCT,
         "groups": _settings_payload(settings),
+        "strategy_configs": strategy_configs,   # per-strategy config.yaml sections
     }
 
 

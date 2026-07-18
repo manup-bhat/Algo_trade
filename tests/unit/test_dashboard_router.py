@@ -146,8 +146,13 @@ def test_norm_strategy_filter():
 async def test_get_strategies_falls_back_to_ivbs(redis_store):
     dashboard_router.set_dependencies(redis_store, None)
     data = await dashboard_router.get_strategies()
-    assert data["strategies"] == ["ivbs"]
-    assert data["count"] == 1
+    # strategies is now a list of enriched dicts (strategy_id, name, asset_class, ...)
+    strategy_ids = [
+        s["strategy_id"] if isinstance(s, dict) else s
+        for s in data["strategies"]
+    ]
+    assert "ivbs" in strategy_ids
+    assert data["count"] >= 1
 
 
 @pytest.mark.asyncio
@@ -155,8 +160,15 @@ async def test_get_strategies_reads_published_ids(redis_store):
     dashboard_router.set_dependencies(redis_store, None)
     await redis_store.set_active_strategies(["ivbs", "options_momentum"])
     data = await dashboard_router.get_strategies()
-    assert data["strategies"] == ["ivbs", "options_momentum"]
-    assert data["count"] == 2
+    # active_ids echoes what was published to Redis
+    assert set(data["active_ids"]) == {"ivbs", "options_momentum"}
+    # strategies list contains enriched dicts from disk
+    strategy_ids = [
+        s["strategy_id"] if isinstance(s, dict) else s
+        for s in data["strategies"]
+    ]
+    assert "ivbs" in strategy_ids
+    assert data["count"] >= 1
 
 
 # ── CSV export ────────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, Text, text
+from sqlalchemy import Date, DateTime, Float, Integer, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -19,7 +19,7 @@ class DailyPnl(Base):
     strategy_id: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'ivbs'"), default="ivbs"
     )
-    trade_date: Mapped[datetime.date] = mapped_column(Date, nullable=False, unique=True)
+    trade_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     total_capital: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Session stats
@@ -40,4 +40,9 @@ class DailyPnl(Base):
 
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default="(datetime('now'))", nullable=False
+    )
+
+    __table_args__ = (
+        # Composite unique: one P&L row per strategy per day (multi-strategy safe).
+        UniqueConstraint("trade_date", "strategy_id", name="uq_daily_pnl_date_strategy"),
     )

@@ -1596,10 +1596,11 @@ a { color: var(--blue); text-decoration: none; }
               Download Signal Logs
             </button>
             <div style="display:flex; gap:8px; margin-top:10px;">
-              <a href="/api/v1/export/trades.csv" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Trades CSV</a>
-              <a href="/api/v1/export/orders.csv" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Orders CSV</a>
-              <a href="/api/v1/export/journal.csv" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Journal CSV</a>
+              <a id="export-link-trades" href="#" onclick="this.href=_sfx('/api/v1/export/trades.csv');return true;" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Trades CSV</a>
+              <a id="export-link-orders" href="#" onclick="this.href=_sfx('/api/v1/export/orders.csv');return true;" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Orders CSV</a>
+              <a id="export-link-journal" href="#" onclick="this.href=_sfx('/api/v1/export/journal.csv');return true;" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Journal CSV</a>
             </div>
+
           </div>
         </div>
       </div>
@@ -2724,30 +2725,55 @@ async function loadPositions() {
 
 function renderPositions(positions) {
   const tbody = $('#positions-tbody');
+  const table = $('#positions-table');
   if (!positions.length) {
     tbody.innerHTML = emptyRow(9, '📊', 'No live positions', 'Active trades will appear here');
     return;
   }
+
+  // Detect if multiple strategies have positions (to show strategy badge column)
+  const strategiesPresent = new Set(positions.map(p => p.strategy_id || 'ivbs'));
+  const showStratBadge = strategiesPresent.size > 1 || _strategyFilter === 'all';
+
+  // Choose extra fields based on dominant strategy in positions
+  const dominantSid = _strategyFilter !== 'all' ? _strategyFilter
+    : (positions[0]?.strategy_id || 'ivbs');
+  const schema = _STRATEGY_SCHEMAS[dominantSid] || _STRATEGY_SCHEMAS.ivbs;
+
+  // Update thead
+  if (table) {
+    const thead = table.querySelector('thead tr');
+    if (thead) {
+      const extraHeaders = schema.positionExtraFields({ target_1r2: 1 })
+        .map(f => `<th>${f.label}</th>`).join('');
+      thead.innerHTML = `
+        <th>Symbol</th><th>Qty</th><th>Entry</th><th>LTP</th><th>P&amp;L</th>
+        ${extraHeaders}
+        <th>Flags</th>
+        ${showStratBadge ? '<th>Strategy</th>' : ''}
+      `;
+    }
+  }
+
   tbody.innerHTML = positions.map(p => {
     const pnl = parseFloat(p.unrealized_pnl) || 0;
     const flags = [];
     if (p.cost_trailed) flags.push(`<span class="tag-pill teal">Cost ✓</span>`);
     if (p.profit_locked) flags.push(`<span class="tag-pill green">Locked</span>`);
+    const pSid = p.strategy_id || 'ivbs';
+    const pSchema = _STRATEGY_SCHEMAS[pSid] || _STRATEGY_SCHEMAS.ivbs;
+    const extraCells = pSchema.positionExtraFields(p)
+      .map(f => `<td>${f.value}</td>`).join('');
+    const stratCell = showStratBadge ? `<td>${strategyBadge(pSid)}</td>` : '';
     return `<tr>
       <td class="sym-cell" style="cursor:pointer" onclick="openStockDrawer('${p.symbol}','position')">${p.symbol}</td>
       <td>${p.quantity || '—'}</td>
       <td>${fmtINR(p.entry_price)}</td>
       <td id="pos-ltp-${p.symbol}">—</td>
       <td style="${pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">${fmtINRSign(pnl)}</td>
-      <td>${fmtINR(p.current_sl)}</td>
-      <td>${fmtINR(p.risk_amount, 0)}</td>
-      <td>
-        <div class="pos-target-bar">
-          ${p.target_1r2 ? `<span class="pos-target-marker r2"></span><span>${fmtINR(p.target_1r2)}</span>` : ''}
-          ${p.target_1r4 ? `<span class="pos-target-marker r4"></span><span>${fmtINR(p.target_1r4)}</span>` : ''}
-        </div>
-      </td>
+      ${extraCells}
       <td>${flags.join(' ') || '—'}</td>
+      ${stratCell}
     </tr>`;
   }).join('');
 }
@@ -3109,39 +3135,82 @@ async function loadScanner() {
   } catch {}
 }
 
-function stateTag(state) {
+function stateTag(state, strategyId) {
   const s = (state||'').toUpperCase();
   if (s==='MANAGING')    return `<span class="tag-pill green">MANAGING</span>`;
   if (s==='MONITORING')  return `<span class="tag-pill amber">MONITORING</span>`;
+  if (s==='ENTERED')     return `<span class="tag-pill teal">ENTERED</span>`;
   if (s.includes('ENTRY')||s==='ACTION_PENDING') return `<span class="tag-pill teal">ENTRY</span>`;
   if (s==='ACTION_PENDING_APPROVAL') return `<span class="tag-pill" style="background:var(--red-bg,rgba(239,68,68,.15));color:var(--red)">APPROVAL ⚡</span>`;
   if (s==='SCAN_HIT')    return `<span class="tag-pill blue">SCAN HIT</span>`;
   if (s==='ABANDONED')   return `<span class="tag-pill red">ABANDONED</span>`;
   if (s==='CLOSED')      return `<span class="tag-pill" style="background:var(--border);color:var(--text-muted)">CLOSED</span>`;
-  // IDLE / unknown — no badge, just a quiet dash
-  return `<span style="color:var(--text-muted);font-size:11px;">—</span>`;
+  if (s==='IDLE')        return `<span style="color:var(--text-muted);font-size:11px;">IDLE</span>`;
+  // unknown — show raw value quietly
+  return s ? `<span style="color:var(--text-muted);font-size:11px;">${s}</span>` : `<span style="color:var(--text-muted);font-size:11px;">—</span>`;
+}
+
+function strategyBadge(sid) {
+  if (!sid) return '';
+  const s = _STRATEGY_SCHEMAS[sid];
+  const label = s?.name || sid.toUpperCase();
+  const color = (s?.assetClass === 'OPTION') ? 'var(--purple)' : 'var(--blue)';
+  const bg    = (s?.assetClass === 'OPTION') ? 'var(--purple-dim)' : 'var(--blue-dim)';
+  return `<span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;background:${bg};color:${color};">${label}</span>`;
 }
 
 function renderScannerTable(hits) {
+  const table = $('#scanner-table');
   const tbody = $('#scanner-tbody');
+  if (!table || !tbody) return;
+
+  // Resolve which schema to use based on current filter
+  const schema = (_strategyFilter !== 'all') ? _STRATEGY_SCHEMAS[_strategyFilter] : null;
+  const extraCols = schema?.scannerExtraCols || _STRATEGY_SCHEMAS.ivbs.scannerExtraCols;
+  const showStratBadge = (_strategyFilter === 'all');
+
+  // Update thead dynamically
+  const thead = table.querySelector('thead tr');
+  if (thead) {
+    // Always: Symbol | Signal Time | Close | [extra cols...] | State | Reason
+    // + Strategy col when showing all
+    const extraHeaders = extraCols.map(c => `<th>${c.label}</th>`).join('');
+    const strategyHeader = showStratBadge ? '<th>Strategy</th>' : '';
+    thead.innerHTML = `
+      <th>Symbol</th>
+      <th>Signal Time</th>
+      <th>Close</th>
+      ${extraHeaders}
+      <th>State</th>
+      <th>Reason</th>
+      ${strategyHeader}
+    `;
+  }
+
   if (!hits.length) {
-    tbody.innerHTML = emptyRow(9, '🔍', 'No scan hits today');
+    const colCount = 4 + extraCols.length + (showStratBadge ? 1 : 0);
+    tbody.innerHTML = emptyRow(colCount, '🔍', 'No scan hits today', 'Waiting for volume breakout signals');
     return;
   }
-  tbody.innerHTML = hits.map(h => `
-    <tr onclick="openStockDrawer('${h.symbol}','scanner')" style="cursor:pointer">
-      <td class="sym-col">${h.symbol}</td>
-      <td>${fmtTime(h.signal_time)}</td>
-      <td class="num-col">${fmtINR(h.close)}</td>
-      <td class="num-col" style="color:var(--amber)">${h.spike_multiple ? fmt(h.spike_multiple)+'×' : '—'}</td>
-      <td class="num-col">${fmtVol(h.volume)}</td>
-      <td class="num-col">${h.turnover_cr ? h.turnover_cr+'Cr' : '—'}</td>
-      <td class="num-col"><span style="color:var(--green)">${fmtINR(h.impact_high)}</span> / <span style="color:var(--red)">${fmtINR(h.impact_low)}</span></td>
-      <td>${stateTag(h.state)}</td>
-      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-muted)">${h.abandonment_reason||'—'}</td>
-    </tr>
-  `).join('');
+
+  tbody.innerHTML = hits.map(h => {
+    const hSid = h.strategy_id || 'ivbs';
+    const extraCells = extraCols.map(c => `<td class="num-col">${c.render(h)}</td>`).join('');
+    const stratCell = showStratBadge ? `<td>${strategyBadge(hSid)}</td>` : '';
+    return `
+      <tr onclick="openStockDrawer('${h.symbol}','scanner')" style="cursor:pointer">
+        <td class="sym-col">${h.symbol}</td>
+        <td>${fmtTime(h.signal_time)}</td>
+        <td class="num-col">${fmtINR(h.close)}</td>
+        ${extraCells}
+        <td>${stateTag(h.state, hSid)}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-muted)">${h.abandonment_reason||'—'}</td>
+        ${stratCell}
+      </tr>
+    `;
+  }).join('');
 }
+
 
 /* ────────────────────────────────────────────────────────────────────────────
    UNIVERSE / WATCHLIST
@@ -3600,6 +3669,49 @@ async function loadAnalytics() {
 }
 function _setAnalyticsMode(m) { _analyticsMode = m; loadAnalytics(); }
 
+// ── Strategy schema registry (C1) ─────────────────────────────────
+// Defines per-strategy UI behaviour: columns shown, state machine phases, asset label.
+// Extended automatically when loadStrategies() fetches new strategies from disk.
+const _STRATEGY_SCHEMAS = {
+  ivbs: {
+    name: 'IVBS',
+    assetClass: 'EQUITY',
+    assetLabel: 'Shares',
+    phases: ['SCAN_HIT', 'MONITORING', 'ACTION_PENDING', 'MANAGING', 'CLOSED', 'ABANDONED'],
+    scannerExtraCols: [
+      { label: 'Spike', render: h => h.spike_multiple ? `<span style="color:var(--amber)">${fmt(h.spike_multiple)}×</span>` : '—' },
+      { label: 'Turnover', render: h => h.turnover_cr ? `<span style="font-size:11px">${h.turnover_cr}Cr</span>` : '—' },
+      { label: 'H / L', render: h => `<span style="color:var(--green);font-size:11px">${fmtINR(h.impact_high)}</span>&thinsp;/&thinsp;<span style="color:var(--red);font-size:11px">${fmtINR(h.impact_low)}</span>` },
+    ],
+    positionExtraFields: (p) => [
+      { label: 'SL', value: fmtINR(p.current_stop_loss || p.initial_stop_loss) },
+      { label: 'R', value: p.risk_amount ? '₹' + fmt(p.risk_amount, 0) : '—' },
+      { label: '1R2', value: fmtINR(p.target_1r2) },
+      { label: '1R4', value: fmtINR(p.target_1r4) },
+    ],
+  },
+  options_momentum: {
+    name: 'Options',
+    assetClass: 'OPTION',
+    assetLabel: 'Lots',
+    phases: ['IDLE', 'ENTERED', 'MANAGING', 'CLOSED'],
+    scannerExtraCols: [
+      { label: 'Type', render: h => h.option_type ? `<span class="tag-pill ${h.option_type==='CE'?'green':'red'}" style="font-size:10px;padding:1px 5px">${h.option_type}</span>` : '—' },
+      { label: 'Strike', render: h => h.strike ? fmtINR(h.strike, 0) : '—' },
+      { label: 'Premium', render: h => h.entry_premium ? fmtINR(h.entry_premium) : '—' },
+    ],
+    positionExtraFields: (p) => [
+      { label: 'Type', value: p.option_type ? `<span class="tag-pill ${p.option_type==='CE'?'green':'red'}" style="font-size:10px">${p.option_type}</span>` : '—' },
+      { label: 'Strike', value: fmtINR(p.strike, 0) },
+      { label: 'SL', value: p.current_stop_loss ? fmtINR(p.current_stop_loss) : '—' },
+      { label: 'Target', value: p.target ? fmtINR(p.target) : '—' },
+    ],
+  },
+};
+
+// Runtime registry of strategy metadata from server (strategy_id → enriched obj)
+let _strategyRegistry = {};
+
 // ── Strategy filter (multi-strategy views) ──────────────────────
 let _strategyFilter = 'all';
 function _sfx(url) {
@@ -3615,21 +3727,42 @@ async function loadStrategies() {
     const sel = document.getElementById('strategy-filter');
     const badge = document.getElementById('active-strategy-badge');
     if (!sel) return;
-    // strategy ids are server-controlled slugs; sanitize defensively.
-    const ids = (d.strategies || []).map(s => String(s).replace(/[^a-z0-9_\-]/gi, ''));
+
+    // d.strategies is now a list of enriched objects: {strategy_id, name, enabled, ...}
+    const strategies = (d.strategies || []).filter(s => typeof s === 'object');
+    const activeIds = new Set(d.active_ids || []);
+
+    // Build runtime registry: strategy_id → metadata
+    _strategyRegistry = {};
+    strategies.forEach(s => { _strategyRegistry[s.strategy_id] = s; });
+
+    // Populate dropdown with human-readable names
+    const ids = strategies.map(s => s.strategy_id);
     sel.innerHTML = '<option value="all">All strategies</option>' +
-      ids.map(s => `<option value="${s}">${s.toUpperCase()}</option>`).join('');
-    // Always show the picker so the user can see what strategy is running.
-    // Hide only when no strategies are registered at all.
+      strategies.map(s => {
+        const running = activeIds.has(s.strategy_id);
+        const label = s.name || s.strategy_id.toUpperCase();
+        const disabledTxt = !s.enabled ? ' (disabled)' : '';
+        return `<option value="${s.strategy_id}"${!s.enabled?' style="color:var(--text-muted)"':''}>` +
+               `${label}${disabledTxt}${running ? ' ●' : ''}</option>`;
+      }).join('');
+
+    // Show selector whenever there are any strategies on disk
     sel.style.display = ids.length > 0 ? '' : 'none';
     if (ids.includes(_strategyFilter)) sel.value = _strategyFilter;
+
     // Update the navbar strategy badge
+    const runningCount = strategies.filter(s => activeIds.has(s.strategy_id)).length;
     if (badge) {
-      if (ids.length === 1) {
-        badge.textContent = ids[0].toUpperCase();
+      if (runningCount === 1) {
+        const runningStrat = strategies.find(s => activeIds.has(s.strategy_id));
+        badge.textContent = (runningStrat?.name || ids[0]).toUpperCase();
         badge.style.display = '';
-      } else if (ids.length > 1) {
-        badge.textContent = `${ids.length} strategies`;
+      } else if (runningCount > 1) {
+        badge.textContent = `${runningCount} running`;
+        badge.style.display = '';
+      } else if (ids.length > 0) {
+        badge.textContent = `${ids.length} configured`;
         badge.style.display = '';
       } else {
         badge.style.display = 'none';
@@ -3656,7 +3789,9 @@ async function loadSettings() {
 function renderSettings(d) {
   const body = $('#settings-body');
   const groups = d.groups || [];
-  body.innerHTML = groups.map(g => `
+
+  // ── Section 1: Global environment settings (.env) ─────────────────────────
+  const globalHtml = groups.map(g => `
     <div class="settings-group">
       <div class="settings-group-header">${g.name}</div>
       <div class="settings-grid">
@@ -3674,7 +3809,64 @@ function renderSettings(d) {
       </div>
     </div>
   `).join('');
+
+  // ── Section 2: Per-strategy config.yaml sections ──────────────────────────
+  const strategyCfgs = d.strategy_configs || [];
+  const stratHtml = strategyCfgs.length ? `
+    <div style="margin-top:20px;padding-top:16px;border-top:2px solid var(--border);">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;">⚙ Per-Strategy Configuration</div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;">These values are stored in <code style="font-family:var(--mono);font-size:10px;background:var(--bg-input);padding:1px 5px;border-radius:4px;">engine/strategies/&lt;id&gt;/config.yaml</code>. Changes take effect after engine restart.</div>
+      ${strategyCfgs.map(sc => `
+        <div class="settings-group" style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;">
+          <div class="settings-group-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span>${sc.name}</span>
+              <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;${sc.asset_class==='OPTION'?'background:var(--purple-dim);color:var(--purple);':'background:var(--blue-dim);color:var(--blue);'}">${sc.asset_class}</span>
+              ${!sc.enabled ? '<span style="font-size:10px;color:var(--amber);background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:4px;padding:1px 5px;">DISABLED</span>' : ''}
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-ghost btn-sm" onclick="_saveStrategyConfig('${sc.strategy_id}')" style="font-size:11px;padding:3px 10px;">Save</button>
+            </div>
+          </div>
+          <div class="settings-grid">
+            ${(sc.schema || []).filter(f => !['id','name','description','asset_class','enabled'].includes(f.key)).map(f => `
+              <div class="settings-field">
+                <div class="sf-key" style="font-size:10.5px;">${f.key}</div>
+                ${f.kind === 'bool'
+                  ? `<select class="sf-input" data-strategy="${sc.strategy_id}" data-cfg-key="${f.key}"><option value="true" ${f.value===true||f.value==='true'?'selected':''}>true</option><option value="false" ${f.value===false||f.value==='false'?'selected':''}>false</option></select>`
+                  : `<input class="sf-input" type="text" value="${f.value ?? ''}" data-strategy="${sc.strategy_id}" data-cfg-key="${f.key}" data-kind="${f.kind}" />`
+                }
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  ` : '';
+
+  body.innerHTML = globalHtml + stratHtml;
 }
+
+async function _saveStrategyConfig(strategyId) {
+  const inputs = $$(`#settings-body [data-strategy="${strategyId}"][data-cfg-key]`);
+  const updates = {};
+  inputs.forEach(inp => { updates[inp.dataset.cfgKey] = inp.value; });
+  try {
+    const r = await fetch(`/api/v1/strategies/${strategyId}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates, reload_engine: true })
+    });
+    const d = await r.json();
+    if (d.status === 'success') {
+      toast(`${strategyId} config saved — engine reloading`, 'success');
+    } else {
+      toast('Save failed: ' + (d.detail || JSON.stringify(d)), 'error');
+    }
+  } catch(e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+
 
 safeOn('#btn-settings-reload', 'click', loadSettings);
 safeOn('#btn-settings-save', 'click', async () => {
