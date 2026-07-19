@@ -1831,7 +1831,7 @@ a { color: var(--blue); text-decoration: none; }
                   <th>Spike</th>
                   <th>Volume</th>
                   <th>Turnover Cr</th>
-                  <th>High / Low</th>
+                  <th>H / L</th>
                   <th>State</th>
                   <th>Reason</th>
                 </tr>
@@ -2406,6 +2406,42 @@ async function checkKiteStatus() {
   }
 }
 
+function renderPositions(positions) {
+  const tbody = $('#positions-tbody');
+  if (!positions.length) {
+    tbody.innerHTML = emptyRow(9, '📊', 'No live positions', 'Active trades will appear here');
+    return;
+  }
+
+  // Positions always show all strategies' open trades.
+  // Show strategy badge column when multiple strategies are active simultaneously.
+  const strategiesPresent = new Set(positions.map(p => p.strategy_id || 'ivbs'));
+  const showStratBadge = strategiesPresent.size > 1;
+
+  tbody.innerHTML = positions.map(p => {
+    const pnl = parseFloat(p.unrealized_pnl) || 0;
+    const flags = [];
+    if (p.cost_trailed) flags.push(`<span class="tag-pill teal">Cost ✓</span>`);
+    if (p.profit_locked) flags.push(`<span class="tag-pill green">Locked</span>`);
+    const pSid = p.strategy_id || 'ivbs';
+    const pSchema = _STRATEGY_SCHEMAS[pSid] || _STRATEGY_SCHEMAS.ivbs;
+    const extraCells = pSchema.positionExtraFields(p)
+      .map(f => `<td>${f.value}</td>`).join('');
+    const stratCell = showStratBadge ? `<td>${strategyBadge(pSid)}</td>` : '';
+    return `<tr>
+      <td class="sym-cell" style="cursor:pointer" onclick="openStockDrawer('${p.symbol}','position')">${p.symbol}</td>
+      <td>${p.quantity || '—'}</td>
+      <td>${fmtINR(p.entry_price)}</td>
+      <td id="pos-ltp-${p.symbol}">—</td>
+      <td style="${pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">${
+        fmtINRSign(pnl)}</td>
+      ${extraCells}
+      <td>${flags.join(' ') || '—'}</td>
+      ${stratCell}
+    </tr>`;
+  }).join('');
+}
+
 /* Profile dropdown toggle — uses fixed positioning via JS so it escapes
    the sticky navbar's stacking context and always appears in the viewport */
 safeOn('#btn-profile', 'click', async (e) => {
@@ -2723,60 +2759,7 @@ async function loadPositions() {
   } catch {}
 }
 
-function renderPositions(positions) {
-  const tbody = $('#positions-tbody');
-  const table = $('#positions-table');
-  if (!positions.length) {
-    tbody.innerHTML = emptyRow(9, '📊', 'No live positions', 'Active trades will appear here');
-    return;
-  }
 
-  // Detect if multiple strategies have positions (to show strategy badge column)
-  const strategiesPresent = new Set(positions.map(p => p.strategy_id || 'ivbs'));
-  const showStratBadge = strategiesPresent.size > 1 || _strategyFilter === 'all';
-
-  // Choose extra fields based on dominant strategy in positions
-  const dominantSid = _strategyFilter !== 'all' ? _strategyFilter
-    : (positions[0]?.strategy_id || 'ivbs');
-  const schema = _STRATEGY_SCHEMAS[dominantSid] || _STRATEGY_SCHEMAS.ivbs;
-
-  // Update thead
-  if (table) {
-    const thead = table.querySelector('thead tr');
-    if (thead) {
-      const extraHeaders = schema.positionExtraFields({ target_1r2: 1 })
-        .map(f => `<th>${f.label}</th>`).join('');
-      thead.innerHTML = `
-        <th>Symbol</th><th>Qty</th><th>Entry</th><th>LTP</th><th>P&amp;L</th>
-        ${extraHeaders}
-        <th>Flags</th>
-        ${showStratBadge ? '<th>Strategy</th>' : ''}
-      `;
-    }
-  }
-
-  tbody.innerHTML = positions.map(p => {
-    const pnl = parseFloat(p.unrealized_pnl) || 0;
-    const flags = [];
-    if (p.cost_trailed) flags.push(`<span class="tag-pill teal">Cost ✓</span>`);
-    if (p.profit_locked) flags.push(`<span class="tag-pill green">Locked</span>`);
-    const pSid = p.strategy_id || 'ivbs';
-    const pSchema = _STRATEGY_SCHEMAS[pSid] || _STRATEGY_SCHEMAS.ivbs;
-    const extraCells = pSchema.positionExtraFields(p)
-      .map(f => `<td>${f.value}</td>`).join('');
-    const stratCell = showStratBadge ? `<td>${strategyBadge(pSid)}</td>` : '';
-    return `<tr>
-      <td class="sym-cell" style="cursor:pointer" onclick="openStockDrawer('${p.symbol}','position')">${p.symbol}</td>
-      <td>${p.quantity || '—'}</td>
-      <td>${fmtINR(p.entry_price)}</td>
-      <td id="pos-ltp-${p.symbol}">—</td>
-      <td style="${pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">${fmtINRSign(pnl)}</td>
-      ${extraCells}
-      <td>${flags.join(' ') || '—'}</td>
-      ${stratCell}
-    </tr>`;
-  }).join('');
-}
 
 /* openPositionDrawer — thin shim that redirects to openStockDrawer.
    The old body duplicated what buildDrawerKV already renders for MANAGING
@@ -3418,7 +3401,10 @@ $$('#universe-table thead th[data-sort]').forEach(th => {
 ───────────────────────────────────────────────────────────────────────────── */
 async function loadTrades() {
   try {
-    const r = await fetch(_sfx('/api/v1/trades'));
+    // Trades always shows all strategies for the current day.
+    // Use _sfx only when a strategy is explicitly selected by the user in the trades
+    // tab to narrow results; for general navigation never strip data.
+    const r = await fetch('/api/v1/trades');
     if (!r.ok) return;
     const d = await r.json();
     const trades = d.trades || [];
@@ -3475,7 +3461,8 @@ function renderTradesTable(trades) {
 ───────────────────────────────────────────────────────────────────────────── */
 async function loadOrders() {
   try {
-    const r = await fetch(_sfx('/api/v1/orders'));
+    // Orders always shows all strategies — never filtered by strategy picker.
+    const r = await fetch('/api/v1/orders');
     const d = await r.json();
     const orders = d.orders || [];
     $('#badge-orders').textContent = orders.length;
@@ -3680,6 +3667,7 @@ const _STRATEGY_SCHEMAS = {
     phases: ['SCAN_HIT', 'MONITORING', 'ACTION_PENDING', 'MANAGING', 'CLOSED', 'ABANDONED'],
     scannerExtraCols: [
       { label: 'Spike', render: h => h.spike_multiple ? `<span style="color:var(--amber)">${fmt(h.spike_multiple)}×</span>` : '—' },
+      { label: 'Volume', render: h => fmtVol(h.volume) },
       { label: 'Turnover', render: h => h.turnover_cr ? `<span style="font-size:11px">${h.turnover_cr}Cr</span>` : '—' },
       { label: 'H / L', render: h => `<span style="color:var(--green);font-size:11px">${fmtINR(h.impact_high)}</span>&thinsp;/&thinsp;<span style="color:var(--red);font-size:11px">${fmtINR(h.impact_low)}</span>` },
     ],
@@ -3772,7 +3760,12 @@ async function loadStrategies() {
 }
 function _onStrategyFilterChange(v) {
   _strategyFilter = v || 'all';
-  loadScanner(); loadTrades(); loadOrders(); loadAnalytics();
+  // Scanner and analytics are strategy-scoped.
+  // Trades/orders/positions/watchlist always show full data for the day.
+  loadScanner();
+  loadAnalytics();
+  // Re-render positions with updated strategy context (for badge/header adaption).
+  if (_positionsCache && _positionsCache.length) renderPositions(_positionsCache);
 }
 
 safeOn('#btn-refresh-journal', 'click', loadJournal);
