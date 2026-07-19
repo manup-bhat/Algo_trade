@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <!-- Theme is set inline before first paint to prevent FOUC -->
 <script>document.documentElement.setAttribute('data-theme',localStorage.getItem('ivbs-theme')||'dark');</script>
 <html lang="en">
@@ -433,6 +433,16 @@ a { color: var(--blue); text-decoration: none; }
   display: flex; align-items: center; gap: 8px;
   margin-right: 16px;
   flex-shrink: 0;
+  max-width: 260px;
+  min-width: 0;
+}
+/* Strategy badge in brand — always short (id-based), never wraps */
+#active-strategy-badge {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
 }
 .navbar-logo-icon {
   width: 30px; height: 30px;
@@ -501,7 +511,18 @@ a { color: var(--blue); text-decoration: none; }
   display: flex; align-items: center; gap: 8px;
   flex-shrink: 0;
   margin-left: 8px;
+  min-width: 0;
 }
+/* Strategy filter selector — constrained so it never eats tab space */
+#strategy-filter {
+  max-width: 120px;
+  min-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* On compact viewports hide the strategy picker from the navbar to preserve tabs */
+@media (max-width: 960px) { #strategy-filter { display: none !important; } }
 .market-clock {
   display: flex; align-items: center; gap: 6px;
   padding: 4px 10px;
@@ -3456,6 +3477,7 @@ function renderTradesTable(trades) {
   }).join('');
 }
 
+
 /* ────────────────────────────────────────────────────────────────────────────
    ORDERS
 ───────────────────────────────────────────────────────────────────────────── */
@@ -3724,33 +3746,41 @@ async function loadStrategies() {
     _strategyRegistry = {};
     strategies.forEach(s => { _strategyRegistry[s.strategy_id] = s; });
 
-    // Populate dropdown with human-readable names
+    // Populate dropdown with SHORT labels (strategy_id uppercased)
+    // so the select stays compact. Full name accessible via title attr.
     const ids = strategies.map(s => s.strategy_id);
-    sel.innerHTML = '<option value="all">All strategies</option>' +
+    sel.innerHTML = '<option value="all">All</option>' +
       strategies.map(s => {
         const running = activeIds.has(s.strategy_id);
-        const label = s.name || s.strategy_id.toUpperCase();
-        const disabledTxt = !s.enabled ? ' (disabled)' : '';
-        return `<option value="${s.strategy_id}"${!s.enabled?' style="color:var(--text-muted)"':''}>` +
-               `${label}${disabledTxt}${running ? ' ●' : ''}</option>`;
+        const fullName = s.name || s.strategy_id.toUpperCase();
+        const shortLabel = s.strategy_id.toUpperCase().slice(0, 8);
+        const disabledMark = !s.enabled ? ' x' : '';
+        const runningDot  = running ? ' \u25cf' : '';
+        return `<option value="${s.strategy_id}" title="${fullName}">${shortLabel}${disabledMark}${runningDot}</option>`;
       }).join('');
 
     // Show selector whenever there are any strategies on disk
     sel.style.display = ids.length > 0 ? '' : 'none';
     if (ids.includes(_strategyFilter)) sel.value = _strategyFilter;
 
-    // Update the navbar strategy badge
+    // Update the navbar strategy badge — always use the short strategy_id
+    // to avoid long names (e.g. 'Institutional Volume Breakout Strategy') that
+    // collapse the tab bar. Full name is exposed via title tooltip.
     const runningCount = strategies.filter(s => activeIds.has(s.strategy_id)).length;
     if (badge) {
       if (runningCount === 1) {
         const runningStrat = strategies.find(s => activeIds.has(s.strategy_id));
-        badge.textContent = (runningStrat?.name || ids[0]).toUpperCase();
+        // Use strategy_id as short label; show full name on hover
+        badge.textContent = (runningStrat?.strategy_id || ids[0]).toUpperCase();
+        badge.title = runningStrat?.name || badge.textContent;
         badge.style.display = '';
       } else if (runningCount > 1) {
-        badge.textContent = `${runningCount} running`;
+        badge.textContent = `${runningCount} active`;
+        badge.title = strategies.filter(s => activeIds.has(s.strategy_id)).map(s => s.name || s.strategy_id).join(', ');
         badge.style.display = '';
       } else if (ids.length > 0) {
-        badge.textContent = `${ids.length} configured`;
+        badge.textContent = `${ids.length} strat${ids.length > 1 ? 's' : ''}`;
+        badge.title = ids.join(', ');
         badge.style.display = '';
       } else {
         badge.style.display = 'none';
