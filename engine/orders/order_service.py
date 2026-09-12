@@ -33,6 +33,7 @@ from app.core.config import settings
 
 if TYPE_CHECKING:
     from engine.kite.client import AsyncKiteClient
+    from engine.orders.order_group import OrderGroup, OrderLeg
     from engine.strategy.state_machine import SymbolStateMachine
 
 log = structlog.get_logger(__name__)
@@ -604,6 +605,257 @@ class OrderService:
         else:
             log.warning("order_cancel_failed", order_id=order_id, symbol=symbol)
         return success
+
+
+    # ── Market Exit (EOD / Emergency) ────────────────────────────────────────
+
+    async def place_exit_market(
+        self,
+        symbol: str,
+        quantity: int,
+        reason: str = "eod_squareoff",
+        exchange: str = "NSE",
+        product: str = "MIS",
+        variety: str = "regular",
+        tag: str = "EOD",
+    ) -> str | None:
+        """
+        Place a MARKET SELL exit order.
+
+        Used by EODSquareOffService for force-close and emergency exits.
+        Does NOT require a SymbolStateMachine — it's a direct market order.
+
+        Paper mode: logs the exit, returns a fake PAPER_ order ID.
+        Live mode: places a real MARKET SELL via Kite API.
+
+        Args:
+            symbol:   NSE/NFO tradingsymbol.
+            quantity: Number of shares/lots to sell.
+            reason:   Log annotation for audit trail.
+            exchange: "NSE" or "NFO".
+            product:  "MIS" (intraday) or "NRML" (F&O overnight).
+            variety:  "regular" or "amo" (after-market order).
+            tag:      Kite order tag (max 20 chars).
+
+        Returns:
+            order_id string or None on failure.
+        """
+        if settings.is_paper_trade:
+            fake_id = f"PAPER_EXIT_{symbol}_{reason}"
+            log.info(
+                "paper_exit_market_placed",
+                symbol=symbol, quantity=quantity, reason=reason,
+            )
+            return fake_id
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", symbol=symbol, method="place_exit_market")
+            return None
+
+        log.info(
+            "placing_exit_market_order",
+            symbol=symbol, quantity=quantity, reason=reason,
+            variety=variety, exchange=exchange, product=product,
+        )
+
+        result = await _call_with_retry(
+            self._kite,
+            "place_order",
+            variety=variety,
+            tradingsymbol=symbol,
+            exchange=exchange,
+            transaction_type="SELL",
+            order_type="MARKET",
+            product=product,
+            validity="DAY",
+            quantity=quantity,
+            tag=tag[:20],  # Kite tag max 20 chars
+        )
+
+        if result:
+            log.info(
+                "exit_market_order_placed",
+                symbol=symbol, order_id=result, reason=reason,
+            )
+        else:
+            log.critical(
+                "exit_market_order_failed",
+                symbol=symbol, quantity=quantity, reason=reason,
+            )
+        return result
+
+    # ── Multi-Leg Order Group ────────────────────────────────────────────────
+
+    async def place_order_group(
+        self,
+        group: "OrderGroup",
+        db_writer: Any = None,
+    ) -> "OrderGroup":
+        """
+        Place all legs of an OrderGroup sequentially and track status.
+
+        Leg ordering: BUY legs first, then SELL legs (reduces unhedged window).
+        On any leg failure: checks group.on_unhedged policy and either:
+          - FLATTEN: places a market exit for filled legs (auto-flatten).
+          - ALERT_ONLY: logs CRITICAL + marks group PARTIAL.
+
+        Args:
+            group:     OrderGroup with all legs defined.
+            db_writer: Optional DbWriter to record order_group_id on events.
+
+        Returns:
+            The same OrderGroup with legs' order_ids and statuses updated.
+        """
+        from engine.orders.order_group import OnUnhedged, GroupStatus
+
+        # Sort: BUY legs first (reduces unhedged window for spreads)
+        ordered = sorted(group.legs, key=lambda l: (0 if l.side == "BUY" else 1))
+
+        for leg in ordered:
+            order_id = await self._place_single_leg(leg, group.group_id)
+            leg.order_id = order_id
+
+            if order_id is None:
+                leg.status = "REJECTED"
+                leg.filled_quantity = 0
+            else:
+                # Paper mode: immediate fill; live: async fill via postback
+                if settings.is_paper_trade:
+                    leg.status = "COMPLETE"
+                    leg.filled_quantity = leg.quantity
+                    leg.average_price = leg.price or 0.0
+                else:
+                    leg.status = "OPEN"
+
+        group.update_status()
+
+        # Handle unhedged legs
+        unhedged = group.unhedged_legs
+        if unhedged:
+            if group.on_unhedged == OnUnhedged.FLATTEN:
+                await self._flatten_unhedged(group, unhedged)
+            else:
+                log.critical(
+                    "order_group_unhedged_position",
+                    group_id=group.group_id,
+                    strategy_id=group.strategy_id,
+                    unhedged_leg_indices=unhedged,
+                    policy=group.on_unhedged,
+                )
+                from engine.store.redis_store import RedisStore
+                from app.core.config import settings
+                r = RedisStore(host=settings.REDIS_HOST)
+                await r.publish_alert({
+                    "level": "error",
+                    "message": f"UNHEDGED POSITION ALERT: Strategy {group.strategy_id} has unhedged legs in group {group.group_id}!",
+                    "source": "order_service"
+                })
+        log.info(
+            "order_group_placed",
+            group_id=group.group_id,
+            strategy_id=group.strategy_id,
+            leg_count=len(group.legs),
+            status=group.status,
+        )
+        return group
+
+    async def _place_single_leg(
+        self, leg: "OrderLeg", group_id: str
+    ) -> str | None:
+        """Place one leg of a group. Returns order_id or None."""
+        if settings.is_paper_trade:
+            fake_id = f"PAPER_GRP_{group_id[:8]}_{leg.symbol}_{leg.side}"
+            log.info(
+                "paper_group_leg_placed",
+                group_id=group_id,
+                symbol=leg.symbol,
+                side=leg.side,
+                qty=leg.quantity,
+                order_id=fake_id,
+            )
+            return fake_id
+
+        if self._kite is None:
+            log.error("order_service_no_kite_client", method="_place_single_leg")
+            return None
+
+        kwargs: dict[str, Any] = dict(
+            variety=leg.variety,
+            tradingsymbol=leg.symbol,
+            exchange=leg.exchange,
+            transaction_type=leg.side,
+            order_type=leg.order_type,
+            product=leg.product,
+            validity="DAY",
+            quantity=leg.quantity,
+            tag=(leg.tag or group_id[:8])[:20],
+        )
+        if leg.order_type in ("LIMIT", "SL") and leg.price is not None:
+            kwargs["price"] = leg.price
+        if leg.order_type in ("SL-M", "SL") and leg.trigger_price is not None:
+            kwargs["trigger_price"] = leg.trigger_price
+
+        return await _call_with_retry(self._kite, "place_order", **kwargs)
+
+    async def _flatten_unhedged(
+        self,
+        group: "OrderGroup",
+        unhedged_indices: list[int],
+    ) -> None:
+        """Auto-flatten legs that are filled but whose counterpart failed."""
+        for i in unhedged_indices:
+            leg = group.legs[i]
+            if leg.filled_quantity > 0:
+                log.warning(
+                    "order_group_auto_flatten",
+                    group_id=group.group_id,
+                    symbol=leg.symbol,
+                    qty=leg.filled_quantity,
+                    side=leg.counterpart_side,
+                )
+                await self.place_exit_market(
+                    symbol=leg.symbol,
+                    quantity=leg.filled_quantity,
+                    reason=f"auto_flatten:group_{group.group_id[:8]}",
+                    exchange=leg.exchange,
+                    product=leg.product,
+                    tag="FLATTEN",
+                )
+
+
+    # ── Freeze-quantity splitting ──────────────────────────────────────────────
+
+    def _split_for_freeze(self, symbol: str, qty: int) -> list[int]:
+        """
+        Split *qty* into sub-orders each ≤ NSE freeze quantity for *symbol*.
+
+        Returns a list of leg sizes that together sum to *qty*.
+        If qty <= freeze_qty, returns [qty] (no split needed).
+
+        Example:
+            freeze_qty = 1800, qty = 4200
+            → [1800, 1800, 600]
+
+        Edge cases:
+            - qty == 0: returns [0] (upstream Quantity rule will block this)
+            - InstrumentMaster not loaded: freeze_qty defaults to conservative value
+        """
+        try:
+            from engine.market.instrument_master import instrument_master
+            freeze_qty = instrument_master.get_freeze_quantity(symbol)
+        except Exception:
+            freeze_qty = 2_500  # Conservative fallback if master not available
+
+        if qty <= freeze_qty:
+            return [qty]
+
+        splits: list[int] = []
+        remaining = qty
+        while remaining > 0:
+            chunk = min(remaining, freeze_qty)
+            splits.append(chunk)
+            remaining -= chunk
+        return splits
 
 
 # Module-level singleton — wire kite client in at startup via order_service.set_kite()

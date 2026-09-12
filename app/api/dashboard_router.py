@@ -59,8 +59,8 @@ _db_engine = None
 def _get_db_engine():
     global _db_engine
     if _db_engine is None:
-        from app.core.config import settings
-        _db_engine = create_async_engine(settings.DATABASE_URL)
+        from app.store.database import engine
+        _db_engine = engine
     return _db_engine
 
 
@@ -74,6 +74,29 @@ def _rs() -> Any | None:
         except Exception as exc:
             log.warning("dashboard_redis_init_failed", error=str(exc))
     return _redis_store
+
+
+_analytics_service: Any = None
+
+
+def _get_analytics_service():
+    global _analytics_service
+    if _analytics_service is None:
+        try:
+            from app.store.database import AsyncSessionLocal
+            from engine.analytics.analytics_service import AnalyticsService
+            _analytics_service = AnalyticsService(AsyncSessionLocal)
+        except Exception as exc:
+            log.warning("dashboard_analytics_service_init_failed", error=str(exc))
+    return _analytics_service
+
+
+def _norm_strategy(strategy_id: str | None) -> str | None:
+    """Normalize a ?strategy_id= filter. Returns None for blank/'all' (no filter)."""
+    if not strategy_id:
+        return None
+    s = strategy_id.strip().lower()
+    return None if (not s or s == "all") else s
 
 
 def _is_market_open_now() -> bool:
@@ -226,9 +249,17 @@ async def get_status():
 # ── /positions ──────────────────────────────────────────────────────────────────
 
 @router.get("/positions")
-async def get_positions():
+async def get_positions(strategy_id: str | None = None):
     rs = _rs()
+    sid = _norm_strategy(strategy_id)
     if rs is None:
+        try:
+            svc = _get_analytics_service()
+            if svc:
+                open_pos = await svc.get_open_positions(strategy_id=sid)
+                return {"positions": open_pos, "count": len(open_pos), "engine_running": False}
+        except Exception:
+            pass
         return {"positions": [], "count": 0, "engine_running": False}
     try:
         states = await rs.get_all_strategy_states() or {}
@@ -251,6 +282,10 @@ async def get_positions():
             # Only show live/active rows (primarily MANAGING), but tolerate
             # transient mismatches by checking for an entry/qty payload.
             if state != "MANAGING" and not pos:
+                continue
+
+            pos_sid = state_data.get("strategy_id") or pos.get("strategy_id")
+            if sid and pos_sid and pos_sid.lower() != sid:
                 continue
 
             entry_price = pos.get("entry_price")
@@ -276,6 +311,7 @@ async def get_positions():
 
             positions.append({
                 "symbol":         symbol,
+                "strategy_id":    pos_sid or "ivbs",
                 "state":          state,
                 "entry_price":    entry_price,
                 "quantity":       quantity,
@@ -292,6 +328,17 @@ async def get_positions():
                 "entry_time":     pos.get("entry_time"),
                 "sl_order_id":    pos.get("sl_order_id"),
             })
+
+        if not positions:
+            try:
+                svc = _get_analytics_service()
+                if svc:
+                    db_positions = await svc.get_open_positions(strategy_id=sid)
+                    if db_positions:
+                        return {"positions": db_positions, "count": len(db_positions), "engine_running": True}
+            except Exception:
+                pass
+
         return {"positions": positions, "count": len(positions), "engine_running": True}
     except Exception as exc:
         log.error("dashboard_positions_error", error=str(exc))
@@ -299,14 +346,6 @@ async def get_positions():
 
 
 # ── /signals (legacy) ───────────────────────────────────────────────────────────
-
-def _norm_strategy(strategy_id: str | None) -> str | None:
-    """Normalize a ?strategy_id= filter. Returns None for blank/'all' (no filter)."""
-    if not strategy_id:
-        return None
-    s = strategy_id.strip().lower()
-    return None if (not s or s == "all") else s
-
 
 @router.get("/signals")
 async def get_signals(strategy_id: str | None = None):
@@ -476,15 +515,23 @@ async def get_trades(strategy_id: str | None = None):
 
 
 # ── /analytics — strategy performance from recorded trades ─────────────────
-def _compute_trade_analytics(rows: list[dict]) -> dict[str, Any]:
-    """Aggregate closed-trade rows into strategy performance metrics.
+def _compute_rich_analytics(
+    rows: list[dict],
+    range_code: str = "1M",
+    mode: str = "ALL",
+    sid: str = "all",
+) -> dict[str, Any]:
+    """Aggregate closed-trade rows into quantitative institutional trading analytics.
 
-    Reuses engine.backtest.metrics.compute_metrics for the core stats (win rate,
-    profit factor, expectancy, max drawdown, Sharpe) and adds R-multiple + charges
-    context. Pure — unit-tested independently of the DB.
+    Computes:
+      1. Core KPIs: Win rate, Profit factor, Expectancy, Net/Gross PnL, Charges,
+         Payoff ratio, Max Drawdown (₹ and %), Sharpe/Sortino ratios, streaks.
+      2. Time-series: Equity curve points, Underwater drawdown points.
+      3. Categorical breakdowns: Daily PnL, Day-of-Week distribution, Hourly distribution,
+         and exit reason distribution.
+    Pure — unit-tested independently of the DB.
     """
     import statistics
-
     from engine.backtest.metrics import compute_metrics
 
     pnls = [float(r.get("net_pnl") or 0.0) for r in rows]
@@ -497,60 +544,318 @@ def _compute_trade_analytics(rows: list[dict]) -> dict[str, Any]:
     ]
     by_mode: dict[str, int] = {}
     for r in rows:
-        m = r.get("trade_mode") or "UNKNOWN"
+        m = (r.get("trade_mode") or "UNKNOWN").upper()
         by_mode[m] = by_mode.get(m, 0) + 1
 
+    total_charges = round(sum(float(r.get("charges") or 0.0) for r in rows), 2)
+    net_pnl_sum = round(sum(pnls), 2)
+    gross_pnl_sum = round(sum(float(r.get("gross_pnl") or (float(r.get("net_pnl") or 0.0) + float(r.get("charges") or 0.0))) for r in rows), 2)
+
+    wins_list = [p for p in pnls if p > 0]
+    losses_list = [p for p in pnls if p < 0]
+    gross_loss = abs(sum(losses_list))
+    gross_profit = sum(wins_list)
+
+    if gross_loss > 0:
+        profit_factor = round(gross_profit / gross_loss, 2)
+    else:
+        profit_factor = None
+
+    avg_win = round(gross_profit / len(wins_list), 2) if wins_list else 0.0
+    avg_loss = round(gross_loss / len(losses_list), 2) if losses_list else 0.0
+    payoff_ratio = round(avg_win / avg_loss, 2) if avg_loss > 0 else 0.0
+
+    # Streaks and Equity / Drawdown curves
+    consecutive_wins = 0
+    max_consecutive_wins = 0
+    consecutive_losses = 0
+    max_consecutive_losses = 0
+
+    running_net = 0.0
+    running_gross = 0.0
+    peak_net = 0.0
+    max_dd = 0.0
+    max_dd_pct = 0.0
+
+    equity_curve: list[dict[str, Any]] = []
+    drawdown_curve: list[dict[str, Any]] = []
+    daily_dict: dict[str, dict[str, Any]] = {}
+
+    DAYS_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    dow_dict = {d: {"day": d, "pnl": 0.0, "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0} for d in DAYS_ORDER}
+
+    HOURS_ORDER = [f"{h:02d}:00" for h in range(9, 16)]
+    hour_dict = {h: {"hour": h, "pnl": 0.0, "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0} for h in HOURS_ORDER}
+
+    exit_reasons: dict[str, int] = {}
+    by_strategy: dict[str, dict[str, Any]] = {}
+
+    for idx, r in enumerate(rows):
+        npnl = float(r.get("net_pnl") or 0.0)
+        gpnl = float(r.get("gross_pnl") or (npnl + float(r.get("charges") or 0.0)))
+        chg = float(r.get("charges") or 0.0)
+
+        # Streaks
+        if npnl > 0:
+            consecutive_wins += 1
+            consecutive_losses = 0
+            if consecutive_wins > max_consecutive_wins:
+                max_consecutive_wins = consecutive_wins
+        elif npnl < 0:
+            consecutive_losses += 1
+            consecutive_wins = 0
+            if consecutive_losses > max_consecutive_losses:
+                max_consecutive_losses = consecutive_losses
+
+        running_net = round(running_net + npnl, 2)
+        running_gross = round(running_gross + gpnl, 2)
+
+        if running_net > peak_net:
+            peak_net = running_net
+
+        dd = round(peak_net - running_net, 2)
+        if dd > max_dd:
+            max_dd = dd
+
+        dd_pct = round((dd / peak_net * 100.0), 2) if peak_net > 0 else 0.0
+        if dd_pct > max_dd_pct:
+            max_dd_pct = dd_pct
+
+        t_exit = r.get("exit_time") or r.get("entry_time")
+        if isinstance(t_exit, datetime):
+            t_short = t_exit.strftime("%Y-%m-%d %H:%M")
+            d_key = t_exit.strftime("%Y-%m-%d")
+        elif isinstance(t_exit, str) and len(t_exit) >= 10:
+            t_short = t_exit[:16].replace("T", " ")
+            d_key = t_exit[:10]
+        else:
+            t_short = f"Trade #{idx + 1}"
+            d_key = "Unknown"
+
+        t_entry = r.get("entry_time") or r.get("exit_time")
+        if isinstance(t_entry, datetime):
+            dt_entry = t_entry
+        elif isinstance(t_entry, str) and len(t_entry) >= 10:
+            try:
+                dt_entry = datetime.fromisoformat(t_entry.replace("Z", "+00:00"))
+            except Exception:
+                dt_entry = None
+        else:
+            dt_entry = None
+
+        equity_curve.append({
+            "time": t_short,
+            "date": d_key,
+            "net_pnl": round(npnl, 2),
+            "gross_pnl": round(gpnl, 2),
+            "cum_net_pnl": running_net,
+            "cum_gross_pnl": running_gross,
+        })
+
+        drawdown_curve.append({
+            "time": t_short,
+            "drawdown": -dd,
+            "drawdown_pct": -dd_pct,
+        })
+
+        # Daily breakdown
+        if d_key != "Unknown":
+            if d_key not in daily_dict:
+                daily_dict[d_key] = {
+                    "date": d_key, "pnl": 0.0, "gross_pnl": 0.0, "charges": 0.0,
+                    "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+                }
+            d_entry = daily_dict[d_key]
+            d_entry["pnl"] = round(d_entry["pnl"] + npnl, 2)
+            d_entry["gross_pnl"] = round(d_entry["gross_pnl"] + gpnl, 2)
+            d_entry["charges"] = round(d_entry["charges"] + chg, 2)
+            d_entry["trades"] += 1
+            if npnl > 0:
+                d_entry["wins"] += 1
+            elif npnl < 0:
+                d_entry["losses"] += 1
+
+        # Day of week and hourly
+        if dt_entry:
+            dow = dt_entry.strftime("%A")
+            if dow in dow_dict:
+                dow_dict[dow]["pnl"] = round(dow_dict[dow]["pnl"] + npnl, 2)
+                dow_dict[dow]["trades"] += 1
+                if npnl > 0:
+                    dow_dict[dow]["wins"] += 1
+                elif npnl < 0:
+                    dow_dict[dow]["losses"] += 1
+
+            h_key = f"{dt_entry.hour:02d}:00"
+            if h_key in hour_dict:
+                hour_dict[h_key]["pnl"] = round(hour_dict[h_key]["pnl"] + npnl, 2)
+                hour_dict[h_key]["trades"] += 1
+                if npnl > 0:
+                    hour_dict[h_key]["wins"] += 1
+                elif npnl < 0:
+                    hour_dict[h_key]["losses"] += 1
+
+        # Exit reason
+        st = (r.get("status") or "UNKNOWN").upper().replace("CLOSED_", "")
+        exit_reasons[st] = exit_reasons.get(st, 0) + 1
+
+        # Strategy breakdown
+        strat = r.get("strategy_id") or "ivbs"
+        if strat not in by_strategy:
+            by_strategy[strat] = {"strategy_id": strat, "pnl": 0.0, "trades": 0, "wins": 0}
+        by_strategy[strat]["pnl"] = round(by_strategy[strat]["pnl"] + npnl, 2)
+        by_strategy[strat]["trades"] += 1
+        if npnl > 0:
+            by_strategy[strat]["wins"] += 1
+
+    daily_pnl = sorted(daily_dict.values(), key=lambda x: x["date"])
+    for d in daily_pnl:
+        d["win_rate"] = round(d["wins"] / d["trades"] * 100, 1) if d["trades"] > 0 else 0.0
+
+    for dow in dow_dict.values():
+        dow["win_rate"] = round(dow["wins"] / dow["trades"] * 100, 1) if dow["trades"] > 0 else 0.0
+
+    for h in hour_dict.values():
+        h["win_rate"] = round(h["wins"] / h["trades"] * 100, 1) if h["trades"] > 0 else 0.0
+
     metrics["avg_r_multiple"] = round(statistics.mean(r_multiples), 3) if r_multiples else 0.0
-    metrics["total_charges"] = round(sum(float(r.get("charges") or 0.0) for r in rows), 2)
-    metrics["trades_by_mode"] = by_mode
+    metrics["total_charges"] = total_charges
+    metrics["gross_pnl"] = gross_pnl_sum
+    metrics["net_pnl"] = net_pnl_sum
+    metrics["profit_factor"] = profit_factor
+    metrics["avg_win"] = avg_win
+    metrics["avg_loss"] = avg_loss
+    metrics["payoff_ratio"] = payoff_ratio
     metrics["win_rate_pct"] = round(metrics["win_rate"] * 100, 1)
+    metrics["consecutive_wins_max"] = max_consecutive_wins
+    metrics["consecutive_losses_max"] = max_consecutive_losses
+    metrics["max_drawdown"] = max_dd
+    metrics["max_drawdown_pct"] = max_dd_pct
+    metrics["trades_by_mode"] = by_mode
+    metrics["exit_reasons"] = exit_reasons
+    metrics["by_strategy"] = list(by_strategy.values())
+    metrics["equity_curve"] = equity_curve
+    metrics["drawdown_curve"] = drawdown_curve
+    metrics["daily_pnl"] = daily_pnl
+    metrics["day_of_week"] = list(dow_dict.values())
+    metrics["hourly"] = list(hour_dict.values())
+    metrics["range"] = range_code
+    metrics["mode"] = mode
+    metrics["strategy_id"] = sid
     return metrics
 
 
-@router.get("/analytics")
-async def get_analytics(mode: str = "ALL", days: int = 30, strategy_id: str | None = None):
-    """Strategy performance from CLOSED trades. mode = ALL|PAPER|LIVE; days = lookback.
+# Backwards-compatible alias
+_compute_trade_analytics = _compute_rich_analytics
 
-    SIMULTANEOUS entries are stored as their resolved PAPER/LIVE mode, so a PAPER
-    filter captures paper entries even when the engine runs in simultaneous mode.
+
+@router.get("/analytics")
+async def get_analytics(
+    mode: str = "ALL",
+    range: str | None = None,
+    days: int | None = None,
+    strategy_id: str | None = None,
+):
+    """Strategy performance and graph series from CLOSED trades.
+
+    Supported ranges: 1D, 1W, 2W, 1M, 3M, ALL (or custom ?days= lookback).
+    Supported modes: ALL, PAPER, LIVE.
     """
     mode = (mode or "ALL").strip().upper()
     if mode not in {"ALL", "PAPER", "LIVE", "SIMULTANEOUS"}:
         mode = "ALL"
-    try:
-        days = max(1, min(int(days), 365))
-    except (TypeError, ValueError):
-        days = 30
+
+    range_code = (range or "").strip().upper()
+    RANGE_MAP = {
+        "1D": 1,
+        "1W": 7,
+        "2W": 14,
+        "1M": 30,
+        "3M": 90,
+        "ALL": 0,
+    }
+    if range_code in RANGE_MAP:
+        lookback_days = RANGE_MAP[range_code]
+        active_range = range_code
+    elif days is not None:
+        try:
+            lookback_days = max(1, min(int(days), 3650))
+            active_range = f"{lookback_days}D"
+        except (TypeError, ValueError):
+            lookback_days = 30
+            active_range = "1M"
+    else:
+        lookback_days = 30
+        active_range = "1M"
+
     try:
         from sqlalchemy import text
         engine = _get_db_engine()
         where = [
             "exit_time IS NOT NULL",
             "net_pnl IS NOT NULL",
-            f"date(entry_time) >= date('now', '-{days} days')",
         ]
         params: dict[str, Any] = {}
+
+        if lookback_days > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+            # Compare using ISO datetime string for database-agnostic compatibility
+            where.append("entry_time >= :cutoff")
+            params["cutoff"] = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+
         if mode != "ALL":
             where.append("trade_mode = :mode")
             params["mode"] = mode
+
         sid = _norm_strategy(strategy_id)
         if sid:
             where.append("strategy_id = :sid")
             params["sid"] = sid
+
         sql = (
-            "SELECT net_pnl, risk_amount, trade_mode, status, "
+            "SELECT id, symbol, strategy_id, entry_time, exit_time, entry_price, exit_price, "
+            "  quantity, risk_amount, gross_pnl, net_pnl, brokerage, stt, other_charges, "
+            "  status, trade_mode, "
             "  (COALESCE(brokerage,0)+COALESCE(stt,0)+COALESCE(other_charges,0)) AS charges "
-            "FROM trades WHERE " + " AND ".join(where) + " ORDER BY exit_time"
+            "FROM trades WHERE " + " AND ".join(where) + " ORDER BY exit_time ASC"
         )
         async with engine.connect() as conn:
             result = await conn.execute(text(sql), params)
             rows = [dict(r._mapping) for r in result]
-        data = _compute_trade_analytics(rows)
-        data.update({"mode": mode, "days": days, "strategy_id": sid or "all"})
-        return data
+        return _compute_rich_analytics(rows, range_code=active_range, mode=mode, sid=sid or "all")
     except Exception as exc:
         log.debug("dashboard_analytics_not_available", error=str(exc))
-        return {**_compute_trade_analytics([]), "mode": mode, "days": days}
+        return _compute_rich_analytics([], range_code=active_range, mode=mode, sid=sid or "all")
+
+
+# ── /analytics/daily_pnl & /analytics/win_rate (AnalyticsService CQRS) ─────────
+
+@router.get("/analytics/daily_pnl")
+async def get_analytics_daily_pnl(
+    strategy_id: str | None = None,
+    lookback_days: int = 30,
+):
+    """Return historical daily P&L aggregates via AnalyticsService."""
+    svc = _get_analytics_service()
+    sid = _norm_strategy(strategy_id)
+    if svc is None:
+        return {"daily_pnl": [], "count": 0, "strategy_id": sid}
+    rows = await svc.get_daily_pnl(strategy_id=sid, lookback_days=lookback_days)
+    return {"daily_pnl": rows, "count": len(rows), "strategy_id": sid}
+
+
+@router.get("/analytics/win_rate")
+async def get_analytics_win_rate(
+    strategy_id: str | None = None,
+    lookback_days: int = 30,
+):
+    """Return aggregate win rate metrics via AnalyticsService."""
+    svc = _get_analytics_service()
+    sid = _norm_strategy(strategy_id)
+    if svc is None:
+        return {"win_rate_pct": 0.0, "total_trades": 0, "strategy_id": sid}
+    stats = await svc.get_win_rate(strategy_id=sid, lookback_days=lookback_days)
+    return stats
 
 
 def _load_all_strategy_configs() -> list[dict[str, Any]]:
@@ -622,6 +927,57 @@ async def get_strategies():
         "active_ids": active_ids,
     }
 
+
+# ── /strategies/{id}/config ──
+@router.get("/strategies/{strategy_id}/drift")
+async def get_strategy_drift(strategy_id: str):
+    from engine.analytics.analytics_service import AnalyticsService
+    from engine.analytics.drift_monitor import DriftMonitor
+    from app.store.database import get_async_session
+    
+    analytics = AnalyticsService(get_async_session)
+    monitor = DriftMonitor(analytics)
+    
+    # Try to load baseline from yaml or assume empty for now.
+    config_path = Path(__file__).resolve().parents[2] / "engine" / "strategies" / strategy_id / "config.yaml"
+    baseline = {}
+    if config_path.exists():
+        try:
+            import yaml
+            with open(config_path, "r") as f:
+                conf = yaml.safe_load(f) or {}
+            baseline = conf.get("baseline", {})
+        except Exception:
+            pass
+
+    return await monitor.check_drift(
+        strategy_id, 
+        baseline_win_rate=baseline.get("min_win_rate_pct", 50.0),
+        min_win_rate=baseline.get("absolute_min_win_rate")
+    )
+
+
+@router.post("/strategies/{strategy_id}/retire")
+async def retire_strategy(strategy_id: str):
+    """
+    Retire a strategy (soft delete). Updates enabled flag in DB or config.
+    """
+    from app.store.database import get_async_session
+    from app.models.db.strategy import Strategy
+    from sqlalchemy import select, update
+    
+    try:
+        async with get_async_session() as session:
+            await session.execute(
+                update(Strategy)
+                .where(Strategy.id == strategy_id)
+                .values(enabled=False)
+            )
+            await session.commit()
+    except Exception as exc:
+        log.error("failed_to_retire_strategy_db", error=str(exc))
+        
+    return {"status": "success", "strategy_id": strategy_id, "enabled": False}
 
 # ── /strategies/{id}/config ───────────────────────────────────────────────────────
 
@@ -775,38 +1131,82 @@ def _rows_to_csv(rows: list[dict]) -> str:
 
 
 _EXPORT_TABLES = {
-    "trades":  ("trades", "entry_time"),
-    "orders":  ("order_events", "event_time"),
-    "journal": ("daily_pnl", "trade_date"),
+    "trades":    ("trades", "entry_time", True),
+    "orders":    ("order_events", "event_time", True),
+    "journal":   ("daily_pnl", "trade_date", True),
+    "signals":   ("signals", "signal_time", True),
+    "snapshots": ("signal_snapshots", "snapshot_time", False),
 }
 
 
 @router.get("/export/{kind}.csv")
-async def export_csv(kind: str, strategy_id: str | None = None):
-    """Download trades / orders / journal as a CSV file (full history).
+async def export_csv(
+    kind: str,
+    strategy_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    mode: str | None = None,
+):
+    """Download trades / orders / journal / signals / snapshots as a CSV file.
 
-    Optional ?strategy_id= filter scopes the export to a single strategy.
+    Supports optional ?strategy_id=, ?start_date=YYYY-MM-DD, ?end_date=YYYY-MM-DD, and ?mode= filters.
     """
     kind = (kind or "").lower()
     if kind not in _EXPORT_TABLES:
-        raise HTTPException(status_code=404, detail=f"Unknown export kind: {kind}")
-    table, order_col = _EXPORT_TABLES[kind]  # fixed mapping (no SQL injection)
+        raise HTTPException(status_code=404, detail=f"Unknown export kind: {kind}. Supported: {list(_EXPORT_TABLES.keys())}")
+    table, order_col, has_strat = _EXPORT_TABLES[kind]
     rows: list[dict] = []
+    where_clauses: list[str] = []
+    params: dict[str, Any] = {}
+
+    sid = _norm_strategy(strategy_id)
+    if sid and has_strat:
+        where_clauses.append("strategy_id = :sid")
+        params["sid"] = sid
+
+    if mode and mode.upper() in {"PAPER", "LIVE"} and table in {"trades", "order_events", "signals"}:
+        where_clauses.append("trade_mode = :mode")
+        params["mode"] = mode.upper()
+
+    if start_date:
+        try:
+            sd = datetime.strptime(start_date, "%Y-%m-%d")
+            where_clauses.append(f"{order_col} >= :start_date")
+            params["start_date"] = sd if order_col != "trade_date" else sd.date()
+        except ValueError:
+            pass
+
+    if end_date:
+        try:
+            ed = datetime.strptime(end_date, "%Y-%m-%d")
+            if order_col == "trade_date":
+                where_clauses.append(f"{order_col} <= :end_date")
+                params["end_date"] = ed.date()
+            else:
+                ed_next = ed + timedelta(days=1)
+                where_clauses.append(f"{order_col} < :end_date_next")
+                params["end_date_next"] = ed_next
+        except ValueError:
+            pass
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
     try:
         from sqlalchemy import text
         engine = _get_db_engine()
-        sid = _norm_strategy(strategy_id)
-        where_clause = f"WHERE strategy_id = '{sid}'" if sid else ""
         async with engine.connect() as conn:
-            result = await conn.execute(text(
-                f"SELECT * FROM {table} {where_clause} ORDER BY {order_col} DESC"
-            ))
+            result = await conn.execute(
+                text(f"SELECT * FROM {table} {where_sql} ORDER BY {order_col} DESC"),
+                params,
+            )
             rows = [dict(r._mapping) for r in result]
     except Exception as exc:
         log.warning("csv_export_query_failed", kind=kind, error=str(exc))
+
     from fastapi.responses import StreamingResponse
-    strat_prefix = f"{sid}_" if (sid := _norm_strategy(strategy_id)) else ""
-    filename = f"trading_{strat_prefix}{kind}_{_today_ist()}.csv"
+    strat_prefix = f"{sid}_" if sid else ""
+    date_suffix = f"_{start_date}_to_{end_date}" if (start_date or end_date) else f"_{_today_ist()}"
+    filename = f"trading_{strat_prefix}{kind}{date_suffix}.csv"
     return StreamingResponse(
         iter([_rows_to_csv(rows)]),
         media_type="text/csv",
@@ -2387,7 +2787,7 @@ async def websocket_endpoint(ws: WebSocket):
             pubsub = r.pubsub()
             await pubsub.subscribe(
                 "pub:signals", "pub:state_changes", "pub:orders", "pub:pnl",
-                "pub:candles", "pub:monitoring_ticks"
+                "pub:candles", "pub:monitoring_ticks", "pub:alerts"
             )
             evt_map = {
                 "pub:signals":       "scan_hit",
@@ -2396,6 +2796,7 @@ async def websocket_endpoint(ws: WebSocket):
                 "pub:pnl":           "pnl_update",
                 "pub:candles":       "candle_close",
                 "pub:monitoring_ticks": "monitoring_tick",
+                "pub:alerts":        "alert",
             }
             async for msg in pubsub.listen():
                 ch = msg.get("channel", b"")
@@ -2444,3 +2845,132 @@ async def websocket_endpoint(ws: WebSocket):
         await asyncio.gather(t1, t2, t3, return_exceptions=True)
         _ws_clients.discard(ws)
         log.info("dashboard_ws_disconnected", remaining=len(_ws_clients))
+
+
+# ── Phase 3: UI Panel Registry endpoint ───────────────────────────────────────
+
+@router.get(
+    "/ui/panels",
+    summary="UI Panel Registry",
+    description=(
+        "Returns all registered panel type descriptors from ``ui_panel_registry`` "
+        "plus active panel instances from strategy manifests. "
+        "Use ?strategy_id=<id> to filter panels for a specific strategy."
+    ),
+    tags=["ui"],
+)
+async def get_ui_panels(
+    strategy_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    GET /api/v1/ui/panels
+
+    Returns:
+        {
+            "panel_types":    { key: PanelTypeDescriptor.as_dict() },
+            "active_panels":  [ { strategy_id, panel_type, config, title } ],
+            "strategy_id":    "ivbs" | null
+        }
+
+    ``panel_types`` is the exhaustive catalogue of all registered panel types.
+    ``active_panels`` are the panels that one or more enabled strategies have
+    declared in their manifest ui["panels"] block.
+    """
+    from engine.core.ui_panel_registry import ui_panel_registry
+
+    sid = _norm_strategy(strategy_id)
+
+    # ── 1. All panel type descriptors ────────────────────────────────────────
+    panel_types: dict[str, Any] = {
+        key: ui_panel_registry.get(key).as_dict()
+        for key in ui_panel_registry.list_keys()
+    }
+
+    # ── 2. Active panels from strategy manifests ──────────────────────────────
+    active_panels: list[dict[str, Any]] = []
+    try:
+        from app.store.database import AsyncSessionLocal
+        from app.models.db.strategy_manifest import StrategyManifest
+        from sqlalchemy import select
+
+        async with AsyncSessionLocal() as session:
+            q = select(StrategyManifest)
+            if sid:
+                q = q.where(StrategyManifest.strategy_id == sid)
+            result = await session.execute(q)
+            manifests = result.scalars().all()
+
+        for mf in manifests:
+            ui_block = mf.ui or {}
+            declared_panels = ui_block.get("panels", [])
+            for panel_cfg in declared_panels:
+                ptype = panel_cfg.get("type")
+                if not ptype:
+                    continue
+                descriptor = ui_panel_registry.get_or_none(ptype)
+                active_panels.append({
+                    "strategy_id": mf.strategy_id,
+                    "panel_type": ptype,
+                    "title": descriptor.title if descriptor else ptype,
+                    "icon": descriptor.icon if descriptor else "📊",
+                    "config": {
+                        **(descriptor.default_config if descriptor else {}),
+                        **{k: v for k, v in panel_cfg.items() if k != "type"},
+                    },
+                })
+    except Exception as exc:
+        log.warning("ui_panels_manifest_fetch_failed", error=str(exc))
+        # Return registry descriptors even if DB is unavailable
+
+    log.info(
+        "ui_panels_served",
+        panel_type_count=len(panel_types),
+        active_panel_count=len(active_panels),
+        strategy_id=sid,
+    )
+    return {
+        "panel_types": panel_types,
+        "active_panels": active_panels,
+        "strategy_id": sid,
+    }
+
+
+# ── /metrics ─────────────────────────────────────────────────────────────────
+@router.get("/metrics")
+async def get_metrics():
+    """Return observability metrics (latencies and counters) from the Redis-backed registry."""
+    from engine.core.metrics import metrics_registry
+    try:
+        data = await metrics_registry.summary()
+        return data
+    except Exception as exc:
+        log.warning("metrics_fetch_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+# ── /kill-switch ──────────────────────────────────────────────────────────────
+@router.post("/kill-switch")
+async def post_kill_switch():
+    """
+    Emergency kill switch: Immediately forces EODSquareOffService to close all open positions
+    and halt further entries, bypassing normal lifecycle checks.
+    """
+    log.critical("kill_switch_triggered_via_api")
+    try:
+        from engine.orders.eod_squareoff_service import eod_squareoff_service
+        # eod_squareoff_service is a singleton wired in runner.py
+        await eod_squareoff_service.emergency_squareoff()
+        
+        rs = _rs()
+        if rs:
+            await rs.set_engine_status({
+                "status": "EMERGENCY_STOP",
+                "timestamp": now_ist().isoformat(),
+            })
+            await rs.set_engine_control("") # Clear control flag just in case
+            
+        return {"status": "success", "message": "Kill switch activated. All positions closed."}
+    except Exception as exc:
+        log.critical("kill_switch_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
+

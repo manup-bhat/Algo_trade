@@ -50,6 +50,8 @@ log = structlog.get_logger(__name__)
 from app.core.config import settings
 from app.api.dashboard_router import router as dashboard_router
 from app.api.v1.routes.auth import router as auth_router
+from app.api.builder_router import router as builder_router
+from app.api.agent_router import router as agent_router
 
 _ENGINE_AUTOSTART_LOCK_KEY = "engine:autostart:backend"
 _ENGINE_AUTOSTART_LOCK_TTL_SECONDS = 60
@@ -318,7 +320,9 @@ async def lifespan(app: FastAPI):
     try:
         from app.store.redis_client import get_redis as _get_redis_now
         from engine.store.redis_store import RedisStore as _RS
+        from engine.core.metrics import metrics_registry
         _rc = _get_redis_now()
+        metrics_registry.set_redis(_rc)
         _rs_tmp = _RS(_rc)
         await _rs_tmp.set_engine_status({
             "status": "OFFLINE",
@@ -350,12 +354,35 @@ app = FastAPI(
     description=(
         "Real-time monitoring for the Institutional Volume Breakout Strategy engine. "
         "Authenticate via /api/v1/auth/login before starting the engine. "
-        "See /api/v1/auth/status to check current token."
+        "See /api/v1/auth/status to check current token. "
+        "Build strategies visually via /api/v1/builder/nodes. "
+        "Propose and review AI-generated strategy mutations via /api/v1/agent/."
     ),
-    version="4.0.0",
+    version="6.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# ── Metrics Middleware ────────────────────────────────────────────────────────
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+from engine.core.metrics import metrics_registry
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time_ms = (time.time() - start_time) * 1000
+        metrics_registry.observe_latency("api_latency", process_time_ms)
+        # Flush here if it's the API process, since runner flushes its own.
+        # But wait, dashboard API doesn't have a background loop to flush latencies.
+        # We can flush latencies synchronously here periodically, or just fire-and-forget.
+        # A simpler way is to just call increment directly (it's fast).
+        await metrics_registry.increment("api_requests")
+        asyncio.create_task(metrics_registry.flush_latencies())
+        return response
+
+app.add_middleware(MetricsMiddleware)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────────────
 # Fix (A): allow_origins=["*"] + allow_credentials=True is a hard CORS spec
@@ -388,8 +415,10 @@ else:
     )
 
 # ── API Routes ────────────────────────────────────────────────────────────────
-app.include_router(auth_router,      prefix="/api/v1/auth", tags=["auth"])
-app.include_router(dashboard_router, prefix="/api/v1",      tags=["dashboard"])
+app.include_router(auth_router,      prefix="/api/v1/auth",    tags=["auth"])
+app.include_router(dashboard_router, prefix="/api/v1",         tags=["dashboard"])
+app.include_router(builder_router,   prefix="/api/v1/builder", tags=["builder"])
+app.include_router(agent_router,     prefix="/api/v1/agent",   tags=["agent"])
 
 
 # ── Root ──────────────────────────────────────────────────────────────────────
@@ -417,4 +446,4 @@ async def serve_dashboard(request: Request):
 @app.get("/health")
 async def health_check():
     """Health check for monitoring / load balancers."""
-    return {"status": "ok", "service": "ivbs-dashboard", "version": "4.0.0"}
+    return {"status": "ok", "service": "ivbs-dashboard", "version": "5.0.0"}

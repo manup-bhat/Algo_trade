@@ -1,0 +1,6502 @@
+[
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 10000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 10250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 10500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 10750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 11000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 11250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 11500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 11750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 12000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 12250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 12500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 12750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 13000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 13250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 13500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 13750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 14000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 14250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 14500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 14750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 15000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 15250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 15500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 15750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 16000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 16250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 16500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 16750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 17000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 17250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:15:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 17500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 17750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 18000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 18250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 18500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 18750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 19000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 19250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 19500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 19750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 20000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 20250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 20500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 20750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 21000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 21250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 21500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 21750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 22000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 22250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 22500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 22750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 23000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 23250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 23500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 23750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 24000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 24250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 24500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 24750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:16:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 25000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 25250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 25500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 25750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 26000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 26250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 26500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 26750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 27000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 27250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 27500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 27750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 28000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 28250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 28500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 28750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 29000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 29250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 29500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 29750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 30000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 30250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 30500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 30750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 31000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 31250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 31500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 31750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 32000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 32250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:17:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 32500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 32750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 33000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 33250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 33500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 33750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 34000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 34250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 34500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 34750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 35000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 35250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 35500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 35750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 36000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 36250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 36500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 36750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 37000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 37250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 37500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 37750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 38000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 38250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 38500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 38750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 39000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 39250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 39500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 39750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:18:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 40000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 40250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 40500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 40750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 41000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 41250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 41500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 41750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 42000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 42250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 42500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 42750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 43000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 43250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 43500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 43750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 44000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 44250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 44500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 44750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 45000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 45250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 45500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 45750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 46000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 46250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 46500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 46750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 47000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 47250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:19:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 47500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 47750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 48000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 48250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 48500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 48750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 49000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 49250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 49500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 49750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 50000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 50250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 50500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 50750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 51000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 51250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 51500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 51750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 52000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 52250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 52500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 52750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 53000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 53250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 53500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 53750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 54000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 54250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 54500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 54750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:20:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 55000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 55250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 55500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 55750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 56000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 56250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 56500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 56750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 57000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 57250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 57500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 57750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 58000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 58250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 58500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 58750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 59000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 59250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 59500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 59750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 60000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 60250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 60500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 60750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 61000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 61250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 61500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 61750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 62000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 62250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:21:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 62500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 62750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 63000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 63250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 63500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 63750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 64000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 64250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 64500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 64750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 65000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 65250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 65500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 65750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 66000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 66250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 66500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 66750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 67000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 67250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 67500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 67750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 68000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 68250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 68500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 68750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 69000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 69250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 69500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 69750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:22:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 70000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 70250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 70500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 70750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 71000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 71250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 71500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 71750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 72000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 72250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 72500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 72750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 73000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 73250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 73500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 73750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 74000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 74250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 74500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 74750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 75000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 75250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 75500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 75750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 76000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 76250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 76500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 76750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 77000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 77250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:23:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 77500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 77750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 78000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 78250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 78500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 78750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 79000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 79250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 79500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 79750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 80000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 80250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 80500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 80750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 81000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 81250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 81500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 81750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 82000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 82250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 82500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 82750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 83000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 83250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 83500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 83750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 84000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 84250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 84500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 84750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:24:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 85000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 85250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 85500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 85750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 86000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 86250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 86500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 86750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 87000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 87250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 87500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 87750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 88000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 88250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 88500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 88750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 89000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 89250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 89500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 89750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 90000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 90250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 90500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 90750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 91000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 91250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 91500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 91750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 92000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 92250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:25:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 92500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 92750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 93000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 93250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 93500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 93750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 94000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 94250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 94500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 94750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 95000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 95250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 95500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 95750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 96000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 96250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 96500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 96750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 97000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 97250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 97500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 97750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 98000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 98250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 98500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 98750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 99000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 99250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 99500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 99750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:26:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 100000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 100250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 100500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 100750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 101000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 101250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 101500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 101750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 102000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 102250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 102500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 102750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 103000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 103250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 103500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 103750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 104000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 104250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 104500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 104750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 105000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 105250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 105500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 105750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 106000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 106250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 106500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 106750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 107000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 107250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:27:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 107500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 107750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 108000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 108250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 108500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 108750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 109000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 109250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 109500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 109750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 110000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 110250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 110500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 110750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 111000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 111250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 111500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 111750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 112000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 112250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 112500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 112750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 113000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 113250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 113500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 113750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 114000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 114250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 114500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 114750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:28:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 115000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 115250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 115500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 115750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 116000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 116250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 116500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 116750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 117000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 117250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 117500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 117750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 118000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 118250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 118500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 118750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 119000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 119250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 119500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 119750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 120000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 120250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 120500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 120750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 121000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 121250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 121500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 121750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 122000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 122250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:29:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 122500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 122750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 123000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 123250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 123500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 123750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 124000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 124250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 124500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 124750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 125000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 125250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 125500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 125750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 126000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 126250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 126500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 126750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 127000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 127250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:38+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 127500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:40+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 127750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:42+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 128000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:44+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 128250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:46+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 128500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:48+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 128750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:50+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 129000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:52+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 129250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:54+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 129500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:56+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 129750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:30:58+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2495.0,
+    "volume_traded": 130000,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:00+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1495.5,
+    "volume_traded": 130250,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:02+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3496.0,
+    "volume_traded": 130500,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:04+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1596.5,
+    "volume_traded": 130750,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:06+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 997.0,
+    "volume_traded": 131000,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:08+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2497.5,
+    "volume_traded": 131250,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:10+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1498.0,
+    "volume_traded": 131500,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:12+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3498.5,
+    "volume_traded": 131750,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:14+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1599.0,
+    "volume_traded": 132000,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:16+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 999.5,
+    "volume_traded": 132250,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:18+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2500.0,
+    "volume_traded": 132500,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:20+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1500.5,
+    "volume_traded": 132750,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:22+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3501.0,
+    "volume_traded": 133000,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:24+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1601.5,
+    "volume_traded": 133250,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:26+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1002.0,
+    "volume_traded": 133500,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:28+05:30"
+  },
+  {
+    "instrument_token": 738561,
+    "symbol": "RELIANCE",
+    "last_price": 2502.5,
+    "volume_traded": 133750,
+    "ohlc": {
+      "open": 2500.0,
+      "high": 2510.0,
+      "low": 2490.0,
+      "close": 2500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:30+05:30"
+  },
+  {
+    "instrument_token": 408065,
+    "symbol": "INFY",
+    "last_price": 1503.0,
+    "volume_traded": 134000,
+    "ohlc": {
+      "open": 1500.0,
+      "high": 1510.0,
+      "low": 1490.0,
+      "close": 1500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:32+05:30"
+  },
+  {
+    "instrument_token": 2953213,
+    "symbol": "TCS",
+    "last_price": 3503.5,
+    "volume_traded": 134250,
+    "ohlc": {
+      "open": 3500.0,
+      "high": 3510.0,
+      "low": 3490.0,
+      "close": 3500.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:34+05:30"
+  },
+  {
+    "instrument_token": 341249,
+    "symbol": "HDFCBANK",
+    "last_price": 1604.0,
+    "volume_traded": 134500,
+    "ohlc": {
+      "open": 1600.0,
+      "high": 1610.0,
+      "low": 1590.0,
+      "close": 1600.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:36+05:30"
+  },
+  {
+    "instrument_token": 1270529,
+    "symbol": "ICICIBANK",
+    "last_price": 1004.5,
+    "volume_traded": 134750,
+    "ohlc": {
+      "open": 1000.0,
+      "high": 1010.0,
+      "low": 990.0,
+      "close": 1000.0
+    },
+    "exchange_timestamp": "2026-09-11T09:31:38+05:30"
+  }
+]

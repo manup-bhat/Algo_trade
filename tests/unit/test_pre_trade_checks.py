@@ -47,6 +47,7 @@ def live_kite():
     k = AsyncMock()
     k.order_margins.return_value = [{"initial": {"total": 10_000.0}}]
     k.get_available_balance.return_value = 200_000.0
+    k.quote.return_value = {}
     return k
 
 
@@ -60,9 +61,14 @@ async def check(redis_store, builder, kite=None, limit=500.0, sl=460.0):
     """
     from engine.risk.pre_trade_checks import PreTradeChecks
 
-    with patch("engine.risk.pre_trade_checks.datetime") as mock_dt, \
+    # After the RiskRule refactor, datetime.now is used in entry_cutoff_rule.py
+    # and mis_intraday_rule.py — both must be patched to _MARKET_TIME so tests
+    # pass regardless of what hour the test suite is run.
+    with patch("engine.risk.rules.entry_cutoff_rule.datetime") as mock_dt, \
+         patch("engine.risk.rules.mis_intraday_rule.datetime") as mock_mis_dt, \
          patch("engine.market.calendar.is_market_open", return_value=True):
         mock_dt.datetime.now.return_value = _MARKET_TIME
+        mock_mis_dt.datetime.now.return_value = _MARKET_TIME
         c = PreTradeChecks()
         return await c.run(
             symbol="TEST",
@@ -72,6 +78,8 @@ async def check(redis_store, builder, kite=None, limit=500.0, sl=460.0):
             redis_store=redis_store,
             kite=kite,
         )
+
+
 
 
 async def check_paper(redis_store, builder, **kw):
@@ -130,7 +138,7 @@ class TestCheck2ConcurrentPositions:
 class TestCheck3MarketClosed:
     async def test_market_closed(self, redis_store, warmed_builder):
         from engine.risk.pre_trade_checks import PreTradeChecks
-        with patch("engine.risk.pre_trade_checks.datetime") as mock_dt, \
+        with patch("engine.risk.rules.entry_cutoff_rule.datetime") as mock_dt, \
              patch("engine.market.calendar.is_market_open", return_value=False):
             mock_dt.datetime.now.return_value = _MARKET_TIME
             ok, reason = await PreTradeChecks().run(
@@ -143,7 +151,7 @@ class TestCheck3MarketClosed:
 class TestCheck4EntryCutoff:
     async def test_after_cutoff_fails(self, redis_store, warmed_builder):
         from engine.risk.pre_trade_checks import PreTradeChecks
-        with patch("engine.risk.pre_trade_checks.datetime") as mock_dt, \
+        with patch("engine.risk.rules.entry_cutoff_rule.datetime") as mock_dt, \
              patch("engine.market.calendar.is_market_open", return_value=True):
             mock_dt.datetime.now.return_value = _CUTOFF_TIME
             ok, reason = await PreTradeChecks().run(

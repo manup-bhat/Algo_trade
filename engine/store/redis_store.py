@@ -48,6 +48,7 @@ _PUB_STATE_CHANGES = "pub:state_changes"
 _PUB_PNL = "pub:pnl"
 _PUB_CANDLES = "pub:candles"
 _PUB_MONITORING_TICKS = "pub:monitoring_ticks"
+_PUB_ALERTS = "pub:alerts"
 
 _TTL_TOKEN = 86400       # 24 hours
 _TTL_VOLUME_SMA = 172800 # 48 hours
@@ -702,6 +703,9 @@ class RedisStore:
 
     async def publish_monitoring_tick(self, data: dict[str, Any]) -> None:
         await self._r.publish(_PUB_MONITORING_TICKS, json.dumps(data))
+
+    async def publish_alert(self, data: dict[str, Any]) -> None:
+        await self._r.publish(_PUB_ALERTS, json.dumps(data))
 
     # ── Trade Approval Queue (Live Mode Gate) ─────────────────────────────────
     # When PAPER_TRADE=False, entries are held in ACTION_PENDING_APPROVAL until

@@ -373,6 +373,9 @@ class Coordinator:
         pipeline (no per-symbol round-trips), keeping livetick:* keys fresh for the
         dashboard's 1-second WebSocket tick_batch poll.
         """
+        import time
+        start_time = time.time()
+        
         self._tick_count += len(ticks)
 
         # Accumulate (symbol, data) for a single pipeline flush at the end.
@@ -472,6 +475,10 @@ class Coordinator:
                 await self._redis.set_last_tick_at(now_iso)
             except Exception:
                 pass
+                
+        process_time_ms = (time.time() - start_time) * 1000
+        from engine.core.metrics import metrics_registry
+        metrics_registry.observe_latency("tick_processing", process_time_ms)
 
     async def _maybe_publish_monitoring_tick(
         self,
@@ -600,13 +607,28 @@ class Coordinator:
         for builder in self.candle_builders.values():
             builder.reset_cumulative_baseline()
         log.info("ws_connected_baselines_reset", count=len(self.candle_builders))
+        await self._redis.publish_alert({
+            "level": "info",
+            "message": "Market Data stream connected",
+            "source": "coordinator"
+        })
 
     async def on_websocket_reconnect(self) -> None:
         log.warning("ws_reconnecting_in_progress")
+        await self._redis.publish_alert({
+            "level": "warning",
+            "message": "Market Data stream disconnected. Reconnecting...",
+            "source": "coordinator"
+        })
 
     async def on_fatal_disconnect(self) -> None:
         """Emergency: force squareoff all open positions (delegated), set status."""
         log.critical("fatal_ws_disconnect_squaring_off_all")
+        await self._redis.publish_alert({
+            "level": "error",
+            "message": "FATAL: Market Data stream disconnected permanently. Force squaring off all positions.",
+            "source": "coordinator"
+        })
         await self.strategy_router.on_fatal_disconnect()
         await self._redis.set_engine_status({
             "status": "FATAL_DISCONNECT",

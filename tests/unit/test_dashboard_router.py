@@ -188,3 +188,52 @@ async def test_export_csv_trades_returns_csv_stream(redis_store):
     assert resp.media_type == "text/csv"
     assert "attachment" in resp.headers["content-disposition"]
     assert resp.headers["content-disposition"].endswith('.csv"')
+
+
+@pytest.mark.asyncio
+async def test_positions_filtered_by_strategy_id(redis_store):
+    dashboard_router.set_dependencies(redis_store, None)
+
+    await redis_store.set_strategy_state(
+        "INFY",
+        {
+            "symbol": "INFY",
+            "strategy_id": "ivbs",
+            "state": "MANAGING",
+            "position": {"entry_price": 1500.0, "quantity": 10},
+        },
+    )
+    await redis_store.set_strategy_state(
+        "NIFTY23SEP21000CE",
+        {
+            "symbol": "NIFTY23SEP21000CE",
+            "strategy_id": "options_momentum",
+            "state": "MANAGING",
+            "position": {"entry_price": 120.0, "quantity": 50},
+        },
+    )
+
+    # Filter for ivbs only
+    res_ivbs = await dashboard_router.get_positions(strategy_id="ivbs")
+    assert res_ivbs["count"] == 1
+    assert res_ivbs["positions"][0]["symbol"] == "INFY"
+
+    # Filter for options_momentum
+    res_opt = await dashboard_router.get_positions(strategy_id="options_momentum")
+    assert res_opt["count"] == 1
+    assert res_opt["positions"][0]["symbol"] == "NIFTY23SEP21000CE"
+
+    # Unfiltered (None) returns both
+    res_all = await dashboard_router.get_positions()
+    assert res_all["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_analytics_daily_pnl_and_win_rate_endpoints():
+    res_pnl = await dashboard_router.get_analytics_daily_pnl(strategy_id="ivbs")
+    assert "daily_pnl" in res_pnl
+    assert isinstance(res_pnl["daily_pnl"], list)
+
+    res_win = await dashboard_router.get_analytics_win_rate(strategy_id="ivbs")
+    assert isinstance(res_win, dict)
+

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <!-- Theme is set inline before first paint to prevent FOUC -->
 <script>document.documentElement.setAttribute('data-theme',localStorage.getItem('ivbs-theme')||'dark');</script>
 <html lang="en">
@@ -10,6 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Chart.js is only used by the lazy-loaded Analytics tab, so defer it to keep first paint fast -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
 /* ─────────────────────────────────────────────────────────────────────────────
    DESIGN TOKENS
@@ -126,14 +128,20 @@
    RESET & BASE
 ───────────────────────────────────────────────────────────────────────────── */
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+html {
+  height: 100%;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg-base);
+}
 body {
   font-family: var(--sans);
   background: var(--bg-base);
   color: var(--text-primary);
-  min-height: 100vh;
+  height: 100%;
+  min-height: 100%;
   line-height: 1.5;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 button { cursor: pointer; font-family: var(--sans); border: none; background: none; }
 input, select, textarea { font-family: var(--sans); }
@@ -184,7 +192,13 @@ a { color: var(--blue); text-decoration: none; }
    APP SHELL — always visible; no login gate
 ───────────────────────────────────────────────────────────────────────────── */
 #screen-login { display: none; }   /* no login wall — auth is in the profile dropdown */
-#screen-app   { display: flex; flex-direction: column; min-height: 100vh; }
+#screen-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
 
 /* Profile icon button — compact, same style as theme toggle */
 .profile-icon-btn {
@@ -585,8 +599,14 @@ a { color: var(--blue); text-decoration: none; }
 .icon-btn:hover { color: var(--text-primary); background: var(--bg-card-hover); border-color: var(--text-muted); }
 
 /* CONTENT AREA */
-.app-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-.tab-panel { display: none; height: 100%; overflow: hidden; }
+.app-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.tab-panel { display: none; min-height: 0; height: 100%; overflow: hidden; }
 .tab-panel.active { display: flex; flex-direction: column; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -653,6 +673,113 @@ a { color: var(--blue); text-decoration: none; }
 @keyframes armed-pulse {
   from { box-shadow: 0 0 6px rgba(239,68,68,0.5); }
   to   { box-shadow: 0 0 20px rgba(239,68,68,0.9); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LIVE-MODE SAFETY INDICATORS
+   When real orders can be placed (LIVE or SIMULTANEOUS), the whole command bar
+   carries a persistent red accent and the mode pill pulses. This is deliberately
+   hard to miss — a trader must always know real money is at stake.
+───────────────────────────────────────────────────────────────────────────── */
+body[data-trade-mode="LIVE"] .command-bar,
+body[data-trade-mode="SIMULTANEOUS"] .command-bar {
+  box-shadow: inset 0 3px 0 0 var(--red);
+}
+.mode-pill.live { animation: live-pill-pulse 1.6s ease-in-out infinite; }
+@keyframes live-pill-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.0); }
+  50%     { box-shadow: 0 0 0 4px rgba(239,68,68,0.20); }
+}
+
+/* Directional glyphs for colour-blind-safe P&L (never colour alone) */
+.dir-arrow { font-size: 0.85em; margin-left: 3px; }
+
+/* Nav tab attention flash — used when an approval needs action but we must NOT
+   hijack the trader's current view by force-switching tabs. */
+.nav-tab.attn { animation: nav-attn 1s ease-in-out infinite; }
+@keyframes nav-attn {
+  0%,100% { box-shadow: inset 0 -2px 0 0 var(--amber); }
+  50%     { box-shadow: inset 0 -2px 0 0 transparent; }
+}
+
+/* Keyboard-operable table rows */
+tr[data-drawer-symbol] { cursor: pointer; }
+tr[data-drawer-symbol]:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--blue); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CONFIRM DIALOG — used for engine Start / Stop (and any destructive action)
+───────────────────────────────────────────────────────────────────────────── */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 12000;
+  background: var(--bg-overlay);
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.confirm-overlay.open { display: flex; animation: overlay-in 0.15s ease; }
+.confirm-box {
+  width: 100%; max-width: 400px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  padding: 22px; animation: card-slide-in 0.18s ease;
+}
+.confirm-box.danger { border-color: var(--red-border); }
+.confirm-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary); }
+.confirm-msg   { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 18px; }
+.confirm-msg strong { color: var(--text-primary); }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.confirm-actions .btn { min-width: 96px; justify-content: center; }
+.confirm-danger-btn {
+  background: var(--red); color: #fff; border: 1px solid var(--red);
+  padding: 8px 16px; border-radius: var(--radius-sm); font-weight: 700; font-size: 13px;
+}
+.confirm-danger-btn:hover { opacity: 0.9; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMMAND PALETTE (⌘K / Ctrl-K)
+───────────────────────────────────────────────────────────────────────────── */
+.cmdk-overlay {
+  position: fixed; inset: 0; z-index: 13000;
+  background: rgba(0,0,0,0.5);
+  display: none; align-items: flex-start; justify-content: center;
+  padding-top: 12vh;
+}
+.cmdk-overlay.open { display: flex; animation: overlay-in 0.12s ease; }
+.cmdk-box {
+  width: 100%; max-width: 560px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  overflow: hidden; animation: card-slide-in 0.16s ease;
+}
+.cmdk-input {
+  width: 100%; border: none; outline: none;
+  background: transparent; color: var(--text-primary);
+  font-size: 15px; padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.cmdk-input::placeholder { color: var(--text-muted); }
+.cmdk-list { max-height: 52vh; overflow-y: auto; padding: 6px; }
+.cmdk-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text-secondary); cursor: pointer;
+}
+.cmdk-item .cmdk-kind {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-muted); margin-left: auto;
+}
+.cmdk-item .cmdk-name { color: var(--text-primary); font-weight: 500; }
+.cmdk-item.active { background: var(--blue-dim); }
+.cmdk-item.active .cmdk-kind { color: var(--blue); }
+.cmdk-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.cmdk-hint {
+  display: flex; gap: 14px; padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-muted);
+}
+.cmdk-hint kbd {
+  font-family: var(--mono); background: var(--bg-input);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 5px; font-size: 10px;
 }
 
 /* ws offline toast */
@@ -941,7 +1068,7 @@ a { color: var(--blue); text-decoration: none; }
 /* ─────────────────────────────────────────────────────────────────────────────
    TRADES TAB
 ───────────────────────────────────────────────────────────────────────────── */
-#tab-trades { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+#tab-trades { padding: 0; overflow: hidden; flex-direction: column; }
 #tab-trades.active { display: flex; }
 .trades-header {
   display: flex; align-items: center; gap: 12px;
@@ -976,7 +1103,7 @@ a { color: var(--blue); text-decoration: none; }
 /* ─────────────────────────────────────────────────────────────────────────────
    ORDERS TAB
 ───────────────────────────────────────────────────────────────────────────── */
-#tab-orders { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+#tab-orders { padding: 0; overflow: hidden; flex-direction: column; }
 #tab-orders.active { display: flex; }
 .orders-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .orders-table thead th {
@@ -1412,6 +1539,414 @@ a { color: var(--blue); text-decoration: none; }
 /* Drawer wider for chart */
 .drawer { width: 500px; }
 @media (max-width: 540px) { .drawer { width: 95vw; } }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANALYTICS TAB (Institutional Quant Dashboard)
+───────────────────────────────────────────────────────────────────────────── */
+#tab-analytics {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+  gap: 16px;
+  background: var(--bg-base);
+}
+.wl-footer-info { font-size:11px; color:var(--text-muted); }
+.wl-footer-info strong { color:var(--text-secondary); }
+.wl-footer-btns { display:flex; gap:8px; }
+.wl-save-btn {
+  padding:9px 22px; background:var(--blue); color:#fff;
+  border:none; border-radius:var(--radius-sm); font-size:13px; font-weight:700; cursor:pointer;
+  display:flex; align-items:center; gap:7px; transition:all var(--transition);
+}
+.wl-save-btn:hover { background:#2563eb; }
+.wl-save-btn:disabled { opacity:0.4; cursor:not-allowed; }
+.wl-cancel-btn {
+  padding:9px 16px; background:var(--bg-input); color:var(--text-secondary);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  font-size:13px; font-weight:600; cursor:pointer; transition:all var(--transition);
+}
+.wl-cancel-btn:hover { background:var(--bg-card-hover); color:var(--text-primary); }
+.wl-warming-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:9px; font-weight:700; letter-spacing:0.4px; padding:1px 6px;
+  border-radius:99px; background:var(--amber-dim); color:var(--amber);
+  border:1px solid var(--amber-border); animation:wl-warm-pulse 1.5s ease infinite alternate;
+}
+@keyframes wl-warm-pulse { from{opacity:0.7} to{opacity:1} }
+.wl-warming-dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+.wl-bulk-wrap { flex-shrink:0; border-top:1px solid var(--border); padding-top:10px;
+  display:flex; flex-direction:column; gap:6px; }
+.wl-bulk-label { font-size:10px; color:var(--text-muted); }
+.wl-bulk-row { display:flex; gap:6px; }
+.wl-bulk-input {
+  flex:1; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border);
+  border-radius:var(--radius-sm); font-size:12px; font-family:var(--mono);
+  color:var(--text-primary); outline:none; transition:border-color var(--transition);
+}
+.wl-bulk-input:focus { border-color:var(--border-focus); }
+.wl-bulk-add-btn {
+  padding:6px 14px; background:var(--blue-dim); color:var(--blue);
+  border:1px solid var(--blue-border); border-radius:var(--radius-sm);
+  font-size:12px; font-weight:700; cursor:pointer; transition:all var(--transition); white-space:nowrap;
+}
+.wl-bulk-add-btn:hover { background:var(--blue); color:#fff; }
+/* Edit watchlist button in universe toolbar */
+#btn-edit-watchlist {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 12px; font-size:12px; font-weight:600;
+  background:var(--bg-input); color:var(--text-secondary);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  cursor:pointer; transition:all var(--transition);
+}
+#btn-edit-watchlist:hover { border-color:var(--blue-border); color:var(--blue); background:var(--blue-dim); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMPTY STATES
+───────────────────────────────────────────────────────────────────────────── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 8px;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.empty-state-icon { font-size: 28px; opacity: 0.4; }
+.empty-state-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.empty-state-sub { font-size: 12px; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LOADING SKELETON
+───────────────────────────────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--bg-card-hover) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes skeleton-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE
+───────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .stat-cards { grid-template-columns: repeat(3,1fr); }
+  .pipeline-board { grid-template-columns: repeat(2,1fr); }
+}
+@media (max-width: 768px) {
+  /* Keep tab navigation reachable on mobile: wrap it onto its own
+     full-width, horizontally-scrollable row instead of hiding it. */
+  .navbar { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+  .navbar-tabs { order: 3; flex-basis: 100%; padding-right: 0; }
+  .stat-cards { grid-template-columns: 1fr 1fr; }
+  .scanner-layout { flex-direction: column; }
+  .scanner-right { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MINI CANDLE CHART (drawer popup)
+───────────────────────────────────────────────────────────────────────────── */
+.chart-wrap {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.chart-loading {
+  display: flex; align-items: center; justify-content: center;
+  height: 140px; color: var(--text-muted); font-size: 12px; gap: 8px;
+}
+.chart-svg-wrap {
+  width: 100%; overflow: hidden;
+}
+.chart-overlay-labels {
+  position: absolute; top: 6px; right: 8px;
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-end;
+}
+.chart-lbl {
+  font-size: 9px; font-family: var(--mono);
+  padding: 1px 5px; border-radius: 3px; font-weight: 600;
+}
+.chart-lbl.breakout { background: rgba(59,130,246,0.2); color: var(--blue); border: 1px solid rgba(59,130,246,0.4); }
+.chart-lbl.swinglow  { background: rgba(239,68,68,0.2);  color: var(--red);  border: 1px solid rgba(239,68,68,0.4); }
+.chart-lbl.impact   { background: rgba(245,158,11,0.2); color: var(--amber); border: 1px solid rgba(245,158,11,0.4); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DRY-UP MONITORING SECTION (drawer popup)
+───────────────────────────────────────────────────────────────────────────── */
+.dryup-section {
+  background: var(--bg-card);
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dryup-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.dryup-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--amber);
+  display: flex; align-items: center; gap: 6px;
+}
+.dryup-title .dryup-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--amber); animation: dot-pulse 1.5s infinite;
+}
+.dryup-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+}
+.dryup-stat {
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 8px 10px;
+  text-align: center;
+}
+.dryup-stat .ds-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.dryup-stat .ds-val { font-family: var(--mono); font-size: 13px; font-weight: 700; margin-top: 2px; }
+.dryup-levels {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.dryup-level-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px;
+}
+.dryup-level-row .dl-label { color: var(--text-muted); }
+.dryup-level-row .dl-val { font-family: var(--mono); font-weight: 700; }
+
+/* Volume bar mini-chart inside dry-up section */
+.dryup-vol-chart {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 40px; padding: 0 2px;
+}
+.dryup-vol-bar {
+  flex: 1; min-width: 4px; border-radius: 2px 2px 0 0;
+  transition: background 0.2s;
+}
+.dryup-vol-bar.impact  { background: rgba(245,158,11,0.8); }
+.dryup-vol-bar.normal  { background: rgba(59,130,246,0.5); }
+.dryup-vol-bar.elevated { background: rgba(239,68,68,0.6); }
+.dryup-vol-label {
+  font-size: 9px; color: var(--text-muted); font-family: var(--mono);
+  text-align: center; margin-top: 3px;
+  display: flex; justify-content: space-between; padding: 0 2px;
+}
+
+/* Drawer wider for chart */
+.drawer { width: 500px; }
+@media (max-width: 540px) { .drawer { width: 95vw; } }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ANALYTICS TAB (Institutional Quant Dashboard)
+───────────────────────────────────────────────────────────────────────────── */
+#tab-analytics {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+  gap: 16px;
+  background: var(--bg-base);
+}
+#tab-analytics.active { display: flex; flex-direction: column; }
+
+.anlz-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 2px;
+}
+
+.anlz-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.anlz-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+}
+
+.anlz-title-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.anlz-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.anlz-segmented {
+  display: inline-flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 2px;
+}
+
+.anlz-seg-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--sans);
+}
+.anlz-seg-btn:hover { color: var(--text-primary); }
+.anlz-seg-btn.active {
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(59,130,246,0.35);
+}
+
+.anlz-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
+@media (max-width: 1200px) {
+  .anlz-cards-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+  .anlz-cards-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.anlz-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.anlz-card:hover { border-color: rgba(255,255,255,0.15); }
+
+.anlz-card-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.anlz-card-val {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  margin-top: 2px;
+}
+
+.anlz-card-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.anlz-card-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 99px;
+  margin-top: 4px;
+  overflow: hidden;
+  display: flex;
+}
+.anlz-card-bar-win {
+  height: 100%;
+  background: var(--green);
+  transition: width 0.3s ease;
+}
+.anlz-card-bar-loss {
+  height: 100%;
+  background: var(--red);
+  transition: width 0.3s ease;
+}
+
+.anlz-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.anlz-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 1024px) {
+  .anlz-charts-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .anlz-bottom-grid { grid-template-columns: 1fr; }
+}
+
+.anlz-chart-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+}
+
+.anlz-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.anlz-chart-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.anlz-chart-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.anlz-chart-container {
+  position: relative;
+  height: 220px;
+  width: 100%;
+}
   </style>
 </head>
 <body>
@@ -1464,10 +1999,19 @@ a { color: var(--blue); text-decoration: none; }
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="14" height="16" rx="2"/><path d="M7 6h6M7 10h6M7 14h4"/></svg>
         Journal
       </button>
+      <button class="nav-tab" data-tab="analytics" id="tab-btn-analytics">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 16V9M12 16V4M6 16v-5"/></svg>
+        Analytics
+      </button>
       <button class="nav-tab" data-tab="settings">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="2"/><path d="M17.7 11.4a7.8 7.8 0 010-2.8l1.3-1.1a1 1 0 00.2-1.2l-1.5-2.6a1 1 0 00-1.2-.4l-1.6.6a7.9 7.9 0 00-2.4-1.4l-.3-1.7A1 1 0 0011 1H9a1 1 0 00-1 .8l-.3 1.7A7.9 7.9 0 005.3 5L3.7 4.3a1 1 0 00-1.2.4L1 7.3a1 1 0 00.2 1.2l1.3 1.1a7.8 7.8 0 000 2.8L1.2 13.6A1 1 0 001 14.8l1.5 2.6a1 1 0 001.2.4l1.6-.6a7.9 7.9 0 002.4 1.4l.3 1.7A1 1 0 009 21h2a1 1 0 001-.8l.3-1.7a7.9 7.9 0 002.4-1.4l1.6.6a1 1 0 001.2-.4l1.5-2.6a1 1 0 00-.2-1.2l-1.3-1.1z"/></svg>
         Settings
       </button>
+      <button class="nav-tab" data-tab="builder" id="tab-btn-builder" title="Visual Strategy Builder">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="13" y="2" width="5" height="5" rx="1"/><rect x="7" y="13" width="6" height="5" rx="1"/><path d="M4.5 7v3.5a1 1 0 001 1h9a1 1 0 001-1V7"/><path d="M10 10.5V13"/></svg>
+        Builder
+      </button>
+      <button class="nav-tab" data-tab="agent" id="tab-btn-agent" title="Agentic Strategy Loop"><span>Agent</span><span id="badge-agent-pending" style="font-size:10px;font-weight:700;color:var(--amber);margin-left:4px;"></span></button>
     </div>
 
     <div class="navbar-right">
@@ -1538,7 +2082,7 @@ a { color: var(--blue); text-decoration: none; }
                 style="flex:1; padding:8px 0; border-radius:6px; font-size:12px; font-weight:600; letter-spacing:0.3px;
                        border:1px solid transparent; background:transparent; color:var(--text-muted);
                        cursor:pointer; transition:all var(--transition);"
-                onclick="_selectMode('SIMULTANEOUS')">P + L</button>
+                onclick="_selectMode('SIMULTANEOUS')">Paper + Live</button>
               <button id="msel-live" data-mode="LIVE"
                 style="flex:1; padding:8px 0; border-radius:6px; font-size:12px; font-weight:600; letter-spacing:0.3px;
                        border:1px solid transparent; background:transparent; color:var(--text-muted);
@@ -1614,12 +2158,14 @@ a { color: var(--blue); text-decoration: none; }
                      display:flex; justify-content:center; align-items:center; gap:8px;
                      transition:all var(--transition);">
               <svg viewBox="0 0 24 24" fill="none" width="16" height="16" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Download Signal Logs
+              Download Signal Logs (JSON)
             </button>
-            <div style="display:flex; gap:8px; margin-top:10px;">
-              <a id="export-link-trades" href="#" onclick="this.href=_sfx('/api/v1/export/trades.csv');return true;" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Trades CSV</a>
-              <a id="export-link-orders" href="#" onclick="this.href=_sfx('/api/v1/export/orders.csv');return true;" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Orders CSV</a>
-              <a id="export-link-journal" href="#" onclick="this.href=_sfx('/api/v1/export/journal.csv');return true;" download style="flex:1; text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none;">Journal CSV</a>
+            <div id="export-status" style="font-size:11.5px; text-align:center; margin-top:8px; min-height:16px; font-weight:500; transition:color var(--transition);"></div>
+            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:10px;">
+              <a id="export-link-trades" href="#" onclick="_triggerCsvExport(this, 'trades');return false;" style="text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; transition:all var(--transition);">Trades CSV</a>
+              <a id="export-link-orders" href="#" onclick="_triggerCsvExport(this, 'orders');return false;" style="text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; transition:all var(--transition);">Orders CSV</a>
+              <a id="export-link-journal" href="#" onclick="_triggerCsvExport(this, 'journal');return false;" style="text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; transition:all var(--transition);">Journal CSV</a>
+              <a id="export-link-signals" href="#" onclick="_triggerCsvExport(this, 'signals');return false;" style="text-align:center; padding:9px 0; background:var(--bg-base); color:var(--text-secondary); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; text-decoration:none; cursor:pointer; transition:all var(--transition);">Signals CSV</a>
             </div>
 
           </div>
@@ -1746,6 +2292,11 @@ a { color: var(--blue); text-decoration: none; }
           <span class="sc-label">Ticks / Candles</span>
           <span class="sc-val neutral mono" id="stat-ticks">0</span>
           <span class="sc-sub" id="stat-candles-sub">0 candles</span>
+        </div>
+        <div class="stat-card">
+          <span class="sc-label">System Metrics</span>
+          <span class="sc-val neutral mono" id="stat-latency">— / — ms</span>
+          <span class="sc-sub">API / Engine p95</span>
         </div>
       </div>
 
@@ -1979,11 +2530,6 @@ a { color: var(--blue); text-decoration: none; }
     </div>
 
     <!-- ──────────────────────────────────────────────────────────────────────
-         TAB: SETTINGS
-    ────────────────────────────────────────────────────────────────────── -->
-    </div>
-
-    <!-- ──────────────────────────────────────────────────────────────────────
          TAB: APPROVALS  (LIVE mode pending trade confirmations)
     ────────────────────────────────────────────────────────────────────── -->
     <div class="tab-panel" id="tab-approvals">
@@ -2014,19 +2560,6 @@ a { color: var(--blue); text-decoration: none; }
         <span style="font-size:11px;color:var(--text-muted);background:var(--bg-input);padding:2px 8px;border-radius:99px;border:1px solid var(--border);" id="journal-count-label">—</span>
         <button class="btn btn-ghost btn-sm" id="btn-refresh-journal" style="margin-left:auto">Refresh</button>
       </div>
-      <!-- STRATEGY ANALYTICS (computed from recorded PAPER/LIVE trades) -->
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg-base);">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-          <span style="font-size:11.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px;">Strategy Performance</span>
-          <div style="display:flex;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:3px;" role="group" aria-label="Analytics trade mode">
-            <button class="anlz-mode-btn" data-mode="ALL" style="border:none;background:transparent;color:var(--text-muted);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:6px;cursor:pointer;" onclick="_setAnalyticsMode('ALL')">All</button>
-            <button class="anlz-mode-btn" data-mode="PAPER" style="border:none;background:transparent;color:var(--text-muted);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:6px;cursor:pointer;" onclick="_setAnalyticsMode('PAPER')">Paper</button>
-            <button class="anlz-mode-btn" data-mode="LIVE" style="border:none;background:transparent;color:var(--text-muted);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:6px;cursor:pointer;" onclick="_setAnalyticsMode('LIVE')">Live</button>
-          </div>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">last 30 sessions</span>
-        </div>
-        <div id="analytics-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;"></div>
-      </div>
       <div style="flex:1;overflow:auto;">
         <table class="trades-table" id="journal-table" style="font-size:12px">
           <thead><tr>
@@ -2041,25 +2574,257 @@ a { color: var(--blue); text-decoration: none; }
           </tbody>
         </table>
       </div>
-    </div>
+    </div><!-- /tab-journal -->
 
-    <div class="tab-panel" id="tab-settings">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-shrink:0;margin-bottom:8px;">
-        <div style="font-size:15px;font-weight:700;">Runtime Settings</div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" id="btn-settings-reload">Reload</button>
-          <button class="btn btn-primary btn-sm" id="btn-settings-save">Save Changes</button>
+    <!-- ──────────────────────────────────────────────────────────────────────
+         TAB: ANALYTICS (Institutional Performance & Quantitative Visualizer)
+    ────────────────────────────────────────────────────────────────────── -->
+    <div class="tab-panel" id="tab-analytics">
+
+      <!-- Header & Filter Toolbar -->
+      <div class="anlz-header-bar">
+        <div class="anlz-title-wrap">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--blue);"><path d="M18 16V9M12 16V4M6 16v-5"/></svg>
+          <div>
+            <div class="anlz-title-text">Trading Analytics &amp; Edge Insights</div>
+            <div class="anlz-title-sub" id="anlz-range-subtitle">Performance breakdown across all closed trades</div>
+          </div>
+        </div>
+
+        <div class="anlz-controls-group">
+          <!-- Timeframe Segmented Control -->
+          <div class="anlz-segmented" role="group" aria-label="Analytics Timeframe">
+            <button class="anlz-seg-btn" data-range="1D" onclick="_setAnalyticsRange('1D')">1D</button>
+            <button class="anlz-seg-btn" data-range="1W" onclick="_setAnalyticsRange('1W')">1W</button>
+            <button class="anlz-seg-btn" data-range="2W" onclick="_setAnalyticsRange('2W')">2W</button>
+            <button class="anlz-seg-btn active" data-range="1M" onclick="_setAnalyticsRange('1M')">1M</button>
+            <button class="anlz-seg-btn" data-range="3M" onclick="_setAnalyticsRange('3M')">3M</button>
+            <button class="anlz-seg-btn" data-range="ALL" onclick="_setAnalyticsRange('ALL')">ALL</button>
+          </div>
+
+          <!-- Trade Mode Filter -->
+          <div class="anlz-segmented" role="group" aria-label="Analytics Mode">
+            <button class="anlz-seg-btn active" data-anlz-mode="ALL" onclick="_setAnalyticsPageMode('ALL')">All</button>
+            <button class="anlz-seg-btn" data-anlz-mode="PAPER" onclick="_setAnalyticsPageMode('PAPER')">Paper</button>
+            <button class="anlz-seg-btn" data-anlz-mode="LIVE" onclick="_setAnalyticsPageMode('LIVE')">Live</button>
+          </div>
+
+          <!-- Refresh Button -->
+          <button class="btn btn-ghost btn-sm" id="btn-refresh-analytics" onclick="loadAnalyticsPage()" style="display:flex;align-items:center;gap:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Refresh
+          </button>
         </div>
       </div>
-      <div id="settings-body" style="display:flex;flex-direction:column;gap:12px;"></div>
-    </div>
 
-  </div><!-- /app-content -->
-</div><!-- /screen-app -->
+      <!-- KPI Scorecards Grid (6 Institutional Metrics) -->
+      <div class="anlz-cards-grid">
+        <!-- 1. Net PnL -->
+        <div class="anlz-card">
+          <div class="anlz-card-lbl">Net Realized P&amp;L</div>
+          <div class="anlz-card-val" id="anlz-net-pnl">₹0.00</div>
+          <div class="anlz-card-sub">
+            <span>Gross: <b id="anlz-gross-pnl" class="mono">₹0.00</b></span>
+            <span>Fees: <b id="anlz-charges" class="mono">₹0.00</b></span>
+          </div>
+        </div>
 
-<!-- DRAWER -->
-<div class="drawer-overlay" id="drawer-overlay"></div>
-<div class="drawer" id="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+        <!-- 2. Win Rate -->
+        <div class="anlz-card">
+          <div class="anlz-card-lbl">
+            <span>Win Rate</span>
+            <span id="anlz-trades-count" style="font-size:9.5px;padding:1px 5px;border-radius:4px;background:var(--bg-raised);color:var(--text-muted);">0 trades</span>
+          </div>
+          <div class="anlz-card-val" id="anlz-win-rate">0.0%</div>
+          <div class="anlz-card-bar-wrap">
+            <div class="anlz-card-bar-win" id="anlz-bar-win" style="width:0%"></div>
+            <div class="anlz-card-bar-loss" id="anlz-bar-loss" style="width:0%"></div>
+          </div>
+          <div class="anlz-card-sub">
+            <span style="color:var(--green)">W: <b id="anlz-wins">0</b></span>
+            <span style="color:var(--red)">L: <b id="anlz-losses">0</b></span>
+            <span>BE: <b id="anlz-breakeven">0</b></span>
+          </div>
+        </div>
+
+        <!-- 3. Profit Factor -->
+        <div class="anlz-card">
+          <div class="anlz-card-lbl">
+            <span>Profit Factor</span>
+            <span id="anlz-pf-badge" class="anlz-chart-badge" style="font-size:9px;">—</span>
+          </div>
+          <div class="anlz-card-val" id="anlz-profit-factor">—</div>
+          <div class="anlz-card-sub">
+            <span>Win: <b id="anlz-gross-win" class="mono">₹0</b></span>
+            <span>Loss: <b id="anlz-gross-loss" class="mono">₹0</b></span>
+          </div>
+        </div>
+
+        <!-- 4. Expectancy & Avg R -->
+        <div class="anlz-card">
+          <div class="anlz-card-lbl">Expectancy / Trade</div>
+          <div class="anlz-card-val" id="anlz-expectancy">₹0.00</div>
+          <div class="anlz-card-sub">
+            <span>Avg R: <b id="anlz-avg-r" class="mono">0.00 R</b></span>
+            <span>Streak: <b id="anlz-win-streak" class="mono" style="color:var(--green)">0W</b></span>
+          </div>
+        </div>
+
+        <!-- 5. Max Drawdown -->
+        <div class="anlz-card">
+          <div class="anlz-card-lbl">Max Drawdown</div>
+          <div class="anlz-card-val" id="anlz-max-drawdown" style="color:var(--red)">₹0.00</div>
+          <div class="anlz-card-sub">
+            <span>Peak-to-Trough: <b id="anlz-mdd-pct" class="mono">0.0%</b></span>
+            <span>Sharpe: <b id="anlz-sharpe" class="mono">0.00</b></span>
+          </div>
+        </div>
+
+        <!-- 6. Payoff Ratio -->
+        <div class="anlz-card">
+          <div class="anlz-card-lbl">Win/Loss Payoff</div>
+          <div class="anlz-card-val" id="anlz-payoff">0.00x</div>
+          <div class="anlz-card-sub">
+            <span style="color:var(--green)">Avg Win: <b id="anlz-avg-win" class="mono">₹0</b></span>
+            <span style="color:var(--red)">Avg Loss: <b id="anlz-avg-loss" class="mono">₹0</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2x2 Interactive Quant Charts Grid -->
+      <div class="anlz-charts-grid">
+        <!-- Chart 1: Cumulative Equity Curve -->
+        <div class="anlz-chart-box">
+          <div class="anlz-chart-header">
+            <div class="anlz-chart-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--green)"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Cumulative Equity Curve
+            </div>
+            <span class="anlz-chart-badge" style="color:var(--green);background:var(--green-dim);border-color:var(--green-border)">Net Realized (₹)</span>
+          </div>
+          <div class="anlz-chart-container">
+            <canvas id="chart-equity-curve"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Daily P&L Distribution -->
+        <div class="anlz-chart-box">
+          <div class="anlz-chart-header">
+            <div class="anlz-chart-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--blue)"><rect x="3" y="12" width="4" height="8"/><rect x="10" y="8" width="4" height="12"/><rect x="17" y="4" width="4" height="16"/></svg>
+              Session Distribution (Daily Net P&amp;L)
+            </div>
+            <span class="anlz-chart-badge">Bipolar Bars</span>
+          </div>
+          <div class="anlz-chart-container">
+            <canvas id="chart-daily-pnl"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 3: Underwater Drawdown (% from Peak) -->
+        <div class="anlz-chart-box">
+          <div class="anlz-chart-header">
+            <div class="anlz-chart-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--red)"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+              Underwater Drawdown (% from High-Water Mark)
+            </div>
+            <span class="anlz-chart-badge" style="color:var(--red);background:var(--red-dim);border-color:var(--red-border)">Risk Profile</span>
+          </div>
+          <div class="anlz-chart-container">
+            <canvas id="chart-drawdown"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 4: Day-of-Week & Hourly Edge Analysis -->
+        <div class="anlz-chart-box">
+          <div class="anlz-chart-header">
+            <div class="anlz-chart-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--amber)"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Temporal Edge &amp; Leak Analysis
+            </div>
+            <div class="anlz-segmented" role="group" aria-label="Temporal View">
+              <button class="anlz-seg-btn active" id="btn-temporal-dow" onclick="_setTemporalView('dow')">Day of Week</button>
+              <button class="anlz-seg-btn" id="btn-temporal-hour" onclick="_setTemporalView('hour')">Hour of Day</button>
+            </div>
+          </div>
+          <div class="anlz-chart-container">
+            <canvas id="chart-temporal"></canvas>
+          </div>
+        </div>
+      </div>
+
+
+    <!-- Phase 3: Builder Tab Panel -->
+    <div class="tab-panel" id="tab-builder" style="overflow:hidden;flex-direction:row;gap:0;">
+      <div id="builder-palette" style="width:200px;min-width:160px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;">
+        <div style="padding:10px 12px 6px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Palette <span id="builder-palette-count" style="color:var(--text-muted);font-weight:400;"></span></span>
+          <button id="btn-builder-reload-palette" title="Reload" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:2px 4px;">&#8635;</button>
+        </div>
+        <div id="builder-palette-content" style="flex:1;overflow-y:auto;font-size:12px;"><div style="padding:16px;color:var(--text-muted);font-size:12px;text-align:center;">Click Builder tab to load...</div></div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input id="builder-strategy-id" type="text" placeholder="Strategy ID" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);width:160px;"/>
+          <button id="btn-builder-validate" class="btn btn-ghost btn-sm">Validate</button>
+          <button id="btn-builder-backtest" class="btn btn-ghost btn-sm">Backtest</button>
+          <button id="btn-builder-save" class="btn btn-primary btn-sm">Save Strategy</button>
+          <button id="btn-builder-clear" class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--text-muted);">Clear</button>
+        </div>
+        <div id="builder-canvas" ondragover="event.preventDefault()" ondrop="_builderOnDrop(event)"
+             style="flex:1;position:relative;overflow:auto;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,0.02) 1px,transparent 1px) 0 0/28px 28px;min-height:300px;">
+          <div id="builder-canvas-hint" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;opacity:0.4;">
+            <div style="font-size:32px;margin-bottom:8px;">&#x2B21;</div>
+            <div style="font-size:13px;color:var(--text-muted);">Drag nodes from the palette</div>
+          </div>
+        </div>
+      </div>
+      <div style="width:260px;min-width:200px;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;">
+        <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Results</div>
+        <div id="builder-result-panel" style="flex:0 0 auto;padding:12px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border);min-height:80px;max-height:200px;overflow-y:auto;"><em>Run Validate or Backtest</em></div>
+        <div style="padding:6px 12px 4px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;display:flex;justify-content:space-between;align-items:center;">IR Graph <button onclick="_builderCopyIR()" title="Copy JSON" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0;">[copy]</button></div>
+        <pre id="builder-ir-preview" style="flex:0 0 auto;margin:0;padding:8px 12px;font-size:10px;font-family:var(--mono);color:var(--text-muted);background:var(--bg-deep);max-height:120px;overflow:auto;border-bottom:1px solid var(--border);">{}</pre>
+        <div style="padding:6px 12px 4px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;">UI Panel Types <span id="builder-panel-type-count"></span></div>
+        <div id="builder-panel-list" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </div><!-- /tab-builder -->
+
+    <!-- Phase 4: Agent Tab Panel -->
+    <div class="tab-panel" id="tab-agent" style="overflow:hidden;flex-direction:column;">
+      <div style="padding:12px 20px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0;">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Agentic Strategy Loop</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Propose to Backtest to Approve to Paper to Live. Capital is always human-set.</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:11px;color:var(--text-muted);">Pending:</span>
+          <span id="agent-pending-count" style="font-size:14px;font-weight:700;color:var(--amber);font-family:var(--mono);">--</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadAgentProposals()">Refresh</button>
+        </div>
+      </div>
+      <div id="agent-status-pills" style="padding:8px 20px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border);flex-shrink:0;min-height:36px;"></div>
+      <div style="flex:1;overflow-y:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1;">
+            <tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;">ID</th>
+              <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;">Strategy</th>
+              <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;">Status</th>
+              <th style="padding:8px 12px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;">Win%</th>
+              <th style="padding:8px 12px;text-align:right;color:var(--text-muted);font-weight:600;font-size:11px;">Sharpe</th>
+              <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:600;font-size:11px;">Summary</th>
+              <th style="padding:8px 12px;text-align:center;color:var(--text-muted);font-weight:600;font-size:11px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="agent-proposals-tbody">
+            <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-muted);">Click Refresh to load proposals</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="agent-action-result" style="flex-shrink:0;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);min-height:32px;"></div>
+    </div><!-- /tab-agent -->
+      <!-- Exit Reasons & Strategy Breakdown Row -->
+      <div class="anlz-bottom-grid">
   <div class="drawer-header">
     <div class="drawer-title" id="drawer-title">Symbol Detail</div>
     <button class="icon-btn" id="btn-close-drawer" aria-label="Close detail panel">
@@ -2092,6 +2857,34 @@ function safeOn(sel, event, handler, ctx = document) {
   if (el) el.addEventListener(event, handler);
   else    console.warn('[IVBS] safeOn: element not found:', sel);
 }
+
+/* HTML-escape for any server/tick-derived string that lands in innerHTML.
+   Defense-in-depth: symbols, event text, and error messages must never be able
+   to inject markup into this money-handling UI. */
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* GET-only fetch timeout wrapper.
+   Hung reads (a stalled backend) would otherwise stack unbounded on every poll
+   interval. We attach a 15s AbortSignal to GET requests ONLY — POST/DELETE
+   (orders, approvals, start/stop, emergency-stop, settings) are left completely
+   untouched so a slow-but-successful money operation is never aborted client-side. */
+(function installFetchTimeout() {
+  if (!window.fetch || typeof AbortSignal === 'undefined' || !AbortSignal.timeout) return;
+  const _origFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    init = init || {};
+    const method = (init.method || 'GET').toUpperCase();
+    if (method === 'GET' && !init.signal) {
+      init = { ...init, signal: AbortSignal.timeout(15000) };
+    }
+    return _origFetch(input, init);
+  };
+})();
 
 /* Global JS error banner — surfaces crashes visibly instead of silently */
 window.onerror = (msg, src, line) => {
@@ -2154,7 +2947,7 @@ function toast(msg, type = 'info', duration = 3500) {
   const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ'}</span><span class="toast-msg">${msg}</span>`;
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ'}</span><span class="toast-msg">${esc(msg)}</span>`;
   $('#toast-container').appendChild(el);
   setTimeout(() => {
     el.classList.add('removing');
@@ -2249,8 +3042,20 @@ function switchTab(name) {
   if (name === 'settings')  loadSettings();
   if (name === 'approvals') loadApprovals();
   if (name === 'journal')   loadJournal();
+  if (name === 'analytics') loadAnalyticsPage();
 }
 $$('.nav-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+/* Draw attention to a tab without hijacking the trader's current view.
+   Used for approval alerts — force-switching tabs mid-trade is dangerous. */
+function flashTab(name) {
+  const tab = document.querySelector(`.nav-tab[data-tab="${name}"]`);
+  if (!tab || tab.classList.contains('active')) return;
+  tab.classList.add('attn');
+  const clear = () => tab.classList.remove('attn');
+  tab.addEventListener('click', clear, { once: true });
+  setTimeout(clear, 30000);
+}
 
 // A11y: ARIA tab semantics + roving arrow-key navigation (progressive enhancement)
 (function initTabsA11y() {
@@ -2318,6 +3123,22 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+/* Delegated row activation — replaces per-row inline onclick handlers.
+   Works for symbols containing & or quotes (no string interpolation into JS),
+   and makes every data row keyboard-operable (Enter / Space) for accessibility. */
+document.addEventListener('click', (e) => {
+  const row = e.target.closest && e.target.closest('[data-drawer-symbol]');
+  if (row) openStockDrawer(row.dataset.drawerSymbol, row.dataset.drawerCtx || 'universe');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+  const row = document.activeElement;
+  if (row && row.matches && row.matches('[data-drawer-symbol]')) {
+    e.preventDefault();
+    openStockDrawer(row.dataset.drawerSymbol, row.dataset.drawerCtx || 'universe');
+  }
+});
+
 /* ────────────────────────────────────────────────────────────────────────────
    EMERGENCY STOP — two-press with 3s countdown
    Fix: clearInterval is always called in the 4s auto-disarm timeout.
@@ -2352,14 +3173,75 @@ safeOn('#btn-estop', 'click', async () => {
   } else {
     _disarmEstop();
     try {
-      const r = await fetch('/api/v1/emergency_stop', { method: 'POST' });
+      const r = await fetch('/api/v1/kill-switch', { method: 'POST' });
       const d = await r.json();
-      toast('Emergency Stop triggered: ' + (d.message || ''), 'error', 5000);
-    } catch(e) { toast('Failed to trigger emergency stop: ' + e.message, 'error'); }
+      toast('Kill Switch triggered: ' + (d.message || ''), 'error', 5000);
+    } catch(e) { toast('Failed to trigger kill switch: ' + e.message, 'error'); }
   }
 });
 
+/* ────────────────────────────────────────────────────────────────────────────
+   CONFIRM DIALOG — promise-based; used for engine Start / Stop
+───────────────────────────────────────────────────────────────────────────── */
+let _confirmResolve = null;
+function confirmDialog({ title, message, confirmLabel = 'Confirm', danger = false }) {
+  let overlay = document.getElementById('confirm-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'confirm-overlay';
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="confirm-title" id="confirm-title"></div>
+        <div class="confirm-msg" id="confirm-msg"></div>
+        <div class="confirm-actions">
+          <button class="btn btn-ghost btn-sm" id="confirm-cancel">Cancel</button>
+          <button class="confirm-danger-btn" id="confirm-ok"></button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) _closeConfirm(false); });
+    overlay.querySelector('#confirm-cancel').addEventListener('click', () => _closeConfirm(false));
+    overlay.querySelector('#confirm-ok').addEventListener('click', () => _closeConfirm(true));
+  }
+  overlay.querySelector('#confirm-title').textContent = title;
+  overlay.querySelector('#confirm-msg').innerHTML = message;   // caller-controlled, trusted strings only
+  const box = overlay.querySelector('.confirm-box');
+  box.classList.toggle('danger', !!danger);
+  const okBtn = overlay.querySelector('#confirm-ok');
+  okBtn.textContent = confirmLabel;
+  okBtn.style.background = danger ? 'var(--red)' : 'var(--blue)';
+  okBtn.style.borderColor = danger ? 'var(--red)' : 'var(--blue)';
+  overlay.classList.add('open');
+  setTimeout(() => okBtn.focus(), 60);
+  return new Promise((resolve) => { _confirmResolve = resolve; });
+}
+function _closeConfirm(result) {
+  const overlay = document.getElementById('confirm-overlay');
+  if (overlay) overlay.classList.remove('open');
+  if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+}
+document.addEventListener('keydown', (e) => {
+  const overlay = document.getElementById('confirm-overlay');
+  if (overlay && overlay.classList.contains('open') && e.key === 'Escape') { e.preventDefault(); _closeConfirm(false); }
+});
+
+function _liveModeActive() {
+  const m = (_statusCache.trade_mode || _profileTradeMode || 'PAPER').toUpperCase();
+  return m === 'LIVE' || m === 'SIMULTANEOUS';
+}
+
 safeOn('#btn-start', 'click', async () => {
+  const live = _liveModeActive();
+  const ok = await confirmDialog({
+    title: 'Start trading engine?',
+    message: live
+      ? 'Mode is <strong style="color:var(--red)">LIVE</strong> — the engine can place <strong>real orders</strong> on Kite (each entry still needs approval). Start now?'
+      : 'The engine will begin scanning and simulating trades in <strong>PAPER</strong> mode. Start now?',
+    confirmLabel: live ? 'Start LIVE' : 'Start Engine',
+    danger: live,
+  });
+  if (!ok) return;
   try {
     const r = await fetch('/api/v1/start', { method: 'POST' });
     const d = await r.json();
@@ -2369,6 +3251,13 @@ safeOn('#btn-start', 'click', async () => {
 });
 
 safeOn('#btn-stop', 'click', async () => {
+  const ok = await confirmDialog({
+    title: 'Stop trading engine?',
+    message: 'The engine will stop scanning and will not open new positions. <strong>Open positions are not squared off</strong> — use Emergency Stop for that. Continue?',
+    confirmLabel: 'Stop Engine',
+    danger: true,
+  });
+  if (!ok) return;
   try {
     const r = await fetch('/api/v1/stop', { method: 'POST' });
     const d = await r.json();
@@ -2449,13 +3338,17 @@ function renderPositions(positions) {
     const extraCells = pSchema.positionExtraFields(p)
       .map(f => `<td>${f.value}</td>`).join('');
     const stratCell = showStratBadge ? `<td>${strategyBadge(pSid)}</td>` : '';
-    return `<tr>
-      <td class="sym-cell" style="cursor:pointer" onclick="openStockDrawer('${p.symbol}','position')">${p.symbol}</td>
+    // LTP cell uses a CLASS + data-symbol (not an id): the same symbol can be
+    // held by two strategies in SIMULTANEOUS mode, and duplicate ids would leave
+    // every row after the first frozen. querySelectorAll updates them all.
+    const pnlArrow = pnl > 0 ? '<span class="dir-arrow">▲</span>' : pnl < 0 ? '<span class="dir-arrow">▼</span>' : '';
+    return `<tr data-drawer-symbol="${esc(p.symbol)}" data-drawer-ctx="position" role="button" tabindex="0" aria-label="Open ${esc(p.symbol)} details">
+      <td class="sym-cell">${esc(p.symbol)}</td>
       <td>${p.quantity || '—'}</td>
       <td>${fmtINR(p.entry_price)}</td>
-      <td id="pos-ltp-${p.symbol}">—</td>
+      <td class="pos-ltp" data-symbol="${esc(p.symbol)}">—</td>
       <td style="${pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">${
-        fmtINRSign(pnl)}</td>
+        fmtINRSign(pnl)}${pnlArrow}</td>
       ${extraCells}
       <td>${flags.join(' ') || '—'}</td>
       ${stratCell}
@@ -2691,12 +3584,15 @@ function updateCommandBar(d) {
   equityEl.textContent = fmtINR(equity, 0);
   equityEl.className = 'pm-val neutral mono';
 
+  // Colour-blind-safe: pair colour with a direction arrow (▲/▼), never colour alone.
   const pnlSign = pnl >= 0 ? '+' : '';
-  pnlEl.textContent = pnlSign + fmtINR(pnl);
+  const pnlArrow = pnl > 0 ? '<span class="dir-arrow">▲</span>' : pnl < 0 ? '<span class="dir-arrow">▼</span>' : '';
+  pnlEl.innerHTML = pnlSign + fmtINR(pnl) + pnlArrow;
   pnlEl.className = `pm-val mono ${pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neutral'}`;
 
   const pctSign = pnlPct >= 0 ? '+' : '';
-  pnlPctEl.textContent = pctSign + fmt(pnlPct) + '%';
+  const pctArrow = pnlPct > 0 ? '<span class="dir-arrow">▲</span>' : pnlPct < 0 ? '<span class="dir-arrow">▼</span>' : '';
+  pnlPctEl.innerHTML = pctSign + fmt(pnlPct) + '%' + pctArrow;
   pnlPctEl.className = `pm-val mono ${pnlPct > 0 ? 'pos' : pnlPct < 0 ? 'neg' : 'neutral'}`;
 
   $('#cm-positions').textContent = active;
@@ -2713,6 +3609,9 @@ function updateCommandBar(d) {
   const pm = pillMap[tradeMode] || pillMap.PAPER;
   modePill.className   = 'mode-pill ' + pm.cls;
   modePill.textContent = pm.label;
+  // Persistent, hard-to-miss signal that real orders are possible (drives the
+  // red command-bar accent via CSS).
+  document.body.dataset.tradeMode = tradeMode;
 
   // Only sync profile dropdown if user has NO unsaved changes
   if (!_profileUnsaved) {
@@ -3097,9 +3996,9 @@ function renderPipeline(d) {
     $(el).innerHTML = cards.map(c => {
       const pnl = c.position ? parseFloat(c.position.unrealized_pnl) : null;
       const pnlHtml = pnl != null ? `<span style="${pnl>=0?'color:var(--green)':'color:var(--red)'};font-size:11px">${fmtINRSign(pnl)}</span>` : '';
-      return `<div class="pipeline-card" onclick="openStockDrawer('${c.symbol}','pipeline')">
+      return `<div class="pipeline-card" data-drawer-symbol="${esc(c.symbol)}" data-drawer-ctx="pipeline" role="button" tabindex="0" aria-label="Open ${esc(c.symbol)} details">
         <div class="pcard-top">
-          <span class="pcard-sym">${c.symbol}</span>
+          <span class="pcard-sym">${esc(c.symbol)}</span>
           <div style="display:flex;gap:4px">
             ${c.is_second_spike ? '<span class="pcard-badge" style="background:var(--teal-bg);color:var(--teal)">2ND SPIKE</span>' : ''}
             ${statePhaseBadge(c.state)}
@@ -3202,13 +4101,13 @@ function renderScannerTable(hits) {
     const extraCells = extraCols.map(c => `<td class="num-col">${c.render(h)}</td>`).join('');
     const stratCell = showStratBadge ? `<td>${strategyBadge(hSid)}</td>` : '';
     return `
-      <tr onclick="openStockDrawer('${h.symbol}','scanner')" style="cursor:pointer">
-        <td class="sym-col">${h.symbol}</td>
+      <tr data-drawer-symbol="${esc(h.symbol)}" data-drawer-ctx="scanner" role="button" tabindex="0" aria-label="Open ${esc(h.symbol)} details">
+        <td class="sym-col">${esc(h.symbol)}</td>
         <td>${fmtTime(h.signal_time)}</td>
         <td class="num-col">${fmtINR(h.close)}</td>
         ${extraCells}
         <td>${stateTag(h.state, hSid)}</td>
-        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-muted)">${h.abandonment_reason||'—'}</td>
+        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text-muted)">${esc(h.abandonment_reason)||'—'}</td>
         ${stratCell}
       </tr>
     `;
@@ -3297,9 +4196,9 @@ function renderUniverse() {
     const rvW = Math.min(rv / 5 * 100, 100);
     const rvClass = rv > 3 ? 'fire' : rv > 1.5 ? 'hot' : '';
     const pct = parseFloat(r.pct_chg);
-    return `<tr data-symbol="${r.symbol}" onclick="openStockDrawer('${r.symbol}','universe')" style="cursor:pointer">
-      <td class="sym-col">${r.symbol}</td>
-      <td class="uni-ltp" id="uni-ltp-${r.symbol}">${r.ltp ? fmtINR(r.ltp) : '—'}</td>
+    return `<tr data-symbol="${esc(r.symbol)}" data-drawer-symbol="${esc(r.symbol)}" data-drawer-ctx="universe" role="button" tabindex="0" aria-label="Open ${esc(r.symbol)} details">
+      <td class="sym-col">${esc(r.symbol)}</td>
+      <td class="uni-ltp">${r.ltp ? fmtINR(r.ltp) : '—'}</td>
       <td class="uni-pct" style="${colorStyle(r.pct_chg)}">${!isNaN(pct) ? (pct>0?'+':'')+fmt(pct)+'%' : '—'}</td>
       <td class="uni-vol">${fmtVol(r.volume)}</td>
       <td class="uni-rvol">
@@ -3376,11 +4275,13 @@ function _flushUniTicks() {
       }
     }
 
-    // Positions tab LTP (shared update)
-    // Note: document.getElementById does NOT need CSS.escape — it matches the
-    // literal id string. CSS.escape is only needed for querySelector/querySelectorAll.
-    const posLtp = document.getElementById('pos-ltp-' + sym);
-    if (posLtp && t.ltp != null) posLtp.textContent = fmtINR(t.ltp);
+    // Positions tab LTP — update EVERY row holding this symbol (a symbol can be
+    // held by more than one strategy in SIMULTANEOUS mode). CSS.escape guards
+    // symbols containing & or - etc.
+    if (t.ltp != null) {
+      document.querySelectorAll(`.pos-ltp[data-symbol="${CSS.escape(sym)}"]`)
+        .forEach(el => { el.textContent = fmtINR(t.ltp); });
+    }
   }
 }
 
@@ -3606,7 +4507,6 @@ async function loadJournal() {
     const label = $('#journal-count-label');
     if (label) label.textContent = `${days.length} days`;
     renderJournalTable(days);
-    loadAnalytics();
   } catch { /* ignore */ }
 }
 
@@ -3637,46 +4537,6 @@ function renderJournalTable(days) {
     </tr>`;
   }).join('');
 }
-
-// ── Strategy analytics (computed from recorded trades) ──────────────
-let _analyticsMode = 'ALL';
-function _anlzCard(label, value, color) {
-  return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
-    <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${label}</div>
-    <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:${color||'var(--text-primary)'};">${value}</div>
-  </div>`;
-}
-function renderAnalytics(d) {
-  const el = $('#analytics-cards');
-  if (!el) return;
-  const pf = (d.profit_factor === null || d.profit_factor === undefined) ? '∞' : d.profit_factor;
-  const net = d.net_pnl || 0, exp = d.expectancy || 0, avgR = d.avg_r_multiple || 0, wr = d.win_rate_pct || 0;
-  el.innerHTML = [
-    _anlzCard('Trades', d.num_trades ?? 0),
-    _anlzCard('Win Rate', wr + '%', wr >= 20.6 ? 'var(--green)' : 'var(--amber)'),
-    _anlzCard('Profit Factor', pf, (typeof pf === 'number' && pf < 1) ? 'var(--red)' : 'var(--green)'),
-    _anlzCard('Expectancy', fmtINRSign(exp), exp >= 0 ? 'var(--green)' : 'var(--red)'),
-    _anlzCard('Avg R', avgR, avgR >= 0 ? 'var(--green)' : 'var(--red)'),
-    _anlzCard('Net P&L', fmtINRSign(net), net >= 0 ? 'var(--green)' : 'var(--red)'),
-    _anlzCard('Max DD', fmtINR(d.max_drawdown || 0), 'var(--red)'),
-  ].join('');
-}
-function _syncAnalyticsModeUI() {
-  $$('.anlz-mode-btn').forEach(b => {
-    const active = b.dataset.mode === _analyticsMode;
-    b.style.background = active ? 'var(--bg-raised)' : 'transparent';
-    b.style.color = active ? 'var(--text-primary)' : 'var(--text-muted)';
-    b.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
-}
-async function loadAnalytics() {
-  try {
-    const r = await fetch(_sfx('/api/v1/analytics?mode=' + _analyticsMode + '&days=30'));
-    renderAnalytics(await r.json());
-  } catch { /* ignore */ }
-  _syncAnalyticsModeUI();
-}
-function _setAnalyticsMode(m) { _analyticsMode = m; loadAnalytics(); }
 
 // ── Strategy schema registry (C1) ─────────────────────────────────
 // Defines per-strategy UI behaviour: columns shown, state machine phases, asset label.
@@ -3793,7 +4653,7 @@ function _onStrategyFilterChange(v) {
   // Scanner and analytics are strategy-scoped.
   // Trades/orders/positions/watchlist always show full data for the day.
   loadScanner();
-  loadAnalytics();
+  if ($('#tab-analytics')?.classList.contains('active')) loadAnalyticsPage();
   // Re-render positions with updated strategy context (for badge/header adaption).
   if (_positionsCache && _positionsCache.length) renderPositions(_positionsCache);
 }
@@ -3924,7 +4784,13 @@ function connectWS() {
 
   _ws.onopen = () => {
     $('#ws-offline-bar').classList.remove('show');
+    const wasReconnect = _wsRetries > 0;
     _wsDelay = 1000; _wsRetries = 0;
+    // On a RECONNECT, pull a fresh snapshot immediately. Otherwise the UI could
+    // sit on stale data until the server happens to push its next event.
+    if (wasReconnect) {
+      loadStatus(); loadPositions(); loadPipeline(); loadUniverse(); loadApprovals();
+    }
   };
 
   _ws.onmessage = (ev) => {
@@ -3951,6 +4817,11 @@ function handleWSMessage(msg) {
     if (msg.status) updateCommandBar(msg.status), updateEnginePill(msg.status);
     if (msg.positions) { _positionsCache = msg.positions; renderPositions(msg.positions); }
     if (msg.pipeline) renderPipeline(msg.pipeline);
+    return;
+  }
+  
+  if (ev === 'alert') {
+    toast(msg.message || 'System Alert', msg.level === 'error' ? 'error' : msg.level === 'warning' ? 'warning' : 'info', 6000);
     return;
   }
 
@@ -4058,7 +4929,9 @@ function handleWSMessage(msg) {
     if ((msg.new_state || msg.state) === 'ACTION_PENDING_APPROVAL') {
       loadApprovals();
       toast(`⚡ ${msg.symbol} needs LIVE approval — 60s timeout`, 'warning', 10000);
-      switchTab('approvals');  // auto-switch to approvals tab
+      // Flash the Approvals tab instead of force-switching — never yank the
+      // trader away from what they are looking at mid-session.
+      flashTab('approvals');
     }
     loadPipeline();
     return;
@@ -4092,7 +4965,8 @@ function handleWSMessage(msg) {
     const pnl = parseFloat(msg.daily_pnl) || 0;
     const pnlEl  = $('#cm-pnl');
     const sign = pnl >= 0 ? '+' : '';
-    pnlEl.textContent = sign + fmtINR(pnl);
+    const arrow = pnl > 0 ? '<span class="dir-arrow">▲</span>' : pnl < 0 ? '<span class="dir-arrow">▼</span>' : '';
+    pnlEl.innerHTML = sign + fmtINR(pnl) + arrow;
     pnlEl.className = `pm-val mono ${pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neutral'}`;
     return;
   }
@@ -4122,7 +4996,7 @@ function addScanEvent(text, ts, color) {
   const log = $('#scan-event-log');
   const el = document.createElement('div');
   el.style.cssText = `padding:6px 10px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--${color||'blue'});border-radius:var(--radius-sm);font-size:11px;display:flex;justify-content:space-between;gap:8px;animation:card-slide-in 0.2s ease`;
-  el.innerHTML = `<span style="color:var(--text-primary)">${text}</span><span style="color:var(--text-muted);white-space:nowrap">${fmtTime(ts)}</span>`;
+  el.innerHTML = `<span style="color:var(--text-primary)">${esc(text)}</span><span style="color:var(--text-muted);white-space:nowrap">${fmtTime(ts)}</span>`;
   log.insertBefore(el, log.firstChild);
   // cap at 60 events
   while (log.children.length > 60) log.removeChild(log.lastChild);
@@ -4132,6 +5006,17 @@ function addScanEvent(text, ts, color) {
    INIT APP
 ───────────────────────────────────────────────────────────────────────────── */
 let _appInitialized = false;
+
+/* Managed poller registry — lets us pause/resume all data polling as a group
+   when the tab visibility changes. */
+const _pollers = [];
+function poll(fn, ms) { _pollers.push({ fn, ms, id: null }); }
+function _startPolling() {
+  _pollers.forEach(p => { if (p.id == null) p.id = setInterval(p.fn, p.ms); });
+}
+function _stopPolling() {
+  _pollers.forEach(p => { if (p.id != null) { clearInterval(p.id); p.id = null; } });
+}
 
 function initApp() {
   if (_appInitialized) return;
@@ -4148,17 +5033,33 @@ function initApp() {
   loadTrades();
   connectWS();
 
-  // Polling intervals
-  setInterval(loadStatus,          15000);
-  setInterval(loadCircuitBreaker,  30000);
-  setInterval(loadPipeline,        10000);
-  setInterval(loadPositions,       10000);
-  setInterval(loadScanner,         20000);
+  // ── Managed polling intervals ──────────────────────────────────────────────
+  // Registered via poll() so they can all be paused when the tab is hidden —
+  // otherwise a backgrounded tab keeps hammering the backend (and stacks hung
+  // requests) for no visible benefit. They resume, with an immediate refresh,
+  // the moment the trader returns to the tab.
+  poll(loadStatus,         15000);
+  poll(loadCircuitBreaker, 30000);
+  poll(loadPipeline,       10000);
+  poll(loadPositions,      10000);
+  poll(loadScanner,        20000);
   // Full universe refresh every 30s — updates State/Vol-SMA columns.
   // LTP / Chg% / Volume / Rel.Vol are updated live via tick_batch WS (no polling).
-  setInterval(loadUniverse, 30000);
+  poll(loadUniverse,       30000);
   // Refresh trades every 5 min to keep stat-winrate current
-  setInterval(loadTrades, 5 * 60 * 1000);
+  poll(loadTrades,         5 * 60 * 1000);
+  _startPolling();
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      _stopPolling();
+    } else {
+      // Immediate catch-up refresh, then resume the timers.
+      loadStatus(); loadPositions(); loadPipeline();
+      if ($('#tab-universe') && $('#tab-universe').classList.contains('active')) loadUniverse();
+      _startPolling();
+    }
+  });
 
   // ── Staleness watchdog ────────────────────────────────────────────────────
   // Checks every 5s if we've received a tick_batch in the last 15 seconds.
@@ -4203,6 +5104,110 @@ function initApp() {
 /* ────────────────────────────────────────────────────────────────────────────
    BOOT — dashboard loads immediately, auth is in the profile button
 ───────────────────────────────────────────────────────────────────────────── */
+/* ────────────────────────────────────────────────────────────────────────────
+   COMMAND PALETTE (⌘K / Ctrl-K) — fast keyboard navigation for traders
+───────────────────────────────────────────────────────────────────────────── */
+(function initCommandPalette() {
+  const TABS = [
+    ['overview','Overview'], ['scanner','Scanner'], ['universe','Universe / Watchlist'],
+    ['trades','Trades'], ['orders','Orders'], ['approvals','Approvals'],
+    ['journal','Journal'], ['analytics','Analytics'], ['settings','Settings'],
+  ];
+  const ACTIONS = [
+    { name: 'Start engine',    kind: 'action', run: () => document.getElementById('btn-start')?.click() },
+    { name: 'Stop engine',     kind: 'action', run: () => document.getElementById('btn-stop')?.click() },
+    { name: 'Emergency stop',  kind: 'action', run: () => document.getElementById('btn-estop')?.click() },
+    { name: 'Edit watchlist',  kind: 'action', run: () => (typeof openWatchlistModal === 'function') && openWatchlistModal() },
+    { name: 'Toggle theme',    kind: 'action', run: () => document.getElementById('btn-theme')?.click() },
+    { name: 'Kite login / profile', kind: 'action', run: () => document.getElementById('btn-profile')?.click() },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'cmdk-overlay';
+  overlay.id = 'cmdk-overlay';
+  overlay.innerHTML = `
+    <div class="cmdk-box" role="dialog" aria-modal="true" aria-label="Command palette">
+      <input class="cmdk-input" id="cmdk-input" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Jump to a tab, search a symbol, or run a command…" />
+      <div class="cmdk-list" id="cmdk-list"></div>
+      <div class="cmdk-hint">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>↵</kbd> select</span>
+        <span><kbd>esc</kbd> close</span>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const input = overlay.querySelector('#cmdk-input');
+  const list  = overlay.querySelector('#cmdk-list');
+  let results = [], active = 0, open = false;
+
+  function buildResults(q) {
+    const query = q.trim().toLowerCase();
+    const out = [];
+    TABS.forEach(([tab, label]) => out.push({ name: label, kind: 'tab', run: () => switchTab(tab) }));
+    ACTIONS.forEach(a => out.push(a));
+    // Symbols from the loaded universe (cap the list so it stays snappy)
+    (_universeData || []).forEach(s => {
+      out.push({ name: s.symbol, kind: 'symbol', run: () => openStockDrawer(s.symbol, 'universe') });
+    });
+    const filtered = query
+      ? out.filter(o => o.name.toLowerCase().includes(query))
+      : out.filter(o => o.kind !== 'symbol');   // don't dump 3000 symbols when empty
+    return filtered.slice(0, 50);
+  }
+
+  function render() {
+    if (!results.length) { list.innerHTML = '<div class="cmdk-empty">No matches</div>'; return; }
+    list.innerHTML = results.map((r, i) => `
+      <div class="cmdk-item ${i === active ? 'active' : ''}" data-i="${i}">
+        <span class="cmdk-name">${esc(r.name)}</span>
+        <span class="cmdk-kind">${r.kind}</span>
+      </div>`).join('');
+    const activeEl = list.querySelector('.cmdk-item.active');
+    if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+  }
+  function refresh() { results = buildResults(input.value); active = 0; render(); }
+
+  function openPalette() {
+    open = true;
+    overlay.classList.add('open');
+    input.value = '';
+    refresh();
+    setTimeout(() => input.focus(), 40);
+  }
+  function closePalette() { open = false; overlay.classList.remove('open'); }
+  function runActive() {
+    const r = results[active];
+    if (!r) return;
+    closePalette();
+    try { r.run(); } catch (e) { console.warn('[cmdk] run failed', e); }
+  }
+
+  input.addEventListener('input', refresh);
+  list.addEventListener('click', (e) => {
+    const item = e.target.closest('.cmdk-item');
+    if (!item) return;
+    active = parseInt(item.dataset.i, 10);
+    runActive();
+  });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closePalette(); });
+
+  document.addEventListener('keydown', (e) => {
+    // Open with ⌘K / Ctrl-K
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      open ? closePalette() : openPalette();
+      return;
+    }
+    if (!open) return;
+    if (e.key === 'Escape')       { e.preventDefault(); closePalette(); }
+    else if (e.key === 'ArrowDown'){ e.preventDefault(); active = Math.min(active + 1, results.length - 1); render(); }
+    else if (e.key === 'ArrowUp')  { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
+    else if (e.key === 'Enter')    { e.preventDefault(); runActive(); }
+  });
+})();
+
 initApp();           // start polling + WebSocket immediately
 checkKiteStatus();   // populate profile button auth state
 
@@ -4620,37 +5625,6 @@ safeOn('#wl-save-btn', 'click', async () => {
 
   // 5. Full reload after 5s to get accurate SMA values, token data etc.
   setTimeout(loadUniverse, 5000);
-
-  const addedMsg   = toAdd.length    ? `${toAdd.length} symbol${toAdd.length>1?'s':''} added` : '';
-  const removedMsg = toRemove.length ? `${toRemove.length} removed` : '';
-  toast([addedMsg, removedMsg].filter(Boolean).join(', ') + ' — Kite subscription updated', 'success', 4500);
-  closeWatchlistModal();
-  labelEl.textContent = 'Save Changes';
-});
-
-/* ── Warming badge injection ────────────────────────────────────────────────────── */
-function _wlApplyWarmingBadges() {
-  const tbody = document.querySelector('#universe-tbody');
-  if (!tbody) return;
-  for (const [sym, obj] of _universeMap.entries()) {
-    if (!obj._warming) continue;
-    // CSS.escape is available in all modern browsers
-    const escapedSym = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(sym) : sym.replace(/[^a-zA-Z0-9]/g, '\\$&');
-    const row = tbody.querySelector(`tr[data-symbol="${escapedSym}"]`);
-    if (!row) continue;
-    const stateCell = row.querySelector('.uni-state');
-    if (stateCell) stateCell.innerHTML = `<span class="wl-warming-badge"><span class="wl-warming-dot"></span>WARMING</span>`;
-  }
-}
-
-/* ── WS universe_updated event handler ─────────────────────────────────────── */
-// The backend broadcasts universe_updated via WebSocket on every POST/DELETE.
-// Hook into the existing WS message router (it dispatches by msg.event).
-// We re-use the existing _wsEventHandlers registry if it exists, otherwise
-// patch in via a simple approach: override the existing handler array.
-(function _hookUniverseUpdated() {
-  // Patch the existing WS onmessage handler by registering a custom event handler.
-  // The dashboard WS dispatches messages by msg.event via the _wsHandlers map
   // (see the pubsub section of dashboard.html).
   // If that map doesn't exist yet, we wait for it.
   const origDispatch = window._wsDispatch;
@@ -4673,23 +5647,60 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('#wl-modal-overlay') && $('#wl-modal-overlay').classList.contains('open')) closeWatchlistModal();
 });
 safeOn('#btn-edit-watchlist', 'click', openWatchlistModal);
-// --- EXPORT SNAPSHOTS ---
+// ── DATA EXPORT CONTROLLERS ──────────────────────────────────────────────────
+function _buildExportUrl(kind) {
+  const startDateStr = $('#inp-export-start-date') ? $('#inp-export-start-date').value : '';
+  const endDateStr = $('#inp-export-end-date') ? $('#inp-export-end-date').value : '';
+  let url = `/api/v1/export/${kind}.csv?`;
+  if (startDateStr) url += `start_date=${encodeURIComponent(startDateStr)}&`;
+  if (endDateStr) url += `end_date=${encodeURIComponent(endDateStr)}&`;
+  const stratFilter = $('#strategy-filter');
+  if (stratFilter && stratFilter.value && stratFilter.value !== 'all') {
+    url += `strategy_id=${encodeURIComponent(stratFilter.value)}&`;
+  }
+  return _sfx(url);
+}
+
+function _triggerCsvExport(el, kind) {
+  const statusEl = $('#export-status');
+  if (statusEl) {
+    statusEl.textContent = `Downloading ${kind}.csv...`;
+    statusEl.style.color = 'var(--blue)';
+  }
+  const url = _buildExportUrl(kind);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  if (statusEl) {
+    setTimeout(() => {
+      statusEl.textContent = `✓ Downloaded ${kind}.csv`;
+      statusEl.style.color = 'var(--green)';
+    }, 600);
+  }
+}
+
 async function _exportData() {
   const btn = $('#btn-export-data');
   const statusEl = $('#export-status');
-  const startDateStr = $('#inp-export-start-date').value;
-  const endDateStr = $('#inp-export-end-date').value;
+  const startDateStr = $('#inp-export-start-date') ? $('#inp-export-start-date').value : '';
+  const endDateStr = $('#inp-export-end-date') ? $('#inp-export-end-date').value : '';
   
-  btn.disabled = true;
-  statusEl.textContent = 'Preparing download...';
-  statusEl.style.color = 'var(--text-muted)';
+  if (btn) btn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = 'Preparing signal logs JSON...';
+    statusEl.style.color = 'var(--text-muted)';
+  }
   
   try {
     let url = '/api/v1/export/snapshots?';
     if (startDateStr) url += `start_date=${encodeURIComponent(startDateStr)}&`;
     if (endDateStr) url += `end_date=${encodeURIComponent(endDateStr)}&`;
     
-    const res = await fetch(url);
+    const res = await fetch(_sfx(url));
     if (!res.ok) {
       const err = await res.json().catch(()=>({}));
       throw new Error(err.detail || 'Export failed');
@@ -4697,14 +5708,15 @@ async function _exportData() {
     
     const data = await res.json();
     if (!data.data || data.data.length === 0) {
-      statusEl.textContent = 'No signal logs found for ' + (startDateStr || 'all time');
-      statusEl.style.color = 'var(--red)';
-      btn.disabled = false;
+      if (statusEl) {
+        statusEl.textContent = 'No signal logs found for ' + (startDateStr || 'selected period');
+        statusEl.style.color = 'var(--red)';
+      }
+      if (btn) btn.disabled = false;
       return;
     }
     
     const fileName = `signal_snapshots_${startDateStr || 'all'}_to_${endDateStr || 'latest'}.json`;
-    
     const blob = new Blob([JSON.stringify(data.data, null, 2)], {type: 'application/json'});
     const dlUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4715,15 +5727,1155 @@ async function _exportData() {
     a.click();
     window.URL.revokeObjectURL(dlUrl);
     
-    statusEl.textContent = `✅ Exported ${data.count} snapshots`;
-    statusEl.style.color = 'var(--green)';
+    if (statusEl) {
+      statusEl.textContent = `✓ Exported ${data.count} snapshots`;
+      statusEl.style.color = 'var(--green)';
+    }
   } catch (err) {
-    statusEl.textContent = `❌ ${err.message}`;
-    statusEl.style.color = 'var(--red)';
+    if (statusEl) {
+      statusEl.textContent = `✕ ${err.message}`;
+      statusEl.style.color = 'var(--red)';
+    }
   } finally {
-    setTimeout(() => { btn.disabled = false; }, 1000);
+    setTimeout(() => { if (btn) btn.disabled = false; }, 1000);
   }
 }
+
+// ── INSTITUTIONAL QUANT TRADING ANALYTICS CONTROLLER ────────────────────────
+let _activeAnalyticsRange = '1M';
+let _activeAnalyticsPageMode = 'ALL';
+let _activeTemporalView = 'dow';
+let _lastAnalyticsData = null;
+
+let _chartEquity = null;
+let _chartDaily = null;
+let _chartDrawdown = null;
+let _chartTemporal = null;
+let _chartExits = null;
+
+function _setAnalyticsRange(range) {
+  _activeAnalyticsRange = range;
+  $$('.anlz-seg-btn[data-range]').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === range);
+  });
+  const sub = $('#anlz-range-subtitle');
+  if (sub) {
+    const labels = {
+      '1D': 'Performance for today (1 Day)',
+      '1W': 'Trailing 7 calendar days (1 Week)',
+      '2W': 'Trailing 14 calendar days (2 Weeks)',
+      '1M': 'Trailing 30 calendar days (1 Month)',
+      '3M': 'Trailing 90 calendar days (3 Months)',
+      'ALL': 'Full historical record (All Time)'
+    };
+    sub.textContent = labels[range] || 'Performance across closed trades';
+  }
+  loadAnalyticsPage();
+}
+
+function _setAnalyticsPageMode(mode) {
+  _activeAnalyticsPageMode = mode;
+  $$('.anlz-seg-btn[data-anlz-mode]').forEach(b => {
+    b.classList.toggle('active', b.dataset.anlzMode === mode);
+  });
+  loadAnalyticsPage();
+}
+
+function _setTemporalView(view) {
+  _activeTemporalView = view;
+  const btnDow = $('#btn-temporal-dow');
+  const btnHour = $('#btn-temporal-hour');
+  if (btnDow) btnDow.classList.toggle('active', view === 'dow');
+  if (btnHour) btnHour.classList.toggle('active', view === 'hour');
+  if (_lastAnalyticsData) {
+    _renderTemporalChart(_lastAnalyticsData.day_of_week || [], _lastAnalyticsData.hourly || []);
+  }
+}
+
+async function loadAnalyticsPage() {
+  const refreshBtn = $('#btn-refresh-analytics');
+  if (refreshBtn) refreshBtn.classList.add('loading');
+
+  let url = `/api/v1/analytics?range=${encodeURIComponent(_activeAnalyticsRange)}&mode=${encodeURIComponent(_activeAnalyticsPageMode)}`;
+  const stratFilter = $('#strategy-filter');
+  if (stratFilter && stratFilter.value && stratFilter.value !== 'all') {
+    url += `&strategy_id=${encodeURIComponent(stratFilter.value)}`;
+  }
+
+  try {
+    const res = await fetch(_sfx(url));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    _lastAnalyticsData = data;
+    _renderAnalyticsScorecards(data);
+    _renderAnalyticsCharts(data);
+  } catch (err) {
+    console.error('Failed to load analytics:', err);
+  } finally {
+    if (refreshBtn) refreshBtn.classList.remove('loading');
+  }
+}
+
+function _fmtInr(val) {
+  const n = parseFloat(val || 0);
+  const sign = n < 0 ? '-' : '';
+  return `${sign}₹${Math.abs(n).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+}
+
+function _renderAnalyticsScorecards(d) {
+  const netPnl = parseFloat(d.net_pnl || 0);
+  const grossPnl = parseFloat(d.gross_pnl || 0);
+  const charges = parseFloat(d.total_charges || 0);
+  const numTrades = parseInt(d.num_trades || d.total_trades || 0);
+  const wins = parseInt(d.wins || 0);
+  const losses = parseInt(d.losses || 0);
+  const be = parseInt(d.breakeven || 0);
+  const winRatePct = parseFloat(d.win_rate_pct || 0);
+  const pf = d.profit_factor;
+  const avgWin = parseFloat(d.avg_win || 0);
+  const avgLoss = parseFloat(d.avg_loss || 0);
+  const payoff = parseFloat(d.payoff_ratio || 0);
+  const mdd = parseFloat(d.max_drawdown || 0);
+  const mddPct = parseFloat(d.max_drawdown_pct || 0);
+  const expectancy = parseFloat(d.expectancy || 0);
+  const avgR = parseFloat(d.avg_r_multiple || 0);
+  const winStreak = parseInt(d.consecutive_wins_max || 0);
+  const sharpe = parseFloat(d.sharpe || 0);
+
+  // 1. Net PnL
+  const netEl = $('#anlz-net-pnl');
+  if (netEl) {
+    netEl.textContent = _fmtInr(netPnl);
+    netEl.style.color = netPnl > 0 ? 'var(--green)' : (netPnl < 0 ? 'var(--red)' : 'var(--text-primary)');
+    netEl.style.textShadow = netPnl > 0 ? '0 0 16px rgba(34,197,94,0.3)' : (netPnl < 0 ? '0 0 16px rgba(239,68,68,0.3)' : 'none');
+  }
+  if ($('#anlz-gross-pnl')) $('#anlz-gross-pnl').textContent = _fmtInr(grossPnl);
+  if ($('#anlz-charges')) $('#anlz-charges').textContent = _fmtInr(charges);
+
+  // 2. Win Rate
+  if ($('#anlz-trades-count')) $('#anlz-trades-count').textContent = `${numTrades} trades`;
+  const wrEl = $('#anlz-win-rate');
+  if (wrEl) {
+    wrEl.textContent = `${winRatePct.toFixed(1)}%`;
+    wrEl.style.color = winRatePct >= 50 ? 'var(--green)' : (winRatePct > 0 ? 'var(--amber)' : 'var(--text-primary)');
+  }
+  if ($('#anlz-bar-win')) $('#anlz-bar-win').style.width = `${winRatePct}%`;
+  if ($('#anlz-bar-loss')) $('#anlz-bar-loss').style.width = `${numTrades > 0 ? (losses / numTrades * 100) : 0}%`;
+  if ($('#anlz-wins')) $('#anlz-wins').textContent = wins;
+  if ($('#anlz-losses')) $('#anlz-losses').textContent = losses;
+  if ($('#anlz-breakeven')) $('#anlz-breakeven').textContent = be;
+
+  // 3. Profit Factor
+  const pfEl = $('#anlz-profit-factor');
+  const pfBadge = $('#anlz-pf-badge');
+  if (pfEl) {
+    if (pf === null || pf === undefined) {
+      pfEl.textContent = '—';
+      if (pfBadge) { pfBadge.textContent = 'No Losses'; pfBadge.style.color = 'var(--green)'; }
+    } else {
+      pfEl.textContent = pf.toFixed(2);
+      if (pf >= 1.75) {
+        pfEl.style.color = 'var(--green)';
+        if (pfBadge) { pfBadge.textContent = 'Strong Edge'; pfBadge.style.color = 'var(--green)'; }
+      } else if (pf >= 1.15) {
+        pfEl.style.color = 'var(--blue)';
+        if (pfBadge) { pfBadge.textContent = 'Healthy'; pfBadge.style.color = 'var(--blue)'; }
+      } else {
+        pfEl.style.color = 'var(--red)';
+        if (pfBadge) { pfBadge.textContent = 'Sub-Optimal'; pfBadge.style.color = 'var(--red)'; }
+      }
+    }
+  }
+  if ($('#anlz-gross-win')) $('#anlz-gross-win').textContent = _fmtInr(d.gross_profit || 0);
+  if ($('#anlz-gross-loss')) $('#anlz-gross-loss').textContent = _fmtInr(d.gross_loss || 0);
+
+  // 4. Expectancy
+  const expEl = $('#anlz-expectancy');
+  if (expEl) {
+    expEl.textContent = _fmtInr(expectancy);
+    expEl.style.color = expectancy > 0 ? 'var(--green)' : (expectancy < 0 ? 'var(--red)' : 'var(--text-primary)');
+  }
+  if ($('#anlz-avg-r')) $('#anlz-avg-r').textContent = `${avgR >= 0 ? '+' : ''}${avgR.toFixed(2)} R`;
+  if ($('#anlz-win-streak')) $('#anlz-win-streak').textContent = `${winStreak}W streak`;
+
+  // 5. Max Drawdown
+  if ($('#anlz-max-drawdown')) $('#anlz-max-drawdown').textContent = `-${_fmtInr(mdd).replace('-','')}`;
+  if ($('#anlz-mdd-pct')) $('#anlz-mdd-pct').textContent = `${mddPct.toFixed(1)}%`;
+  if ($('#anlz-sharpe')) $('#anlz-sharpe').textContent = sharpe.toFixed(2);
+
+  // 6. Payoff Ratio
+  if ($('#anlz-payoff')) $('#anlz-payoff').textContent = `${payoff.toFixed(2)}x`;
+  if ($('#anlz-avg-win')) $('#anlz-avg-win').textContent = _fmtInr(avgWin);
+  if ($('#anlz-avg-loss')) $('#anlz-avg-loss').textContent = _fmtInr(avgLoss);
+}
+
+function _renderAnalyticsCharts(d) {
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not yet loaded');
+    return;
+  }
+  _renderEquityChart(d.equity_curve || []);
+  _renderDailyPnlChart(d.daily_pnl || []);
+  _renderDrawdownChart(d.drawdown_curve || []);
+  _renderTemporalChart(d.day_of_week || [], d.hourly || []);
+  _renderExitsChart(d.exit_reasons || {});
+  _renderStrategyTable(d.by_strategy || []);
+}
+
+function _renderEquityChart(series) {
+  const ctx = document.getElementById('chart-equity-curve');
+  if (!ctx) return;
+  if (_chartEquity) { _chartEquity.destroy(); _chartEquity = null; }
+
+  const labels = series.map(p => p.time || p.date);
+  const dataNet = series.map(p => p.cum_net_pnl);
+  const dataGross = series.map(p => p.cum_gross_pnl);
+
+  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
+  gradient.addColorStop(0, 'rgba(16, 185, 129, 0.28)');
+  gradient.addColorStop(1, 'rgba(16, 185, 129, 0.00)');
+
+  _chartEquity = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Net Cumulative (₹)',
+          data: dataNet,
+          borderColor: '#10b981',
+          borderWidth: 2.2,
+          backgroundColor: gradient,
+          fill: true,
+          tension: 0.25,
+          pointRadius: series.length > 50 ? 0 : 3,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: '#10b981'
+        },
+        {
+          label: 'Gross Cumulative (₹)',
+          data: dataGross,
+          borderColor: 'rgba(59, 130, 246, 0.65)',
+          borderWidth: 1.5,
+          borderDash: [4, 4],
+          fill: false,
+          tension: 0.25,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { color: '#8b92a8', boxWidth: 10, boxHeight: 10, font: { size: 10.5, family: 'Inter' } }
+        },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          padding: 8,
+          callbacks: {
+            label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y >= 0 ? '+' : ''}₹${ctx.parsed.y.toLocaleString('en-IN')}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#8b92a8', font: { size: 9.5, family: 'Inter' }, maxTicksLimit: 8 }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
+                   callback: v => `₹${v.toLocaleString('en-IN')}` }
+        }
+      }
+    }
+  });
+}
+
+function _renderDailyPnlChart(daily) {
+  const ctx = document.getElementById('chart-daily-pnl');
+  if (!ctx) return;
+  if (_chartDaily) { _chartDaily.destroy(); _chartDaily = null; }
+
+  const labels = daily.map(d => d.date);
+  const values = daily.map(d => d.pnl);
+  const colors = values.map(v => v >= 0 ? '#10b981' : '#ef4444');
+  const hoverColors = values.map(v => v >= 0 ? '#34d399' : '#f87171');
+
+  _chartDaily = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        hoverBackgroundColor: hoverColors,
+        borderRadius: 4,
+        maxBarThickness: 30
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          callbacks: {
+            label: (ctx) => {
+              const item = daily[ctx.dataIndex] || {};
+              return [
+                ` Net PnL: ${ctx.parsed.y >= 0 ? '+' : ''}₹${ctx.parsed.y.toLocaleString('en-IN')}`,
+                ` Trades: ${item.trades || 0} (${item.wins || 0}W / ${item.losses || 0}L)`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: '#8b92a8', font: { size: 9.5, family: 'Inter' }, maxTicksLimit: 10 }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
+                   callback: v => `₹${v.toLocaleString('en-IN')}` }
+        }
+      }
+    }
+  });
+}
+
+function _renderDrawdownChart(series) {
+  const ctx = document.getElementById('chart-drawdown');
+  if (!ctx) return;
+  if (_chartDrawdown) { _chartDrawdown.destroy(); _chartDrawdown = null; }
+
+  const labels = series.map(p => p.time);
+  const data = series.map(p => p.drawdown_pct);
+
+  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
+  gradient.addColorStop(0, 'rgba(239, 68, 68, 0.02)');
+  gradient.addColorStop(1, 'rgba(239, 68, 68, 0.32)');
+
+  _chartDrawdown = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Drawdown %',
+        data: data,
+        borderColor: '#ef4444',
+        borderWidth: 1.8,
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHoverRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          callbacks: {
+            label: (ctx) => ` Drawdown: ${ctx.parsed.y.toFixed(2)}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#8b92a8', font: { size: 9.5, family: 'Inter' }, maxTicksLimit: 8 }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
+                   callback: v => `${v}%` }
+        }
+      }
+    }
+  });
+}
+
+function _renderTemporalChart(dow, hourly) {
+  const ctx = document.getElementById('chart-temporal');
+  if (!ctx) return;
+  if (_chartTemporal) { _chartTemporal.destroy(); _chartTemporal = null; }
+
+  let labels = [];
+  let values = [];
+  let counts = [];
+
+  if (_activeTemporalView === 'dow') {
+    labels = dow.map(d => d.day.slice(0, 3));
+    values = dow.map(d => d.pnl);
+    counts = dow.map(d => d.trades);
+  } else {
+    labels = hourly.map(h => h.hour);
+    values = hourly.map(h => h.pnl);
+    counts = hourly.map(h => h.trades);
+  }
+
+  const colors = values.map(v => v >= 0 ? 'rgba(59, 130, 246, 0.85)' : 'rgba(239, 68, 68, 0.85)');
+
+  _chartTemporal = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 4,
+        maxBarThickness: 28
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          callbacks: {
+            label: (ctx) => [
+              ` Net PnL: ${ctx.parsed.y >= 0 ? '+' : ''}₹${ctx.parsed.y.toLocaleString('en-IN')}`,
+              ` Trades: ${counts[ctx.dataIndex] || 0}`
+            ]
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#8b92a8', font: { size: 10, family: 'Inter' } } },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
+                   callback: v => `₹${v.toLocaleString('en-IN')}` }
+        }
+      }
+    }
+  });
+}
+
+function _renderExitsChart(exits) {
+  const ctx = document.getElementById('chart-exit-reasons');
+  if (!ctx) return;
+  if (_chartExits) { _chartExits.destroy(); _chartExits = null; }
+
+  const labels = Object.keys(exits);
+  const data = Object.values(exits);
+
+  if (labels.length === 0) {
+    labels.push('No Closed Trades');
+    data.push(1);
+  }
+
+  const palette = [
+    '#10b981', // green (Target)
+    '#ef4444', // red (SL)
+    '#3b82f6', // blue (Trail SL)
+    '#f59e0b', // amber (Time)
+    '#8b5cf6', // purple (Manual)
+    '#64748b'  // slate (Other)
+  ];
+
+  _chartExits = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: palette.slice(0, labels.length),
+        borderColor: '#0d0f14',
+        borderWidth: 2,
+        cutout: '72%'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#8b92a8', boxWidth: 8, font: { size: 10, family: 'Inter' } }
+        },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 }
+        }
+      }
+    }
+  });
+}
+
+function _renderStrategyTable(strategies) {
+  const tbody = $('#anlz-strategy-tbody');
+  const countBadge = $('#anlz-strategy-count');
+  if (countBadge) countBadge.textContent = `${strategies.length} Strategies`;
+  if (!tbody) return;
+
+  if (strategies.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);">No strategy attribution data for this timeframe</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = strategies.map(s => {
+    const pnl = parseFloat(s.pnl || 0);
+    const pnlColor = pnl > 0 ? 'var(--green)' : (pnl < 0 ? 'var(--red)' : 'var(--text-primary)');
+    return `
+      <tr>
+        <td style="font-weight:600;"><span class="badge badge-blue" style="margin-right:6px;">${s.strategy_id}</span></td>
+        <td class="num-col mono">${s.trades}</td>
+        <td class="num-col mono">${s.wins}</td>
+        <td class="num-col mono">${s.trades > 0 ? ((s.wins / s.trades) * 100).toFixed(1) : '0.0'}%</td>
+        <td class="num-col mono" style="color:${pnlColor};font-weight:700;">${pnl >= 0 ? '+' : ''}${_fmtInr(pnl)}</td>
+  if (!ctx) return;
+  if (_chartDrawdown) { _chartDrawdown.destroy(); _chartDrawdown = null; }
+
+  const labels = series.map(p => p.time);
+  const data = series.map(p => p.drawdown_pct);
+
+  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
+  gradient.addColorStop(0, 'rgba(239, 68, 68, 0.02)');
+  gradient.addColorStop(1, 'rgba(239, 68, 68, 0.32)');
+
+  _chartDrawdown = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Drawdown %',
+        data: data,
+        borderColor: '#ef4444',
+        borderWidth: 1.8,
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.2,
+        pointRadius: 0,
+        pointHoverRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          callbacks: {
+            label: (ctx) => ` Drawdown: ${ctx.parsed.y.toFixed(2)}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: '#8b92a8', font: { size: 9.5, family: 'Inter' }, maxTicksLimit: 8 }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
+                   callback: v => `${v}%` }
+        }
+      }
+    }
+  });
+}
+
+function _renderTemporalChart(dow, hourly) {
+  const ctx = document.getElementById('chart-temporal');
+  if (!ctx) return;
+  if (_chartTemporal) { _chartTemporal.destroy(); _chartTemporal = null; }
+
+  let labels = [];
+  let values = [];
+  let counts = [];
+
+  if (_activeTemporalView === 'dow') {
+    labels = dow.map(d => d.day.slice(0, 3));
+    values = dow.map(d => d.pnl);
+    counts = dow.map(d => d.trades);
+  } else {
+    labels = hourly.map(h => h.hour);
+    values = hourly.map(h => h.pnl);
+    counts = hourly.map(h => h.trades);
+  }
+
+  const colors = values.map(v => v >= 0 ? 'rgba(59, 130, 246, 0.85)' : 'rgba(239, 68, 68, 0.85)');
+
+  _chartTemporal = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 4,
+        maxBarThickness: 28
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+          callbacks: {
+            label: (ctx) => [
+              ` Net PnL: ${ctx.parsed.y >= 0 ? '+' : ''}₹${ctx.parsed.y.toLocaleString('en-IN')}`,
+              ` Trades: ${counts[ctx.dataIndex] || 0}`
+            ]
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#8b92a8', font: { size: 10, family: 'Inter' } } },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
+                   callback: v => `₹${v.toLocaleString('en-IN')}` }
+        }
+      }
+    }
+  });
+}
+
+function _renderExitsChart(exits) {
+  const ctx = document.getElementById('chart-exit-reasons');
+  if (!ctx) return;
+  if (_chartExits) { _chartExits.destroy(); _chartExits = null; }
+
+  const labels = Object.keys(exits);
+  const data = Object.values(exits);
+
+  if (labels.length === 0) {
+    labels.push('No Closed Trades');
+    data.push(1);
+  }
+
+  const palette = [
+    '#10b981', // green (Target)
+    '#ef4444', // red (SL)
+    '#3b82f6', // blue (Trail SL)
+    '#f59e0b', // amber (Time)
+    '#8b5cf6', // purple (Manual)
+    '#64748b'  // slate (Other)
+  ];
+
+  _chartExits = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: palette.slice(0, labels.length),
+        borderColor: '#0d0f14',
+        borderWidth: 2,
+        cutout: '72%'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#8b92a8', boxWidth: 8, font: { size: 10, family: 'Inter' } }
+        },
+        tooltip: {
+          backgroundColor: '#0d1526',
+          borderColor: 'rgba(255,255,255,0.12)',
+          borderWidth: 1,
+          titleFont: { family: 'Inter', size: 11 },
+          bodyFont: { family: 'JetBrains Mono', size: 12 }
+        }
+      }
+    }
+  });
+}
+
+function _renderStrategyTable(strategies) {
+  const tbody = $('#anlz-strategy-tbody');
+  const countBadge = $('#anlz-strategy-count');
+  if (countBadge) countBadge.textContent = `${strategies.length} Strategies`;
+  if (!tbody) return;
+
+  if (strategies.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);">No strategy attribution data for this timeframe</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = strategies.map(s => {
+    const pnl = parseFloat(s.pnl || 0);
+    const pnlColor = pnl > 0 ? 'var(--green)' : (pnl < 0 ? 'var(--red)' : 'var(--text-primary)');
+    return `
+      <tr>
+        <td style="font-weight:600;"><span class="badge badge-blue" style="margin-right:6px;">${s.strategy_id}</span></td>
+        <td class="num-col mono">${s.trades}</td>
+        <td class="num-col mono">${s.wins}</td>
+        <td class="num-col mono">${s.trades > 0 ? ((s.wins / s.trades) * 100).toFixed(1) : '0.0'}%</td>
+        <td class="num-col mono" style="color:${pnlColor};font-weight:700;">${pnl >= 0 ? '+' : ''}${_fmtInr(pnl)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ── Phase 3: Strategy Builder ──────────────────────────────────────────────────
+
+/** IR graph state for the builder canvas. */
+let _builderGraph = { nodes: [] };
+let _builderNextId = 1;
+const _FAMILY_COLORS = {
+  indicator: { bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.45)', dot: '#3b82f6' },
+  condition: { bg: 'rgba(20,184,166,0.12)', border: 'rgba(20,184,166,0.45)', dot: '#14b8a6' },
+  logic:     { bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.45)', dot: '#a78bfa' },
+  action:    { bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.45)',  dot: '#22c55e' },
+  other:     { bg: 'rgba(139,146,168,0.12)', border: 'rgba(139,146,168,0.3)', dot: '#8b92a8' },
+};
+
+function _bNodeFamily(typeKey) {
+  if (!typeKey) return 'other';
+  if (/^(volume|price|greeks|indicator|market)\./.test(typeKey)) return 'indicator';
+  if (/^(condition|filter|cross|pattern)\./.test(typeKey)) return 'condition';
+  if (typeKey.startsWith('logic.')) return 'logic';
+  if (typeKey.startsWith('action.')) return 'action';
+  return 'other';
+}
+
+async function loadBuilderPalette() {
+  const content = $('#builder-palette-content');
+  const countEl = $('#builder-palette-count');
+  if (!content) return;
+  content.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:12px;text-align:center;">Loading palette\u2026</div>';
+  try {
+    const resp = await fetch('/api/v1/builder/nodes');
+    const data = await resp.json();
+    const { families, total } = data;
+    if (countEl) countEl.textContent = `(${total})`;
+    if (total === 0) {
+      content.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:12px;text-align:center;">No node types registered yet.</div>';
+      return;
+    }
+    const ORDER = ['indicator','condition','logic','action','other'];
+    let html = '';
+    for (const fam of ORDER) {
+      const nodes = families[fam];
+      if (!nodes || !nodes.length) continue;
+      const col = _FAMILY_COLORS[fam] || _FAMILY_COLORS.other;
+      html += `<div style="padding:6px 12px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-muted);">
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${col.dot};margin-right:5px;vertical-align:middle;"></span>${fam}</div>`;
+      for (const node of nodes) {
+        html += `<div class="bpn" draggable="true" data-nt="${node.type}" data-nl="${node.label}" data-nf="${fam}"
+          ondragstart="_builderOnDragStart(event)" title="${node.type}"
+          style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:grab;transition:background var(--transition);">
+          <div style="width:8px;height:8px;border-radius:2px;flex-shrink:0;background:${col.bg};border:1px solid ${col.border};"></div>
+          <span style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${node.label}</span>
+        </div>`;
+      }
+    }
+    content.innerHTML = html;
+    content.querySelectorAll('.bpn').forEach(el => {
+      el.addEventListener('mouseenter', () => el.style.background = 'var(--bg-card-hover)');
+      el.addEventListener('mouseleave', () => el.style.background = '');
+    });
+  } catch (e) {
+    content.innerHTML = `<div style="padding:16px;color:var(--red);font-size:12px;">Failed: ${e.message}</div>`;
+  }
+}
+
+async function loadBuilderPanels() {
+  const list = $('#builder-panel-list');
+  const countEl = $('#builder-panel-type-count');
+  if (!list) return;
+  try {
+    const resp = await fetch('/api/v1/ui/panels');
+    const data = await resp.json();
+    const types = data.panel_types || {};
+    const keys = Object.keys(types);
+    if (countEl) countEl.textContent = `(${keys.length})`;
+    list.innerHTML = keys.map(k => {
+      const d = types[k];
+      return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;display:flex;gap:8px;align-items:flex-start;">
+        <span style="font-size:16px;flex-shrink:0;">${d.icon || '\u{1F4CA}'}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);">${d.title}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px;line-height:1.4;">${d.description}</div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">Refresh: ${d.refresh_ms === 0 ? 'Event-driven' : d.refresh_ms + 'ms'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    if (list) list.innerHTML = `<div style="color:var(--text-muted);font-size:12px;">Unavailable: ${e.message}</div>`;
+  }
+}
+
+function _builderOnDragStart(event) {
+  const el = event.currentTarget;
+  event.dataTransfer.setData('nt', el.dataset.nt);
+  event.dataTransfer.setData('nl', el.dataset.nl);
+  event.dataTransfer.setData('nf', el.dataset.nf);
+  event.dataTransfer.effectAllowed = 'copy';
+}
+
+function _builderOnDrop(event) {
+  event.preventDefault();
+  const nt = event.dataTransfer.getData('nt');
+  const nl = event.dataTransfer.getData('nl');
+  const nf = event.dataTransfer.getData('nf');
+  if (!nt) return;
+  _builderAddNode(nt, nl, nf, event.offsetX, event.offsetY);
+}
+
+function _builderAddNode(nodeType, nodeLabel, family, x, y) {
+  const canvas = $('#builder-canvas');
+  const hint = $('#builder-canvas-hint');
+  if (hint) hint.style.display = 'none';
+  const id = 'n' + (_builderNextId++);
+  _builderGraph.nodes.push({ id, type: nodeType, params: {}, inputs: [] });
+  const col = _FAMILY_COLORS[family] || _FAMILY_COLORS.other;
+  const card = document.createElement('div');
+  card.id = 'node-card-' + id;
+  card.dataset.nodeId = id;
+  card.style.cssText = `position:absolute;left:${x-60}px;top:${y-20}px;background:${col.bg};border:1px solid ${col.border};border-radius:8px;padding:8px 12px;min-width:120px;cursor:move;user-select:none;font-size:11px;box-shadow:0 4px 12px rgba(0,0,0,0.4);`;
+  card.innerHTML = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <div style="width:7px;height:7px;border-radius:50%;background:${col.dot};flex-shrink:0;"></div>
+      <span style="font-size:10px;color:${col.dot};font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">${family}</span>
+      <button onclick="_builderRemoveNode('${id}')" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;line-height:1;padding:0;" title="Remove">\xd7</button>
+    </div>
+    <div style="font-weight:600;color:var(--text-primary);font-size:12px;">${nodeLabel}</div>
+    <div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);margin-top:2px;">${nodeType}</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">ID: <span style="font-family:var(--mono);color:var(--text-secondary);">${id}</span></div>`;
+  let dragX = 0, dragY = 0;
+  card.addEventListener('mousedown', e => {
+    if (e.target.tagName === 'BUTTON') return;
+    dragX = e.clientX - card.offsetLeft; dragY = e.clientY - card.offsetTop;
+    const onM = mv => { card.style.left = (mv.clientX - dragX) + 'px'; card.style.top = (mv.clientY - dragY) + 'px'; };
+    const onU = () => { document.removeEventListener('mousemove', onM); document.removeEventListener('mouseup', onU); };
+    document.addEventListener('mousemove', onM); document.addEventListener('mouseup', onU); e.preventDefault();
+  });
+  canvas.appendChild(card);
+  _builderUpdateIRPreview();
+}
+
+function _builderRemoveNode(id) {
+  const card = document.getElementById('node-card-' + id);
+  if (card) card.remove();
+  _builderGraph.nodes = _builderGraph.nodes.filter(n => n.id !== id);
+  _builderGraph.nodes.forEach(n => { n.inputs = (n.inputs || []).filter(i => i !== id); });
+  if (!_builderGraph.nodes.length) { const h = $('#builder-canvas-hint'); if (h) h.style.display = ''; }
+  _builderUpdateIRPreview();
+}
+
+function _builderUpdateIRPreview() {
+  const el = $('#builder-ir-preview');
+  if (el) el.textContent = JSON.stringify(_builderGraph, null, 2);
+}
+
+function _builderCopyIR() {
+  navigator.clipboard?.writeText(JSON.stringify(_builderGraph, null, 2))
+    .then(() => toast('IR graph copied to clipboard', 'success'))
+    .catch(() => toast('Copy failed', 'error'));
+}
+
+function _builderClear() {
+  _builderGraph = { nodes: [] }; _builderNextId = 1;
+  const canvas = $('#builder-canvas');
+  if (canvas) canvas.querySelectorAll('[data-node-id]').forEach(el => el.remove());
+  const hint = $('#builder-canvas-hint'); if (hint) hint.style.display = '';
+  _builderUpdateIRPreview();
+  const res = $('#builder-result-panel'); if (res) res.innerHTML = '<em>Run Validate or Backtest to see results</em>';
+}
+
+function _builderSetResult(html) { const el = $('#builder-result-panel'); if (el) el.innerHTML = html; }
+
+async function _builderValidate() {
+  const btn = $('#btn-builder-validate');
+  if (btn) { btn.disabled = true; btn.textContent = 'Validating\u2026'; }
+  try {
+    const resp = await fetch('/api/v1/builder/validate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(_builderGraph) });
+    const d = await resp.json();
+    if (d.valid) {
+      _builderSetResult(`<div style="color:var(--green);font-weight:700;margin-bottom:6px;">\u2713 Graph Valid</div>
+        <div style="font-size:11px;color:var(--text-muted);">${d.node_count} nodes \u2022 Topological order confirmed</div>
+        <div style="font-size:10px;font-family:var(--mono);color:var(--text-secondary);margin-top:4px;">Order: ${(d.topo_order||[]).join(' \u2192 ')}</div>`);
+    } else {
+      _builderSetResult(`<div style="color:var(--red);font-weight:700;margin-bottom:6px;">\u2717 Validation Failed</div>
+        ${d.errors.map(e=>`<div style="font-size:11px;color:var(--red);margin-bottom:3px;">\u2022 ${e}</div>`).join('')}`);
+    }
+  } catch(e) { _builderSetResult(`<div style="color:var(--red);">Error: ${e.message}</div>`); }
+  finally { if (btn) { btn.disabled=false; btn.textContent='\u2713 Validate'; } }
+}
+
+async function _builderBacktest() {
+  const btn = $('#btn-builder-backtest');
+  if (btn) { btn.disabled=true; btn.textContent='\u26a1 Running\u2026'; }
+  try {
+    const sid = $('#builder-strategy-id')?.value?.trim()||null;
+    const resp = await fetch('/api/v1/builder/backtest', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ graph: _builderGraph, strategy_id: sid, lookback_days: 30 }) });
+    const d = await resp.json();
+    if (d.success) {
+      const m = d.metrics;
+      _builderSetResult(`<div style="color:var(--teal);font-weight:700;margin-bottom:8px;">\u26a1 Backtest Complete</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          ${[['Win Rate',m.win_rate_pct+'%'],['Trades',m.total_trades],['Avg P&L','\u20b9'+(m.avg_pnl_per_trade||0).toLocaleString('en-IN')],['Sharpe',m.sharpe_ratio],['Max DD',m.max_drawdown_pct+'%'],['Candles',(m.candles_evaluated||0).toLocaleString()]]
+            .map(([k,v])=>`<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:4px;padding:5px 8px;">
+              <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">${k}</div>
+              <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text-primary);">${v}</div></div>`).join('')}
+        </div><div style="font-size:10px;color:var(--text-muted);margin-top:6px;">${m.note||''}</div>`);
+    } else {
+      _builderSetResult(`<div style="color:var(--red);">\u2717 ${d.message}</div>`);
+    }
+  } catch(e) { _builderSetResult(`<div style="color:var(--red);">Error: ${e.message}</div>`); }
+  finally { if (btn) { btn.disabled=false; btn.textContent='\u26a1 Backtest'; } }
+}
+
+async function _builderSave() {
+  const sid = $('#builder-strategy-id')?.value?.trim();
+  if (!sid) { _builderSetResult('<div style="color:var(--amber);">\u26a0 Enter a Strategy ID before saving.</div>'); return; }
+  const btn = $('#btn-builder-save');
+  if (btn) { btn.disabled=true; btn.textContent='\ud83d\udcbe Saving\u2026'; }
+  try {
+    const resp = await fetch('/api/v1/builder/save', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ strategy_id:sid, graph:_builderGraph, capital:{allocated:0,currency:'INR'},
+        risk:{max_concurrent:3,circuit_breaker_pct:2.0}, ui_panels:[{type:'graph_canvas'},{type:'metric_card'}] }) });
+    if (!resp.ok) { const err = await resp.json(); _builderSetResult(`<div style="color:var(--red);">\u2717 ${err.detail?.message||resp.statusText}</div>`); return; }
+    const d = await resp.json();
+    _builderSetResult(`<div style="color:var(--green);font-weight:700;margin-bottom:6px;">\u2713 Strategy Saved</div>
+      <div style="font-size:11px;color:var(--text-muted);">ID: <b style="color:var(--text-primary);">${d.strategy_id}</b></div>
+      <div style="font-size:11px;color:var(--text-muted);">Version: <b style="color:var(--text-primary);">${d.version}</b></div>`);
+    toast(`Strategy '${d.strategy_id}' saved at v${d.version}`, 'success');
+  } catch(e) { _builderSetResult(`<div style="color:var(--red);">Error: ${e.message}</div>`); }
+  finally { if (btn) { btn.disabled=false; btn.textContent='\ud83d\udcbe Save Strategy'; } }
+}
+
+safeOn('#btn-builder-validate',       'click', _builderValidate);
+safeOn('#btn-builder-backtest',       'click', _builderBacktest);
+safeOn('#btn-builder-save',           'click', _builderSave);
+safeOn('#btn-builder-clear',          'click', _builderClear);
+safeOn('#btn-builder-reload-palette', 'click', loadBuilderPalette);
+
+// Load builder data on tab activation
+document.querySelectorAll('.nav-tab[data-tab="builder"]').forEach(btn => {
+  btn.addEventListener('click', () => { loadBuilderPalette(); loadBuilderPanels(); });
+});
+
+// ── Phase 4: Agentic Strategy Loop ───────────────────────────────────────────
+
+const _PROPOSAL_STATUS_META = {
+  pending_backtest: { label: 'Pending BT',   color: 'var(--amber)',  bg: 'rgba(245,158,11,0.12)'  },
+  backtest_done:    { label: 'BT Done',      color: 'var(--teal)',   bg: 'rgba(20,184,166,0.12)'  },
+  pending_paper:    { label: 'Pending Paper', color: '#3b82f6',      bg: 'rgba(59,130,246,0.12)'  },
+  paper_done:       { label: 'Paper Done',    color: '#a78bfa',      bg: 'rgba(167,139,250,0.12)' },
+  approved:         { label: 'Approved',      color: 'var(--green)', bg: 'rgba(34,197,94,0.12)'   },
+  rejected:         { label: 'Rejected',      color: 'var(--red)',   bg: 'rgba(239,68,68,0.12)'   },
+};
+
+function _agentStatusBadge(status) {
+  const m = _PROPOSAL_STATUS_META[status] || { label: status, color: 'var(--text-muted)', bg: 'transparent' };
+  return `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${m.bg};color:${m.color};white-space:nowrap;">${m.label}</span>`;
+}
+
+function _agentActionButtons(p) {
+  const btns = [];
+  if (p.status === 'pending_backtest') {
+    btns.push(`<button class="btn btn-ghost btn-sm" onclick="_agentRunBacktest('${p.proposal_id}')" style="font-size:10px;">Run BT</button>`);
+    btns.push(`<button class="btn btn-ghost btn-sm" onclick="_agentReject('${p.proposal_id}')" style="font-size:10px;color:var(--red);">Reject</button>`);
+  }
+  if (p.status === 'backtest_done') {
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="_agentApprove('${p.proposal_id}')" style="font-size:10px;">Approve</button>`);
+    btns.push(`<button class="btn btn-ghost btn-sm" onclick="_agentReject('${p.proposal_id}')" style="font-size:10px;color:var(--red);">Reject</button>`);
+  }
+  if (p.status === 'pending_paper') {
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="_agentPromotePaper('${p.proposal_id}')" style="font-size:10px;">Start Paper</button>`);
+    btns.push(`<button class="btn btn-ghost btn-sm" onclick="_agentReject('${p.proposal_id}')" style="font-size:10px;color:var(--red);">Reject</button>`);
+  }
+  if (p.status === 'paper_done') {
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="_agentPromoteLive('${p.proposal_id}')" style="font-size:10px;">Go Live</button>`);
+    btns.push(`<button class="btn btn-ghost btn-sm" onclick="_agentReject('${p.proposal_id}')" style="font-size:10px;color:var(--red);">Reject</button>`);
+  }
+  if (!btns.length) btns.push(`<span style="font-size:11px;color:var(--text-muted);">—</span>`);
+  return `<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">${btns.join('')}</div>`;
+}
+
+async function loadAgentProposals() {
+  const tbody = $('#agent-proposals-tbody');
+  const pills = $('#agent-status-pills');
+  const pending = $('#agent-pending-count');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-muted);">Loading...</td></tr>';
+
+  try {
+    const [listResp, summResp] = await Promise.all([
+      fetch('/api/v1/agent/proposals?limit=100'),
+      fetch('/api/v1/agent/status-summary'),
+    ]);
+    const listData = await listResp.json();
+    const summData = await summResp.json();
+    const proposals = listData.proposals || [];
+
+    // Status pills
+    if (pills) {
+      pills.innerHTML = Object.entries(summData.by_status || {})
+        .filter(([,n]) => n > 0)
+        .map(([s, n]) => {
+          const m = _PROPOSAL_STATUS_META[s] || {};
+          return `<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;background:${m.bg||'var(--bg-card)'};color:${m.color||'var(--text-muted)'};">${m.label||s}: ${n}</span>`;
+        }).join('');
+    }
+    if (pending) pending.textContent = summData.pending_action ?? '—';
+
+    if (!proposals.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-muted);">No proposals yet. Use POST /api/v1/agent/propose to create one.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = proposals.map(p => {
+      const m = p.backtest_metrics || {};
+      const winRate = m.win_rate_pct != null ? m.win_rate_pct + '%' : '—';
+      const sharpe  = m.sharpe_ratio != null ? m.sharpe_ratio : '—';
+      const shortId = p.proposal_id ? p.proposal_id.slice(0,8) : '—';
+      return `<tr style="border-bottom:1px solid var(--border);transition:background var(--transition);" onmouseenter="this.style.background='var(--bg-card-hover)'" onmouseleave="this.style.background=''">
+        <td style="padding:8px 12px;font-family:var(--mono);font-size:11px;color:var(--text-muted);" title="${p.proposal_id}">${shortId}</td>
+        <td style="padding:8px 12px;font-weight:600;"><span class="badge badge-blue">${p.strategy_id}</span></td>
+        <td style="padding:8px 12px;">${_agentStatusBadge(p.status)}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:var(--mono);color:var(--text-primary);">${winRate}</td>
+        <td style="padding:8px 12px;text-align:right;font-family:var(--mono);color:var(--text-secondary);">${sharpe}</td>
+        <td style="padding:8px 12px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${p.mutation_summary||''}">${p.mutation_summary || '—'}</td>
+        <td style="padding:8px 12px;">${_agentActionButtons(p)}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--red);">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function _agentSetResult(html) { const el = $('#agent-action-result'); if (el) el.innerHTML = html; }
+
+async function _agentRunBacktest(proposalId) {
+  _agentSetResult('<em style="color:var(--text-muted);">Running backtest...</em>');
+  try {
+    const r = await fetch(`/api/v1/agent/${proposalId}/backtest`, { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+    const d = await r.json();
+    if (r.ok) {
+      const m = d.metrics || {};
+      _agentSetResult(`<span style="color:var(--green);font-weight:700;">Backtest done</span> | Win: ${m.win_rate_pct}% | Sharpe: ${m.sharpe_ratio} | MaxDD: ${m.max_drawdown_pct}%`);
+      loadAgentProposals();
+    } else {
+      _agentSetResult(`<span style="color:var(--red);">Error: ${d.detail?.message||r.statusText}</span>`);
+    }
+  } catch(e) { _agentSetResult(`<span style="color:var(--red);">Error: ${e.message}</span>`); }
+}
+
+async function _agentApprove(proposalId) {
+  _agentSetResult('<em style="color:var(--text-muted);">Approving...</em>');
+  try {
+    const r = await fetch(`/api/v1/agent/${proposalId}/approve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({approved_by:'human'}) });
+    const d = await r.json();
+    if (r.ok) { _agentSetResult(`<span style="color:var(--green);font-weight:700;">Approved for paper trading.</span>`); loadAgentProposals(); }
+    else _agentSetResult(`<span style="color:var(--red);">Error: ${d.detail?.message||r.statusText}</span>`);
+  } catch(e) { _agentSetResult(`<span style="color:var(--red);">Error: ${e.message}</span>`); }
+}
+
+async function _agentReject(proposalId) {
+  const reason = prompt('Rejection reason:');
+  if (!reason || reason.length < 5) { _agentSetResult('<span style="color:var(--amber);">Rejection cancelled (need 5+ chars).</span>'); return; }
+  try {
+    const r = await fetch(`/api/v1/agent/${proposalId}/reject`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({reason}) });
+    const d = await r.json();
+    if (r.ok) { _agentSetResult(`<span style="color:var(--red);font-weight:700;">Rejected.</span>`); loadAgentProposals(); }
+    else _agentSetResult(`<span style="color:var(--red);">Error: ${d.detail?.message||r.statusText}</span>`);
+  } catch(e) { _agentSetResult(`<span style="color:var(--red);">Error: ${e.message}</span>`); }
+}
+
+async function _agentPromotePaper(proposalId) {
+  _agentSetResult('<em style="color:var(--text-muted);">Starting paper trading...</em>');
+  try {
+    const r = await fetch(`/api/v1/agent/${proposalId}/promote-paper`, { method:'POST' });
+    const d = await r.json();
+    if (r.ok) { _agentSetResult(`<span style="color:var(--teal);font-weight:700;">Paper phase started.</span>`); loadAgentProposals(); }
+    else _agentSetResult(`<span style="color:var(--red);">Error: ${d.detail?.message||r.statusText}</span>`);
+  } catch(e) { _agentSetResult(`<span style="color:var(--red);">Error: ${e.message}</span>`); }
+}
+
+async function _agentPromoteLive(proposalId) {
+  if (!confirm('Promote this proposal to LIVE? Capital allocation is unchanged.')) return;
+  _agentSetResult('<em style="color:var(--text-muted);">Promoting to live...</em>');
+  try {
+    const r = await fetch(`/api/v1/agent/${proposalId}/promote-live`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({approved_by:'human'}) });
+    const d = await r.json();
+    if (r.ok) { _agentSetResult(`<span style="color:var(--green);font-weight:700;">Promoted to live! Manifest updated.</span>`); loadAgentProposals(); }
+    else _agentSetResult(`<span style="color:var(--red);">Error: ${d.detail?.message||r.statusText}</span>`);
+  } catch(e) { _agentSetResult(`<span style="color:var(--red);">Error: ${e.message}</span>`); }
+}
+
+// Load on tab activation
+document.querySelectorAll('.nav-tab[data-tab="agent"]').forEach(btn => {
+  btn.addEventListener('click', () => loadAgentProposals());
+});
+
+// Auto-refresh agent badge every 30s
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/v1/agent/status-summary');
+    const d = await r.json();
+    const p = d.pending_action ?? 0;
+    const badge = $('#badge-agent-pending');
+    if (badge) badge.textContent = p > 0 ? String(p) : '';
+  } catch {}
+}, 30000);
+
+// Auto-refresh System Metrics every 5s
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/v1/metrics');
+    const d = await r.json();
+    if (d.latencies_ms) {
+      const api = d.latencies_ms.api_latency ? d.latencies_ms.api_latency.p95 : '--';
+      const engine = d.latencies_ms.tick_processing ? d.latencies_ms.tick_processing.p95 : '--';
+      const el = $('#stat-latency');
+      if (el) el.textContent = `${api} / ${engine} ms`;
+    }
+  } catch {}
+}, 5000);
 
 </script>
 </body>

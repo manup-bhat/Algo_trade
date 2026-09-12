@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, Text, text
+from sqlalchemy import DateTime, Float, Index, Integer, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -41,7 +41,7 @@ class OrderEvent(Base):
 
     event_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default="(datetime('now'))", nullable=False
+        DateTime, server_default=func.now(), nullable=False
     )
 
     __table_args__ = (

@@ -13,13 +13,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    future=True,
-    # aiosqlite: single connection fine for low-write trading bot
-    connect_args={"check_same_thread": False},
-)
+is_sqlite = "sqlite" in settings.DATABASE_URL.lower()
+
+engine_kwargs: dict = {
+    "echo": settings.DEBUG,
+    "future": True,
+}
+if is_sqlite:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+else:
+    # PostgreSQL / asyncpg production connection pool settings
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+
+engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
+
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, Text, UniqueConstraint, text
+from sqlalchemy import Date, DateTime, Float, Integer, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -39,7 +39,7 @@ class DailyPnl(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=text("(datetime('now'))"), nullable=False
+        DateTime, server_default=func.now(), nullable=False
     )
 
     __table_args__ = (

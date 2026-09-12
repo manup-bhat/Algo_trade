@@ -95,6 +95,10 @@ class Instrument:
     # ── Classification helpers ───────────────────────────────────────────────
 
     @property
+    def symbol(self) -> str:
+        return self.tradingsymbol
+
+    @property
     def is_equity(self) -> bool:
         return self.asset_class is AssetClass.EQUITY
 

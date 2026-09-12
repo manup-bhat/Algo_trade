@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Boolean, DateTime, JSON, Text, text
+from sqlalchemy import Boolean, DateTime, JSON, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
@@ -35,8 +35,8 @@ class Strategy(Base):
     config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default="(datetime('now'))", nullable=False
+        DateTime, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default="(datetime('now'))", nullable=False
+        DateTime, server_default=func.now(), nullable=False
     )

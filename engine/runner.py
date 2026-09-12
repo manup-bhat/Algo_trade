@@ -47,11 +47,17 @@ from engine.kite.instruments import InstrumentCache, load_instruments_async
 from engine.kite.ticker import AsyncKiteTicker, MODE_QUOTE
 from engine.market.calendar import is_market_open, now_ist
 from engine.market.historical_warmup import warmup_from_historical
+from engine.market.historical_data_service import historical_data_service
+from engine.market.market_data_gateway import market_data_gateway
 from engine.market.universe import load_universe
+from engine.orders.eod_squareoff_service import eod_squareoff_service
 from engine.orders.fill_timeout import fill_timeout_manager
 from engine.orders.order_service import order_service
 from engine.orders.order_tracker import order_tracker
+from engine.risk.capital_allocator import CapitalAllocator
 from engine.risk.circuit_breaker import circuit_breaker
+from engine.risk.pre_trade_checks import pre_trade_checks
+from engine.orders.expiry_rollover_service import expiry_rollover_service
 from engine.store.db_writer import DbWriter
 from engine.store.redis_store import RedisStore
 from engine.strategy.coordinator import Coordinator
@@ -70,6 +76,7 @@ _ticker: AsyncKiteTicker | None = None
 _scheduler: AsyncIOScheduler | None = None
 _redis_store: RedisStore | None = None
 _db_writer: DbWriter | None = None
+_capital_allocator: CapitalAllocator | None = None
 _universe_tokens: list[int] = []
 _instrument_cache: InstrumentCache | None = None
 _running = True
@@ -111,7 +118,7 @@ async def job_pre_market_setup() -> None:
       7. Orphan check
       8. Set status PRE_MARKET_READY
     """
-    global _kite_client, _ticker, _universe_tokens, _instrument_cache
+    global _kite_client, _ticker, _universe_tokens, _instrument_cache, _capital_allocator
 
     coordinator, redis_store, db_writer = _assert_ready()
     log.info("pre_market_setup_start")
@@ -150,6 +157,7 @@ async def job_pre_market_setup() -> None:
 
     _kite_client = AsyncKiteClient(kite_obj)
     order_service.set_kite(_kite_client)
+    historical_data_service.set_kite(_kite_client)
 
     # Wire kite into coordinator
     coordinator.inject_dependencies(
@@ -204,6 +212,37 @@ async def job_pre_market_setup() -> None:
         
     await redis_store.set_capital(capital)
 
+    # ── 2.5. CapitalAllocator — wire per-strategy allocations from manifests ──
+    # The CapitalAllocator is the Phase 0 critical guard (Check 10) that prevents
+    # two live strategies from both claiming the full account margin.
+    # Allocations are read from strategy manifests (DB) or config.yaml fallbacks.
+    _capital_allocator = CapitalAllocator(redis_store)
+    _capital_allocator.allocate_from_settings(capital)  # seeds from ENABLED_STRATEGIES + manifest
+    pre_trade_checks.set_capital_allocator(_capital_allocator)
+    eod_squareoff_service.wire(
+        order_service=order_service,
+        redis_store=redis_store,
+        kite=_kite_client,
+    )
+    # ── ExpiryRolloverService (Phase 2) ───────────────────────────────────
+    from engine.market.instrument_master import instrument_master
+    expiry_rollover_service.wire(
+        order_service=order_service,
+        redis_store=redis_store,
+        instrument_master=instrument_master,
+    )
+    # ── Capability Registry (Phase 2) ─────────────────────────────────────
+    from engine.core.capability_registry import capability_registry
+    from engine.market.capabilities import (
+        VolumeSmaProvider, OptionChainProvider, GreeksProvider, IVRankProvider
+    )
+    capability_registry.register("volume_sma",   VolumeSmaProvider())
+    capability_registry.register("option_chain", OptionChainProvider())
+    capability_registry.register("greeks",       GreeksProvider())
+    capability_registry.register("iv_rank",      IVRankProvider())
+    log.info("capability_registry_wired", keys=capability_registry.list_keys())
+    log.info("capital_allocator_wired", total_capital=capital)
+
     # ── 3. Reset daily state ─────────────────────────────────────────
     today_iso = now_ist().date().isoformat()
     stale_removed = await redis_store.clear_stale_strategy_states(today_iso)
@@ -213,6 +252,8 @@ async def job_pre_market_setup() -> None:
     await circuit_breaker.reset(redis_store)
     await redis_store.set_daily_pnl(0.0)
     await redis_store.set_blocked_margin(0.0)
+    if _capital_allocator is not None:
+        await _capital_allocator.reset_session()  # clear any stale used-margin from prior day
     log.info("daily_state_reset")
 
 
@@ -326,6 +367,9 @@ async def job_pre_market_setup() -> None:
             _ticker_new._subscribed_tokens = all_tokens
         _ticker_new.start()
         _ticker = _ticker_new  # module-level assignment; global declared at function top
+        # Wire MarketDataGateway after ticker is created
+        market_data_gateway.set_ticker(_ticker)
+        market_data_gateway.set_redis(redis_store)
         log.info(
             "ws_connecting_tokens_queued",
             universe_count=len(_universe_tokens),
@@ -387,6 +431,7 @@ async def job_early_squareoff_check() -> None:
     """
     03:18 PM IST — If more than 1 MANAGING position, close all now.
     Sequential API calls (cancel SL + market sell × N) need more time buffer.
+    Delegates to EODSquareOffService for strategy-agnostic early close.
     """
     coordinator, redis_store, _ = _assert_ready()
 
@@ -399,7 +444,13 @@ async def job_early_squareoff_check() -> None:
             managing_positions=managing,
             reason="multiple_positions_need_time_buffer",
         )
+        # Strategy hooks first (clean state machine transitions)
         await coordinator.on_squareoff()
+        # EODSquareOffService safety net (catches any orphans)
+        try:
+            await eod_squareoff_service.early_check()
+        except Exception as exc:
+            log.error("eod_early_check_failed", error=str(exc))
         await redis_store.set_engine_status({
             "status": "SQUARING_OFF",
             "timestamp": now_ist().isoformat(),
@@ -408,11 +459,28 @@ async def job_early_squareoff_check() -> None:
 
 
 async def job_squareoff() -> None:
-    """03:20 PM IST — Force close ALL remaining open positions."""
+    """03:20 PM IST — Force close ALL remaining open positions.
+
+    Strategy on_squareoff() hooks run first (orderly state machine close).
+    EODSquareOffService runs 5 seconds later as the guaranteed safety net
+    (catches any positions the strategy missed, including Kite orphans).
+    """
     coordinator, redis_store, _ = _assert_ready()
 
     log.info("squareoff_job_start")
+    # 1. Strategy-level close (state machine transitions)
     await coordinator.on_squareoff()
+    # 2. Safety net: close any remaining positions (incl. Kite-side orphans)
+    try:
+        await asyncio.sleep(5)  # Allow postbacks to arrive before safety check
+        await eod_squareoff_service.force_squareoff()
+    except Exception as exc:
+        log.error("eod_force_squareoff_failed", error=str(exc))
+    # 3. Clean gateway subscriptions
+    try:
+        await market_data_gateway.on_session_end()
+    except Exception as exc:
+        log.warning("gateway_session_end_failed", error=str(exc))
 
     await redis_store.set_engine_status({
         "status": "SQUARING_OFF",
@@ -603,10 +671,24 @@ async def shutdown() -> None:
 # ── Emergency Stop ────────────────────────────────────────────────────────────
 
 async def _emergency_stop() -> None:
-    """Immediate market close of all positions, then shutdown."""
+    """Immediate market close of all positions, then shutdown.
+
+    Uses EODSquareOffService.emergency_squareoff() which places MARKET orders
+    for fastest possible execution and catches Kite-side orphans.
+    """
     log.critical("emergency_stop_received_squaring_off_all")
     if _coordinator is not None:
         await _coordinator.on_squareoff()
+    # EODSquareOffService emergency path (MARKET orders, catches orphans)
+    try:
+        await eod_squareoff_service.emergency_squareoff()
+    except Exception as exc:
+        log.critical("emergency_squareoff_service_failed", error=str(exc))
+    # Clean gateway
+    try:
+        await market_data_gateway.on_session_end()
+    except Exception:
+        pass
     if _redis_store is not None:
         await _redis_store.set_engine_status({
             "status": "EMERGENCY_STOP",
@@ -709,6 +791,13 @@ async def _poll_config() -> None:
                             "paper_trade": settings.is_paper_trade,
                             **_coordinator.get_stats(),
                         })
+            
+            try:
+                from engine.core.metrics import metrics_registry
+                await metrics_registry.flush_latencies()
+            except Exception as exc:
+                log.warning("metrics_flush_error", error=str(exc))
+                
         except asyncio.CancelledError:
             raise  # propagate cancellation from shutdown()
         except Exception as exc:
@@ -741,6 +830,9 @@ async def main() -> None:
     redis_client = get_redis()
     _redis_store = RedisStore(redis_client)
 
+    from engine.core.metrics import metrics_registry
+    metrics_registry.set_redis(redis_client)
+
     if not await _redis_store.ping():
         log.critical(
             "redis_not_reachable",
@@ -753,10 +845,19 @@ async def main() -> None:
     # ── DB Writer ─────────────────────────────────────────────────────────────
     _db_writer = DbWriter()
 
+    # ── Capability providers ──────────────────────────────────────────
+    from engine.core.capability_registry import register_default_capabilities
+    register_default_capabilities()
+
     # ── Strategy plugins ─────────────────────────────────────────────
     # Register strategies here. Adding a new strategy (equity, F&O, ...) is a
     # one-line change — no coordinator or engine-core modification required.
     _strategy_router = StrategyRouter()
+    # Wire Phase 2 dependencies for manifest-aware registration
+    _strategy_router.wire(
+        market_data_gateway=market_data_gateway,
+        capital_allocator=_capital_allocator,
+    )
     _enabled_ids = {s.strip().lower() for s in settings.ENABLED_STRATEGIES.split(",") if s.strip()}
     if "ivbs" in _enabled_ids:
         _strategy_router.register(IVBSStrategy("ivbs", _redis_store, _db_writer))
@@ -818,6 +919,12 @@ async def main() -> None:
     _scheduler.add_job(
         job_reconcile, "interval", minutes=5,
         id="reconcile_orders", replace_existing=True,
+    )
+    # Expiry rollover — every Wednesday at 17:00 IST (eve of weekly Thursday expiry)
+    _scheduler.add_job(
+        expiry_rollover_service.run_rollover, "cron",
+        day_of_week="wed", hour=17, minute=0,
+        id="expiry_rollover", replace_existing=True,
     )
 
     _scheduler.start()
