@@ -5625,8 +5625,11 @@ safeOn('#wl-save-btn', 'click', async () => {
 
   // 5. Full reload after 5s to get accurate SMA values, token data etc.
   setTimeout(loadUniverse, 5000);
-  // (see the pubsub section of dashboard.html).
-  // If that map doesn't exist yet, we wait for it.
+  closeWatchlistModal();
+});
+
+// Websocket interceptor for universe_updated
+(function() {
   const origDispatch = window._wsDispatch;
   window._wsDispatch = function(msg) {
     if (msg && msg.event === 'universe_updated') {
