@@ -6258,61 +6258,9 @@ function _renderStrategyTable(strategies) {
         <td class="num-col mono">${s.wins}</td>
         <td class="num-col mono">${s.trades > 0 ? ((s.wins / s.trades) * 100).toFixed(1) : '0.0'}%</td>
         <td class="num-col mono" style="color:${pnlColor};font-weight:700;">${pnl >= 0 ? '+' : ''}${_fmtInr(pnl)}</td>
-  if (!ctx) return;
-  if (_chartDrawdown) { _chartDrawdown.destroy(); _chartDrawdown = null; }
-
-  const labels = series.map(p => p.time);
-  const data = series.map(p => p.drawdown_pct);
-
-  const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
-  gradient.addColorStop(0, 'rgba(239, 68, 68, 0.02)');
-  gradient.addColorStop(1, 'rgba(239, 68, 68, 0.32)');
-
-  _chartDrawdown = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Drawdown %',
-        data: data,
-        borderColor: '#ef4444',
-        borderWidth: 1.8,
-        backgroundColor: gradient,
-        fill: true,
-        tension: 0.2,
-        pointRadius: 0,
-        pointHoverRadius: 4
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0d1526',
-          borderColor: 'rgba(255,255,255,0.12)',
-          borderWidth: 1,
-          titleFont: { family: 'Inter', size: 11 },
-          bodyFont: { family: 'JetBrains Mono', size: 12 },
-          callbacks: {
-            label: (ctx) => ` Drawdown: ${ctx.parsed.y.toFixed(2)}%`
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#8b92a8', font: { size: 9.5, family: 'Inter' }, maxTicksLimit: 8 }
-        },
-        y: {
-          grid: { color: 'rgba(255,255,255,0.06)' },
-          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
-                   callback: v => `${v}%` }
-        }
-      }
-    }
-  });
+      </tr>
+    `;
+  }).join('');
 }
 
 function _renderTemporalChart(dow, hourly) {
