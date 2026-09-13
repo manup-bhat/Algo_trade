@@ -14,12 +14,12 @@ Tests:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch, call
+import contextlib
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from engine.orders.order_service import OrderService
-
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ class TestPaperMode:
             mock_settings.ORDER_MAX_RETRIES = 3
 
             svc = OrderService(kite=None)
-            order_id = await svc.place_entry("TEST", 500.0, 10, sm=sm)
+            await svc.place_entry("TEST", 500.0, 10, sm=sm)
 
         assert sm.on_order_filled.call_count == 1
         call_args = sm.on_order_filled.call_args
@@ -170,7 +170,7 @@ class TestLiveOrderRetryLogic:
         with patch("engine.orders.order_service.settings") as mock_settings:
             mock_settings.is_paper_trade = False
             mock_settings.ORDER_MAX_RETRIES = 3
-        
+
             # Also patch asyncio.sleep to avoid actual waiting
             with patch("engine.orders.order_service.asyncio.sleep", new_callable=AsyncMock):
                 svc = OrderService(kite=kite)
@@ -178,7 +178,7 @@ class TestLiveOrderRetryLogic:
                 # since ImportError may mean kite exceptions aren't available
                 try:
                     from kiteconnect.exceptions import NetworkException
-                    order_id = await svc.place_entry("TEST", 500.0, 10)
+                    await svc.place_entry("TEST", 500.0, 10)
                     # With real kite exceptions: should retry
                     assert kite.place_order.call_count == 3
                 except ImportError:
@@ -231,10 +231,8 @@ class TestLiveOrderRetryLogic:
     @pytest.mark.asyncio
     async def test_sl_order_has_no_price_field(self):
         """SL-M order must NOT include 'price' field (spec §9.2)."""
-        try:
-            from kiteconnect.exceptions import InputException
-        except ImportError:
-            InputException = Exception
+        with contextlib.suppress(ImportError):
+            pass
 
         kite = AsyncMock()
         kite.place_order.return_value = "SL_ORDER_ID"
@@ -287,7 +285,7 @@ class TestFillTimeoutManager:
             svc = OrderService()
 
             with patch.object(ftm, '_timeout_handler', new_callable=AsyncMock):
-                task = ftm.start_timeout("ORDER123", sm, svc)
+                ftm.start_timeout("ORDER123", sm, svc)
                 assert ftm.pending_count == 1
                 ftm.cancel_timeout("ORDER123")
                 assert ftm.pending_count == 0
@@ -303,7 +301,7 @@ class TestFillTimeoutManager:
         ftm = FillTimeoutManager()
 
         with patch.object(ftm, '_timeout_handler', new_callable=AsyncMock):
-            svc = MagicMock()
+            MagicMock()
             ftm._tasks["A"] = asyncio.create_task(asyncio.sleep(999), name="test_A")
             ftm._tasks["B"] = asyncio.create_task(asyncio.sleep(999), name="test_B")
             assert ftm.pending_count == 2
@@ -357,6 +355,7 @@ class TestOrderTracker:
     @pytest.mark.asyncio
     async def test_exit_complete_postback_routes_to_close(self):
         from types import SimpleNamespace
+
         from engine.orders.order_tracker import OrderTracker
 
         ot = OrderTracker()
@@ -387,6 +386,7 @@ class TestOrderTracker:
     @pytest.mark.asyncio
     async def test_exit_rejected_postback_retries_market_exit(self):
         from types import SimpleNamespace
+
         from engine.orders.order_tracker import OrderTracker
 
         ot = OrderTracker()

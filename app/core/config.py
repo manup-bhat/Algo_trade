@@ -163,7 +163,7 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def validate_time_ordering(self) -> "Settings":
+    def validate_time_ordering(self) -> Settings:
         open_t = datetime.time.fromisoformat(self.MARKET_OPEN_TIME)
         squareoff_t = datetime.time.fromisoformat(self.SQUARE_OFF_TIME)
         entry_t = datetime.time.fromisoformat(self.MAX_ENTRY_TIME)

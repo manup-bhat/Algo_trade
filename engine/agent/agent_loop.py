@@ -52,7 +52,7 @@ def _kahn_topo(nodes: list[dict]) -> list[str] | None:
     """Kahn's BFS topological sort. Returns ordered IDs or None if cycle detected."""
     from collections import deque
     ids = [n["id"] for n in nodes]
-    in_degree: dict[str, int] = {nid: 0 for nid in ids}
+    in_degree: dict[str, int] = dict.fromkeys(ids, 0)
     adj: dict[str, list[str]] = {nid: [] for nid in ids}
     for node in nodes:
         for src in node.get("inputs", []):
@@ -137,9 +137,9 @@ class AgentLoopService:
         self,
         *,
         strategy_id: str,
-        mutation: "AgentIRMutation",
+        mutation: AgentIRMutation,
         agent_run_id: str,
-        session: "Session",
+        session: Session,
     ) -> AgentProposal:
         """
         Validate and persist a new AgentProposal.
@@ -156,6 +156,7 @@ class AgentLoopService:
                         fails validation (cycle, unknown node type, etc.).
         """
         from sqlalchemy import select
+
         from app.models.db.strategy_manifest import StrategyManifest
 
         # Load existing manifest (sync execute)
@@ -210,7 +211,7 @@ class AgentLoopService:
         self,
         *,
         proposal_id: str,
-        session: "Session",
+        session: Session,
         lookback_days: int = 30,
     ) -> dict[str, Any]:
         """
@@ -260,7 +261,7 @@ class AgentLoopService:
         *,
         proposal_id: str,
         approved_by: str,
-        session: "Session",
+        session: Session,
     ) -> AgentProposal:
         """
         Human approves a backtest_done proposal, unlocking paper promotion.
@@ -300,7 +301,7 @@ class AgentLoopService:
         *,
         proposal_id: str,
         reason: str,
-        session: "Session",
+        session: Session,
     ) -> AgentProposal:
         """
         Human rejects a proposal at any non-terminal stage.
@@ -340,7 +341,7 @@ class AgentLoopService:
         self,
         *,
         proposal_id: str,
-        session: "Session",
+        session: Session,
     ) -> AgentProposal:
         """
         Start paper trading for an approved proposal.
@@ -375,7 +376,7 @@ class AgentLoopService:
         *,
         proposal_id: str,
         approved_by: str,
-        session: "Session",
+        session: Session,
     ) -> AgentProposal:
         """
         Promote a paper_done proposal to live by patching the StrategyManifest.
@@ -395,6 +396,7 @@ class AgentLoopService:
             ValueError: If proposal not in PAPER_DONE state or manifest missing.
         """
         from sqlalchemy import select
+
         from app.models.db.strategy_manifest import StrategyManifest
 
         result = session.execute(

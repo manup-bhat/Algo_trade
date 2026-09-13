@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime
 import time as _time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import pytz
@@ -76,8 +76,8 @@ class OptionsMomentumStrategy(BaseStrategy):
     def __init__(
         self,
         strategy_id: str,
-        redis_store: "RedisStore",
-        db_writer: "DbWriter",
+        redis_store: RedisStore,
+        db_writer: DbWriter,
     ) -> None:
         super().__init__(strategy_id, redis_store, db_writer)
         cfg = self.config
@@ -136,8 +136,8 @@ class OptionsMomentumStrategy(BaseStrategy):
     async def on_candle(
         self,
         symbol: str,
-        candle: "Candle",
-        builder: "CandleBuilder",
+        candle: Candle,
+        builder: CandleBuilder,
         instrument_token: int,
     ) -> None:
         if symbol != self.underlying_symbol:
@@ -159,7 +159,7 @@ class OptionsMomentumStrategy(BaseStrategy):
         if signal is not None:
             await self._maybe_enter(signal, candle)
 
-    async def _maybe_enter(self, opt_type: OptionType, candle: "Candle") -> None:
+    async def _maybe_enter(self, opt_type: OptionType, candle: Candle) -> None:
         if not self._accept_new_entries:
             return
         if len(self._positions) >= self.max_positions or self._entries_today >= self.max_positions:

@@ -23,7 +23,7 @@ import datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import select, text, func, and_
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger(__name__)

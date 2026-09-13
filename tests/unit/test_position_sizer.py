@@ -10,8 +10,6 @@ Spec test cases:
 
 from __future__ import annotations
 
-import pytest
-
 from engine.risk.position_sizer import compute
 
 

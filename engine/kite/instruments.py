@@ -10,7 +10,6 @@ Fetched once at 09:00 AM and cached. Provides O(1) lookups for:
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

@@ -29,7 +29,6 @@ import structlog
 from engine.core.registry import Registry
 
 if TYPE_CHECKING:
-    import datetime
 
     from engine.kite.client import AsyncKiteClient
     from engine.store.redis_store import RedisStore
@@ -62,8 +61,8 @@ class MarketContext:
     underlying: str = ""
     spot_price: float = 0.0
     candle_builder: Any = None          # CandleBuilder (avoid circular import)
-    redis_store: "RedisStore | None" = None
-    kite: "AsyncKiteClient | None" = None
+    redis_store: RedisStore | None = None
+    kite: AsyncKiteClient | None = None
     extra: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 

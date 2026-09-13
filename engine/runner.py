@@ -21,7 +21,6 @@ Run with: PYTHONPATH=. uv run python -m engine.runner
 from __future__ import annotations
 
 import asyncio
-import datetime
 import os
 import signal
 import sys
@@ -37,33 +36,35 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 
+import contextlib
+
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.store.database import init_db
 from app.store.redis_client import get_redis
+from engine.core.strategy_router import StrategyRouter
 from engine.kite.auth import load_token, validate_token
 from engine.kite.client import AsyncKiteClient
 from engine.kite.instruments import InstrumentCache, load_instruments_async
-from engine.kite.ticker import AsyncKiteTicker, MODE_QUOTE
+from engine.kite.ticker import MODE_QUOTE, AsyncKiteTicker
 from engine.market.calendar import is_market_open, now_ist
-from engine.market.historical_warmup import warmup_from_historical
 from engine.market.historical_data_service import historical_data_service
+from engine.market.historical_warmup import warmup_from_historical
 from engine.market.market_data_gateway import market_data_gateway
 from engine.market.universe import load_universe
 from engine.orders.eod_squareoff_service import eod_squareoff_service
+from engine.orders.expiry_rollover_service import expiry_rollover_service
 from engine.orders.fill_timeout import fill_timeout_manager
 from engine.orders.order_service import order_service
 from engine.orders.order_tracker import order_tracker
 from engine.risk.capital_allocator import CapitalAllocator
 from engine.risk.circuit_breaker import circuit_breaker
 from engine.risk.pre_trade_checks import pre_trade_checks
-from engine.orders.expiry_rollover_service import expiry_rollover_service
 from engine.store.db_writer import DbWriter
 from engine.store.redis_store import RedisStore
-from engine.strategy.coordinator import Coordinator
-from engine.core.strategy_router import StrategyRouter
-from engine.strategies.ivbs.strategy import IVBSStrategy
 from engine.strategies.ivbs.ivbs_config import cfg as _ivbs_cfg  # universe filter params
+from engine.strategies.ivbs.strategy import IVBSStrategy
+from engine.strategy.coordinator import Coordinator
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -204,12 +205,12 @@ async def job_pre_market_setup() -> None:
         log.error("capital_fetch_failed", error=str(exc))
         capital = await redis_store.get_capital()  # Use stale if available
         log.warning("using_stale_capital", capital=capital)
-        
+
     override_cap = await redis_store.get_max_capital_override()
     if override_cap is not None:
         capital = min(capital, override_cap)
         log.info("capital_override_applied", override_cap=override_cap, final_capital=capital)
-        
+
     await redis_store.set_capital(capital)
 
     # ── 2.5. CapitalAllocator — wire per-strategy allocations from manifests ──
@@ -234,7 +235,10 @@ async def job_pre_market_setup() -> None:
     # ── Capability Registry (Phase 2) ─────────────────────────────────────
     from engine.core.capability_registry import capability_registry
     from engine.market.capabilities import (
-        VolumeSmaProvider, OptionChainProvider, GreeksProvider, IVRankProvider
+        GreeksProvider,
+        IVRankProvider,
+        OptionChainProvider,
+        VolumeSmaProvider,
     )
     capability_registry.register("volume_sma",   VolumeSmaProvider())
     capability_registry.register("option_chain", OptionChainProvider())
@@ -512,7 +516,9 @@ async def job_session_end() -> None:
             # Compute actual trade counts from the DB instead of hardcoding zeros.
             # Import here to avoid a circular dependency at module level.
             import datetime as _dt
-            from sqlalchemy import func, select
+
+            from sqlalchemy import select
+
             from app.models.db.trade import Trade, TradeStatus
             from app.store.database import get_db
 
@@ -635,10 +641,8 @@ async def shutdown() -> None:
     # with the cleanup below (e.g. calling set_engine_status concurrently).
     if _poll_config_task is not None and not _poll_config_task.done():
         _poll_config_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await _poll_config_task
-        except asyncio.CancelledError:
-            pass
 
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
@@ -685,10 +689,8 @@ async def _emergency_stop() -> None:
     except Exception as exc:
         log.critical("emergency_squareoff_service_failed", error=str(exc))
     # Clean gateway
-    try:
+    with contextlib.suppress(Exception):
         await market_data_gateway.on_session_end()
-    except Exception:
-        pass
     if _redis_store is not None:
         await _redis_store.set_engine_status({
             "status": "EMERGENCY_STOP",
@@ -762,7 +764,7 @@ async def _poll_config() -> None:
 
                 # Sync TRADE_MODE override from Redis → settings (changed via dashboard)
                 override_mode = await _redis_store.get_trade_mode_override()
-                if override_mode is not None and settings.TRADE_MODE != override_mode:
+                if override_mode is not None and override_mode != settings.TRADE_MODE:
                     log.info("trade_mode_override_applied", new_mode=override_mode, prev=settings.TRADE_MODE)
                     settings.TRADE_MODE = override_mode  # type: ignore[assignment]
                     # Keep legacy PAPER_TRADE bool in sync
@@ -770,7 +772,7 @@ async def _poll_config() -> None:
 
                 # Legacy paper_trade bool override (kept for backward compat)
                 override_pt = await _redis_store.get_paper_trade_override()
-                if override_pt is not None and settings.PAPER_TRADE != override_pt:
+                if override_pt is not None and override_pt != settings.PAPER_TRADE:
                     settings.PAPER_TRADE = override_pt  # type: ignore[assignment]
 
                 # Push heartbeat telemetry — but NEVER clobber auth failure states
@@ -791,13 +793,13 @@ async def _poll_config() -> None:
                             "paper_trade": settings.is_paper_trade,
                             **_coordinator.get_stats(),
                         })
-            
+
             try:
                 from engine.core.metrics import metrics_registry
                 await metrics_registry.flush_latencies()
             except Exception as exc:
                 log.warning("metrics_flush_error", error=str(exc))
-                
+
         except asyncio.CancelledError:
             raise  # propagate cancellation from shutdown()
         except Exception as exc:
@@ -929,7 +931,7 @@ async def main() -> None:
 
     _scheduler.start()
     log.info("scheduler_started", jobs=[j.id for j in _scheduler.get_jobs()])
-    
+
     # ── Background Tasks ──────────────────────────────────────────────────────
     global _poll_config_task
     _poll_config_task = asyncio.create_task(_poll_config(), name="poll_config")
@@ -987,10 +989,8 @@ async def main() -> None:
     except (NotImplementedError, OSError):
         # Windows: fall back to synchronous signal handlers
         signal.signal(signal.SIGINT, _handle_signal)
-        try:
+        with contextlib.suppress(OSError, ValueError):
             signal.signal(signal.SIGTERM, _handle_signal)
-        except (OSError, ValueError):
-            pass
         log.debug("signal_handlers_registered", method="signal.signal", platform="windows")
 
     # ── Main Control Loop ─────────────────────────────────────────────────────

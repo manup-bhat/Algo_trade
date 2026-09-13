@@ -38,12 +38,11 @@ Node families (determined by dot-prefix of the type key):
 
 from __future__ import annotations
 
-import asyncio
 from collections import defaultdict, deque
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from engine.core.node_type_registry import node_type_registry
@@ -101,7 +100,7 @@ def _topological_sort(nodes: list[dict]) -> list[str] | None:
     """
     # Build adjacency + in-degree maps
     ids = {n["id"] for n in nodes}
-    in_degree: dict[str, int] = {nid: 0 for nid in ids}
+    in_degree: dict[str, int] = dict.fromkeys(ids, 0)
     adj: dict[str, list[str]] = defaultdict(list)
 
     for node in nodes:
@@ -379,7 +378,8 @@ async def backtest_graph(body: BacktestRequest) -> BacktestResponse:
 
         # Deterministic synthetic metrics — proportional to node complexity
         # and lookback window; stable for the same graph + lookback.
-        import hashlib, json as _json
+        import hashlib
+        import json as _json
         graph_hash = int(
             hashlib.sha256(
                 _json.dumps(graph_dict, sort_keys=True).encode()
@@ -455,11 +455,12 @@ async def save_strategy(body: SaveRequest) -> SaveResponse:
         )
 
     try:
-        from app.store.database import AsyncSessionLocal
-        from app.models.db.strategy_manifest import StrategyManifest
-        from sqlalchemy import select
-        from sqlalchemy.ext.asyncio import AsyncSession
         import datetime
+
+        from sqlalchemy import select
+
+        from app.models.db.strategy_manifest import StrategyManifest
+        from app.store.database import AsyncSessionLocal
 
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -468,7 +469,7 @@ async def save_strategy(body: SaveRequest) -> SaveResponse:
                 )
             )
             existing: StrategyManifest | None = result.scalar_one_or_none()
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
 
             if existing is not None:
                 new_version = existing.version + 1

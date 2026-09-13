@@ -39,7 +39,7 @@ async def main():
     print(f"livetick keys: {len(keys)}")
     if keys:
         vals = await r.mget(keys[:5])
-        for k, v in zip(keys[:5], vals):
+        for k, v in zip(keys[:5], vals, strict=False):
             print(f"  {k}: {v}")
 
     print()
@@ -48,7 +48,7 @@ async def main():
     print(f"ltp keys: {len(ltp_keys)}")
     if ltp_keys:
         vals = await r.mget(ltp_keys[:5])
-        for k, v in zip(ltp_keys[:5], vals):
+        for k, v in zip(ltp_keys[:5], vals, strict=False):
             print(f"  {k}: {v}")
 
     print()

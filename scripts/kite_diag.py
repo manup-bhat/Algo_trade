@@ -1,12 +1,13 @@
-import asyncio
 import json
 import sys
 
 sys.path.insert(0, ".")
+from datetime import datetime
+
+import pytz
+
 from app.core.config import settings
 from engine.kite.auth import load_token_from_file, validate_token
-from datetime import datetime
-import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -29,6 +30,7 @@ token = data.get("access_token", "")
 print(f"Token preview: {token[:8]}...")
 
 from kiteconnect import KiteConnect
+
 kite = KiteConnect(api_key=settings.KITE_API_KEY)
 print()
 print("Testing validate_token...")

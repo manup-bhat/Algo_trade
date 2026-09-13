@@ -14,22 +14,19 @@ Coverage:
 
 from __future__ import annotations
 
-import pytest
-from collections import defaultdict
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from httpx import AsyncClient, ASGITransport
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.api.builder_router import (
-    router,
-    _topological_sort,
-    _node_family,
     _categorised_palette,
+    _node_family,
+    _topological_sort,
     _validate_graph_structure,
-    IRGraph,
+    router,
 )
 from engine.core.node_type_registry import node_type_registry
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -516,7 +513,6 @@ class TestSaveEndpoint:
         )
 
         # Patch the DB imports inside the endpoint
-        import app.api.builder_router as builder_module
 
         with (
             patch("app.store.database.AsyncSessionLocal", mock_session_factory),

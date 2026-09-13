@@ -11,7 +11,6 @@ from pydantic import ValidationError
 
 from engine.agent.ir_mutation import AgentIRMutation, IREdge, IRNode, IRNodePatch
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _minimal_mutation(**kwargs) -> dict:

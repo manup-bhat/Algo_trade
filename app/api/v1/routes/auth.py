@@ -98,6 +98,7 @@ async def login_redirect():
     the user-gesture context, causing it to be silently blocked.
     """
     from fastapi.responses import RedirectResponse
+
     from app.core.config import settings
 
     login_url = (

@@ -8,8 +8,8 @@ DO NOT add logic here.
 # DEPRECATED SHIM — import from engine.strategies.ivbs.second_spike_detector directly
 from engine.strategies.ivbs.second_spike_detector import (  # noqa: F401
     PriorSpikeRecord,
-    SecondSpikeEntry,
     SecondSpikeDetector,
+    SecondSpikeEntry,
 )
 
 __all__ = ["PriorSpikeRecord", "SecondSpikeEntry", "SecondSpikeDetector"]

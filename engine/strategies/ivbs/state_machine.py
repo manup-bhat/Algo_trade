@@ -15,6 +15,7 @@ All four bugs have mandatory unit test regression coverage in test_state_machine
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import enum
 import statistics
@@ -29,11 +30,11 @@ from engine.strategies.ivbs.ivbs_config import cfg
 from engine.strategies.ivbs.scanner import ImpactCandle
 
 if TYPE_CHECKING:
-    from engine.store.redis_store import RedisStore
-    from engine.store.db_writer import DbWriter
+    from engine.orders.fill_timeout import FillTimeoutManager
     from engine.orders.order_service import OrderService
     from engine.orders.order_tracker import OrderTracker
-    from engine.orders.fill_timeout import FillTimeoutManager
+    from engine.store.db_writer import DbWriter
+    from engine.store.redis_store import RedisStore
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -43,7 +44,7 @@ IST_TZ = pytz.timezone("Asia/Kolkata")
 # State Enum
 # ─────────────────────────────────────────────────────────────────────────────
 
-class StrategyState(str, enum.Enum):
+class StrategyState(enum.StrEnum):
     IDLE = "IDLE"
     SCAN_HIT = "SCAN_HIT"
     MONITORING = "MONITORING"
@@ -178,11 +179,11 @@ class SymbolStateMachine:
         self,
         symbol: str,
         instrument_token: int,
-        redis_store: "RedisStore",
-        db_writer: "DbWriter",
-        order_service: "OrderService | None" = None,
-        order_tracker: "OrderTracker | None" = None,
-        fill_timeout_manager: "FillTimeoutManager | None" = None,
+        redis_store: RedisStore,
+        db_writer: DbWriter,
+        order_service: OrderService | None = None,
+        order_tracker: OrderTracker | None = None,
+        fill_timeout_manager: FillTimeoutManager | None = None,
         is_second_spike: bool = False,
         strategy_id: str = "ivbs",
     ) -> None:
@@ -265,7 +266,7 @@ class SymbolStateMachine:
                 volume_spike_multiple=impact_candle.spike_multiple,
                 strategy_id=self.strategy_id,
             )
-            
+
             # Log the impact snapshot
             await self._db.write_signal_snapshot(
                 signal_id=self._signal_id,
@@ -625,8 +626,8 @@ class SymbolStateMachine:
         risk_amount = round(risk_per_share * quantity, 2)
 
         # Run all 9 pre-trade checks before placing order (spec §8.4)
-        from engine.risk.pre_trade_checks import pre_trade_checks
         from engine.kite.client import AsyncKiteClient
+        from engine.risk.pre_trade_checks import pre_trade_checks
 
         # Lazy get builder — coordinator stores it; SM accesses via _candle_builder
         builder = getattr(self, "_candle_builder", None)
@@ -1148,10 +1149,8 @@ class SymbolStateMachine:
 
         # Update unrealized P&L in Redis for dashboard
         unrealized = (ltp - pos.entry_price) * pos.quantity
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.update_unrealized_pnl(self.symbol, unrealized)
-        except Exception:
-            pass
 
         # Track MAE/MFE
         if pos.max_favorable_excursion is None or unrealized > pos.max_favorable_excursion:
@@ -1260,10 +1259,8 @@ class SymbolStateMachine:
                         )
                         if not ok:
                             log.warning("sl_chandelier_modify_failed", symbol=self.symbol)
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._redis.set_position(self.symbol, pos.to_dict())
-                    except Exception:
-                        pass
 
         if ltp >= pos.target_1r4 and not pos._exit_initiated:
             log.info(
@@ -1305,10 +1302,8 @@ class SymbolStateMachine:
         elif self.state == StrategyState.ACTION_PENDING_APPROVAL:
             # At EOD, auto-reject any trade still waiting for approval
             log.info("squareoff_approval_pending_auto_rejected", symbol=self.symbol)
-            try:
+            with contextlib.suppress(Exception):
                 await self._redis.remove_pending_approval(self.symbol)
-            except Exception:
-                pass
             self.state = StrategyState.CLOSED
             self._abandonment_reason = "session_end_time"
             await self._persist_state()
@@ -1475,10 +1470,8 @@ class SymbolStateMachine:
                 log.error("trade_close_db_failed", symbol=self.symbol, error=str(exc))
 
         # Update daily P&L in Redis
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.increment_daily_pnl(net_pnl)
-        except Exception:
-            pass
 
         # Release blocked margin for this position.
         if pos.margin_blocked > 0:
@@ -1495,13 +1488,11 @@ class SymbolStateMachine:
                 )
 
         # Clear position from Redis
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.clear_position(self.symbol)
-        except Exception:
-            pass
 
         # Publish trade closed event
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.publish_state_change({
                 "event": "trade_closed",
                 "symbol": self.symbol,
@@ -1509,8 +1500,6 @@ class SymbolStateMachine:
                 "exit_price": exit_price,
                 "net_pnl": net_pnl,
             })
-        except Exception:
-            pass
 
         self.position = None
         self.state = StrategyState.CLOSED
@@ -1570,15 +1559,13 @@ class SymbolStateMachine:
             except Exception as exc:
                 log.warning("signal_abandon_update_failed", error=str(exc))
 
-        # Publish abandonment event  
-        try:
+        # Publish abandonment event
+        with contextlib.suppress(Exception):
             await self._redis.publish_state_change({
                 "event": "setup_abandoned",
                 "symbol": self.symbol,
                 "reason": reason,
             })
-        except Exception:
-            pass
 
         await self._persist_state()
 

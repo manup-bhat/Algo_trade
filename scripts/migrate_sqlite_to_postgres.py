@@ -25,7 +25,6 @@ if str(ROOT_DIR) not in sys.path:
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models.db.base import Base
 from app.models.db import (  # noqa: F401
     daily_pnl,
     order_event,
@@ -34,6 +33,7 @@ from app.models.db import (  # noqa: F401
     strategy,
     trade,
 )
+from app.models.db.base import Base
 
 TABLE_ORDER = [
     "strategies",

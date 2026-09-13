@@ -256,6 +256,7 @@ class AbandonedSetupTracker:
 
         # Log snapshot for this re-entry trigger
         import asyncio
+
         from engine.store.db_writer import DbWriter
         asyncio.create_task(
             DbWriter().write_signal_snapshot(

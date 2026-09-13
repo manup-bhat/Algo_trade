@@ -14,14 +14,12 @@ All 6 filters tested at exact boundaries (spec §16.1):
 from __future__ import annotations
 
 import datetime
-from collections import deque
 from unittest.mock import MagicMock
 
-import pytest
 import pytz
 
 from engine.market.candle_builder import Candle
-from engine.strategy.scanner import evaluate, ImpactCandle
+from engine.strategy.scanner import ImpactCandle, evaluate
 
 IST_TZ = pytz.timezone("Asia/Kolkata")
 
@@ -81,14 +79,14 @@ BASE_OPEN = 498.0    # close/open = 500/498 > 0.995 (passes sell dump filter)
 
 def base_passing_candle(**overrides) -> Candle:
     """A candle that passes all 6 filters with default values."""
-    defaults = dict(
-        open_=BASE_OPEN,
-        high=510.0,
-        low=495.0,
-        close=BASE_CLOSE,
-        volume=BASE_VOLUME,
-        turnover=BASE_CLOSE * BASE_VOLUME,  # = 1e8 = 10 Cr
-    )
+    defaults = {
+        "open_": BASE_OPEN,
+        "high": 510.0,
+        "low": 495.0,
+        "close": BASE_CLOSE,
+        "volume": BASE_VOLUME,
+        "turnover": BASE_CLOSE * BASE_VOLUME,  # = 1e8 = 10 Cr
+    }
     defaults.update(overrides)
     return make_candle(**defaults)
 
@@ -144,7 +142,7 @@ class TestTurnoverFilter:
         close = 500.0
         volume = int(turnover / close)  # 160_000 shares
         # SMA for 20x: volume / 20
-        sma = volume / 20 - 1  # just above 20x
+        volume / 20 - 1  # just above 20x
         candle = base_passing_candle(close=close, volume=volume, turnover=float(turnover))
         builder = make_builder(sma_value=float(volume / 20))  # exactly 20x
         result = evaluate(candle, builder)

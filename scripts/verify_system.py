@@ -1,7 +1,9 @@
 import asyncio
-import sys
 import json
+import sys
+
 import httpx
+
 sys.path.insert(0, ".")
 
 from app.store.redis_client import get_redis

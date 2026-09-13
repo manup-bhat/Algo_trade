@@ -26,8 +26,9 @@ REST endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,6 @@ import pytz
 import structlog
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import create_async_engine
 
 log = structlog.get_logger(__name__)
 IST_TZ = pytz.timezone("Asia/Kolkata")
@@ -122,7 +122,7 @@ def _is_recent_status(status_payload: dict[str, Any], max_age_seconds: int = 30)
         if parsed.tzinfo is None:
             parsed = IST_TZ.localize(parsed)
         return (
-            datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)
+            datetime.now(UTC) - parsed.astimezone(UTC)
         ) <= timedelta(seconds=max_age_seconds)
     except Exception:
         return False
@@ -346,11 +346,12 @@ async def get_positions(strategy_id: str | None = None):
 
 @router.post("/positions/{symbol}/exit")
 async def manual_exit_position(symbol: str):
-    import time, json
+    import json
+    import time
     rs = _rs()
     if not rs:
         return {"status": "error", "message": "Redis store unavailable"}
-    
+
     # Publish to alerts or a specific commands channel
     # Usually we can publish to pub:commands, let's just use pub:alerts for now or directly use _r
     try:
@@ -364,11 +365,12 @@ async def manual_exit_position(symbol: str):
 
 @router.post("/positions/exit_all")
 async def manual_exit_all_positions():
-    import time, json
+    import json
+    import time
     rs = _rs()
     if not rs:
         return {"status": "error", "message": "Redis store unavailable"}
-    
+
     try:
         payload = {"type": "manual_exit", "symbol": "ALL", "timestamp": time.time(), "source": "dashboard"}
         await rs._r.publish("pub:commands", json.dumps(payload))
@@ -565,6 +567,7 @@ def _compute_rich_analytics(
     Pure — unit-tested independently of the DB.
     """
     import statistics
+
     from engine.backtest.metrics import compute_metrics
 
     pnls = [float(r.get("net_pnl") or 0.0) for r in rows]
@@ -589,10 +592,7 @@ def _compute_rich_analytics(
     gross_loss = abs(sum(losses_list))
     gross_profit = sum(wins_list)
 
-    if gross_loss > 0:
-        profit_factor = round(gross_profit / gross_loss, 2)
-    else:
-        profit_factor = None
+    profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else None
 
     avg_win = round(gross_profit / len(wins_list), 2) if wins_list else 0.0
     avg_loss = round(gross_loss / len(losses_list), 2) if losses_list else 0.0
@@ -831,7 +831,7 @@ async def get_analytics(
         params: dict[str, Any] = {}
 
         if lookback_days > 0:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+            cutoff = datetime.now(UTC) - timedelta(days=lookback_days)
             # Compare using ISO datetime string for database-agnostic compatibility
             where.append("entry_time >= :cutoff")
             params["cutoff"] = cutoff.strftime("%Y-%m-%d %H:%M:%S")
@@ -964,27 +964,27 @@ async def get_strategies():
 # ── /strategies/{id}/config ──
 @router.get("/strategies/{strategy_id}/drift")
 async def get_strategy_drift(strategy_id: str):
+    from app.store.database import get_async_session
     from engine.analytics.analytics_service import AnalyticsService
     from engine.analytics.drift_monitor import DriftMonitor
-    from app.store.database import get_async_session
-    
+
     analytics = AnalyticsService(get_async_session)
     monitor = DriftMonitor(analytics)
-    
+
     # Try to load baseline from yaml or assume empty for now.
     config_path = Path(__file__).resolve().parents[2] / "engine" / "strategies" / strategy_id / "config.yaml"
     baseline = {}
     if config_path.exists():
         try:
             import yaml
-            with open(config_path, "r") as f:
+            with open(config_path) as f:
                 conf = yaml.safe_load(f) or {}
             baseline = conf.get("baseline", {})
         except Exception:
             pass
 
     return await monitor.check_drift(
-        strategy_id, 
+        strategy_id,
         baseline_win_rate=baseline.get("min_win_rate_pct", 50.0),
         min_win_rate=baseline.get("absolute_min_win_rate")
     )
@@ -995,10 +995,11 @@ async def retire_strategy(strategy_id: str):
     """
     Retire a strategy (soft delete). Updates enabled flag in DB or config.
     """
-    from app.store.database import get_async_session
+    from sqlalchemy import update
+
     from app.models.db.strategy import Strategy
-    from sqlalchemy import select, update
-    
+    from app.store.database import get_async_session
+
     try:
         async with get_async_session() as session:
             await session.execute(
@@ -1009,7 +1010,7 @@ async def retire_strategy(strategy_id: str):
             await session.commit()
     except Exception as exc:
         log.error("failed_to_retire_strategy_db", error=str(exc))
-        
+
     return {"status": "success", "strategy_id": strategy_id, "enabled": False}
 
 # ── /strategies/{id}/config ───────────────────────────────────────────────────────
@@ -1129,10 +1130,8 @@ async def update_strategy_config(strategy_id: str, payload: StrategyConfigUpdate
     # Trigger engine reinit via Redis if requested
     rs = _rs()
     if rs is not None and payload.reload_engine:
-        try:
+        with contextlib.suppress(Exception):
             await rs.set_reinit_trigger()
-        except Exception:
-            pass
 
     await broadcast({
         "event": "strategy_config_updated",
@@ -1897,7 +1896,6 @@ async def add_universe_symbols(payload: UniverseSymbolsPayload):
       6. Kick off historical SMA warmup for new symbols (background task).
     """
     from app.core.config import settings
-    from engine.kite.instruments import instrument_cache
     from engine.market.universe import load_universe
 
     if not payload.symbols:
@@ -1958,8 +1956,8 @@ async def add_universe_symbols(payload: UniverseSymbolsPayload):
             ticker.subscribe(new_tokens)
             ticker.set_mode("quote", new_tokens)
             # Also register in coordinator's token maps so ticks are routed
-            from engine.market.candle_builder import CandleBuilder
             from app.core.config import settings as _s
+            from engine.market.candle_builder import CandleBuilder
             for sym in added:
                 info = instr_map.get(sym)
                 if info is None:
@@ -2010,7 +2008,7 @@ async def add_universe_symbols(payload: UniverseSymbolsPayload):
                 warmup_from_historical(
                     coordinator, kite_client, redis_store=redis_store, symbols_subset=added
                 ),
-                name=f"sma_warmup_new_symbols",
+                name="sma_warmup_new_symbols",
             )
             log.info("universe_sma_warmup_triggered", symbols=added)
     except Exception as exc:
@@ -2043,7 +2041,6 @@ async def remove_universe_symbols(payload: UniverseSymbolsPayload):
       4. Broadcast universe_updated event.
     """
     from app.core.config import settings
-    from engine.kite.instruments import instrument_cache
 
     if not payload.symbols:
         raise HTTPException(status_code=400, detail="No symbols provided")
@@ -2319,7 +2316,6 @@ async def get_pipeline():
         updated_at = state_data.get("_updated_at") or state_data.get("impact_candle_time")
         if updated_at:
             try:
-                from datetime import date
                 state_date = str(updated_at)[:10]   # "YYYY-MM-DD"
                 if state_date != today:
                     continue
@@ -2522,10 +2518,8 @@ async def get_symbol_candles(symbol: str, limit: int = 60):
     consolidation: dict = {}
 
     if rs is not None:
-        try:
+        with contextlib.suppress(Exception):
             candles = await rs.get_recent_candles(sym, limit=max(1, min(limit, 420)))
-        except Exception:
-            pass
         try:
             state_raw = await rs.get_strategy_state(sym)
             if state_raw:
@@ -2534,10 +2528,8 @@ async def get_symbol_candles(symbol: str, limit: int = 60):
                 consolidation = state_raw.get("consolidation") or {}
         except Exception:
             pass
-        try:
+        with contextlib.suppress(Exception):
             ltp = await rs.get_last_ltp(sym)
-        except Exception:
-            pass
 
     # Compute chart overlay levels from strategy state
     breakout_level: float | None = (
@@ -2602,8 +2594,9 @@ async def get_journal():
 @router.get("/export/snapshots")
 async def export_snapshots(start_date: str | None = None, end_date: str | None = None):
     from sqlalchemy import select
-    from app.models.db.signal_snapshot import SignalSnapshot
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.db.signal_snapshot import SignalSnapshot
 
     try:
         engine = _get_db_engine()
@@ -2611,10 +2604,10 @@ async def export_snapshots(start_date: str | None = None, end_date: str | None =
 
         try:
             if start_date:
-                sd = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                sd = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=UTC)
                 query = query.where(SignalSnapshot.snapshot_time >= sd)
             if end_date:
-                ed = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+                ed = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=UTC) + timedelta(days=1)
                 query = query.where(SignalSnapshot.snapshot_time < ed)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
@@ -2757,7 +2750,6 @@ async def websocket_endpoint(ws: WebSocket):
             return
         _err_since: float | None = None
         import time as _time
-        from datetime import timezone as _tz
         while True:
             try:
                 await asyncio.sleep(0.5)  # 500ms
@@ -2780,7 +2772,7 @@ async def websocket_endpoint(ws: WebSocket):
                         if last_dt.tzinfo is None:
                             import pytz as _pytz
                             last_dt = _pytz.utc.localize(last_dt)
-                        now_utc = __import__('datetime').datetime.now(_tz.utc)
+                        now_utc = __import__('datetime').datetime.now(UTC)
                         age_sec = (now_utc - last_dt).total_seconds()
                         is_stale = age_sec > 60
                     except Exception:
@@ -2800,14 +2792,12 @@ async def websocket_endpoint(ws: WebSocket):
                 if _err_since is None:
                     _err_since = now
                 elif now - _err_since > 10:
-                    try:
+                    with contextlib.suppress(Exception):
                         await _send({
                             "event": "feed_error",
                             "reason": "Redis unreachable — live ticks paused",
                             "error": str(exc),
                         })
-                    except Exception:
-                        pass
                     _err_since = now  # reset so we don't spam
 
 
@@ -2922,9 +2912,10 @@ async def get_ui_panels(
     # ── 2. Active panels from strategy manifests ──────────────────────────────
     active_panels: list[dict[str, Any]] = []
     try:
-        from app.store.database import AsyncSessionLocal
-        from app.models.db.strategy_manifest import StrategyManifest
         from sqlalchemy import select
+
+        from app.models.db.strategy_manifest import StrategyManifest
+        from app.store.database import AsyncSessionLocal
 
         async with AsyncSessionLocal() as session:
             q = select(StrategyManifest)
@@ -2993,7 +2984,7 @@ async def post_kill_switch():
         from engine.orders.eod_squareoff_service import eod_squareoff_service
         # eod_squareoff_service is a singleton wired in runner.py
         await eod_squareoff_service.emergency_squareoff()
-        
+
         rs = _rs()
         if rs:
             await rs.set_engine_status({
@@ -3001,7 +2992,7 @@ async def post_kill_switch():
                 "timestamp": now_ist().isoformat(),
             })
             await rs.set_engine_control("") # Clear control flag just in case
-            
+
         return {"status": "success", "message": "Kill switch activated. All positions closed."}
     except Exception as exc:
         log.critical("kill_switch_failed", error=str(exc))

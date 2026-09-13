@@ -24,7 +24,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 import structlog
 
@@ -32,7 +32,7 @@ T = TypeVar("T")
 log = structlog.get_logger(__name__)
 
 
-class Registry(Generic[T]):
+class Registry[T]:
     """
     Thread-safe-by-asyncio (single event loop) generic registry.
 

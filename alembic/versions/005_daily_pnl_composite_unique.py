@@ -19,7 +19,6 @@ the table) to drop and recreate with the new constraint.
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
 
 revision = "005"
 down_revision = "004"

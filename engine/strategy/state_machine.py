@@ -7,9 +7,9 @@ DO NOT add logic here.
 """
 # DEPRECATED SHIM — import from engine.strategies.ivbs.state_machine directly
 from engine.strategies.ivbs.state_machine import (  # noqa: F401
-    StrategyState,
     ConsolidationData,
     OpenPosition,
+    StrategyState,
     SymbolStateMachine,
 )
 

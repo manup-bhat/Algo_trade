@@ -24,11 +24,11 @@ Note: On Windows, port 80 may require running as Administrator.
 from __future__ import annotations
 
 import http.server
-import urllib.parse
-import sys
-
 import os
 import re
+import sys
+import urllib.parse
+
 
 def _read_env_port(default: int = 8000) -> int:
     """Read API_PORT from .env file without importing pydantic (no deps)."""
@@ -82,8 +82,8 @@ class KiteRedirectHandler(http.server.BaseHTTPRequestHandler):
         # Only redirect if it looks like a Kite callback (has request_token or status)
         params = urllib.parse.parse_qs(query)
         has_token = "request_token" in params
-        is_login  = params.get("action", [None])[0] == "login"
-        is_failed = params.get("status", [None])[0] != "success"
+        params.get("action", [None])[0] == "login"
+        params.get("status", [None])[0] != "success"
 
         # Always redirect everything to FastAPI's auth callback
         redirect_to = f"http://{TARGET_HOST}:{TARGET_PORT}{TARGET_PATH}?{query}"

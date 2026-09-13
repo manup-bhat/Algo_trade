@@ -21,15 +21,15 @@ from engine.risk.rules.freeze_quantity_rule import FreezeQuantityRule
 
 
 def _make_ctx(**kw) -> OrderContext:
-    defaults = dict(
-        symbol="RELIANCE",
-        strategy_id="test",
-        limit_price=500.0,
-        stop_loss=460.0,
-        is_paper_trade=True,
-        is_backtest=False,
-        computed_quantity=1,
-    )
+    defaults = {
+        "symbol": "RELIANCE",
+        "strategy_id": "test",
+        "limit_price": 500.0,
+        "stop_loss": 460.0,
+        "is_paper_trade": True,
+        "is_backtest": False,
+        "computed_quantity": 1,
+    }
     defaults.update(kw)
     return OrderContext(**defaults)
 

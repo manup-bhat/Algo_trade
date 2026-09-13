@@ -12,19 +12,20 @@ Phase 4 additions over Phase 2:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 from typing import TYPE_CHECKING, Any
 
 import pytz
 import structlog
 
-from engine.market.candle_builder import CandleBuilder, Candle
-from engine.strategy import scanner
-from engine.strategy.state_machine import SymbolStateMachine, StrategyState
-from engine.core.strategy_router import StrategyRouter
-from engine.strategies.ivbs.strategy import IVBSStrategy
-from engine.store import sma_file_store
 from app.core.config import settings
+from engine.core.strategy_router import StrategyRouter
+from engine.market.candle_builder import Candle, CandleBuilder
+from engine.store import sma_file_store
+from engine.strategies.ivbs.strategy import IVBSStrategy
+from engine.strategy import scanner
+from engine.strategy.state_machine import StrategyState, SymbolStateMachine
 
 if TYPE_CHECKING:
     from engine.kite.client import AsyncKiteClient
@@ -56,9 +57,9 @@ class Coordinator:
 
     def __init__(
         self,
-        redis_store: "RedisStore",
-        db_writer: "DbWriter",
-        strategy_router: "StrategyRouter | None" = None,
+        redis_store: RedisStore,
+        db_writer: DbWriter,
+        strategy_router: StrategyRouter | None = None,
     ) -> None:
         self._redis = redis_store
         self._db = db_writer
@@ -81,10 +82,10 @@ class Coordinator:
         self._vix_ltp: float | None = None       # latest India VIX tick
 
         # Wired via inject_dependencies()
-        self._order_service: "OrderService | None" = None
-        self._order_tracker: "OrderTracker | None" = None
-        self._fill_timeout: "FillTimeoutManager | None" = None
-        self._kite: "AsyncKiteClient | None" = None
+        self._order_service: OrderService | None = None
+        self._order_tracker: OrderTracker | None = None
+        self._fill_timeout: FillTimeoutManager | None = None
+        self._kite: AsyncKiteClient | None = None
 
         # ── Strategy plugins ────────────────────────────────────────
         # The coordinator is a pure data router; strategy decisions live in
@@ -119,10 +120,10 @@ class Coordinator:
 
     def inject_dependencies(
         self,
-        order_service: "OrderService",
-        order_tracker: "OrderTracker",
-        fill_timeout_manager: "FillTimeoutManager",
-        kite: "AsyncKiteClient | None" = None,
+        order_service: OrderService,
+        order_tracker: OrderTracker,
+        fill_timeout_manager: FillTimeoutManager,
+        kite: AsyncKiteClient | None = None,
     ) -> None:
         """
         Wire live-mode dependencies into the coordinator.
@@ -375,7 +376,7 @@ class Coordinator:
         """
         import time
         start_time = time.time()
-        
+
         self._tick_count += len(ticks)
 
         # Accumulate (symbol, data) for a single pipeline flush at the end.
@@ -471,11 +472,9 @@ class Coordinator:
                 pass  # Redis blip — dashboard will catch up on next tick batch
         else:
             # No symbols this batch — still update the staleness timestamp
-            try:
+            with contextlib.suppress(Exception):
                 await self._redis.set_last_tick_at(now_iso)
-            except Exception:
-                pass
-                
+
         process_time_ms = (time.time() - start_time) * 1000
         from engine.core.metrics import metrics_registry
         metrics_registry.observe_latency("tick_processing", process_time_ms)
@@ -526,10 +525,8 @@ class Coordinator:
                 "candle_count": con.candle_count,
                 "volume_readings": con.volume_readings,
             })
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.publish_monitoring_tick(payload)
-        except Exception:
-            pass
 
     async def _publish_candle_close(
         self,
@@ -561,10 +558,8 @@ class Coordinator:
                 "candle_count": sm.consolidation.candle_count,
                 "volume_readings": sm.consolidation.volume_readings,
             })
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.publish_candle_close(payload)
-        except Exception:
-            pass
 
     async def _on_candle_complete(self, symbol: str, candle: Candle) -> None:
         """
@@ -573,20 +568,16 @@ class Coordinator:
         candle close (with any active-SM overlay) for the dashboard.
         """
         # Engine-level: persist last LTP + recent candle for dashboard/entry logic.
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.set_last_ltp(symbol, candle.close)
-        except Exception:
-            pass
 
         builder = self.candle_builders.get(symbol)
-        try:
+        with contextlib.suppress(Exception):
             await self._redis.append_recent_candle(
                 symbol,
                 candle,
                 volume_sma_500=builder.volume_sma if builder else None,
             )
-        except Exception:
-            pass
 
         instrument_token = self.symbol_to_token.get(symbol, 0)
 
@@ -661,7 +652,7 @@ class Coordinator:
 
     # ── Orphan Detection (spec §12.1) ────────────────────────────────────────
 
-    async def orphan_check(self, kite: "AsyncKiteClient") -> None:
+    async def orphan_check(self, kite: AsyncKiteClient) -> None:
         """
         Run after authentication, before market open.
         Detects stale positions from prior crashes and closes them.
@@ -672,7 +663,7 @@ class Coordinator:
         log.info("orphan_check_start")
         try:
             positions_resp = await kite.positions()
-            day_positions: list[dict] = positions_resp.get("day", [])
+            positions_resp.get("day", [])
             net_positions: list[dict] = positions_resp.get("net", [])
 
             # Build set of symbols with non-zero NSE quantity
@@ -697,7 +688,7 @@ class Coordinator:
                             sym, abs(qty), reason="orphan_close"
                         )
                     # Write to DB
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._db.write_order_event(
                             order_id=f"ORPHAN_{sym}",
                             symbol=sym,
@@ -706,8 +697,6 @@ class Coordinator:
                             status="ORPHAN",
                             raw_payload={"qty": qty},
                         )
-                    except Exception:
-                        pass
 
             # Check for ghost: Redis MANAGING but no Kite open position
             redis_states = await self._redis.get_all_strategy_states()
@@ -758,7 +747,7 @@ class Coordinator:
 
     # ── 5-Minute Reconciliation (spec §12.2) ────────────────────────────────
 
-    async def reconcile_orders(self, kite: "AsyncKiteClient") -> None:
+    async def reconcile_orders(self, kite: AsyncKiteClient) -> None:
         """
         Called every 5 minutes during market hours.
         Detects missed WS postbacks and routes them to the correct SM.

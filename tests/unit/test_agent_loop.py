@@ -6,18 +6,17 @@ session. AgentLoopService methods are all synchronous — no async needed.
 """
 from __future__ import annotations
 
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.db.base import Base
 from app.models.db.agent_proposal import AgentProposal, ProposalStatus
+from app.models.db.base import Base
 from app.models.db.strategy_manifest import StrategyManifest
-from engine.agent.agent_loop import AgentLoopService, _validate_graph, _kahn_topo
-from engine.agent.ir_mutation import AgentIRMutation, IRNode
-
+from engine.agent.agent_loop import AgentLoopService, _kahn_topo, _validate_graph
+from engine.agent.ir_mutation import AgentIRMutation
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

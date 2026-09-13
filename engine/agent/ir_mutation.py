@@ -21,7 +21,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 # ── Sub-models ────────────────────────────────────────────────────────────────
 
 class IRNode(BaseModel):
@@ -127,7 +126,7 @@ class AgentIRMutation(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _at_least_one_change(self) -> "AgentIRMutation":
+    def _at_least_one_change(self) -> AgentIRMutation:
         """Reject empty mutations — at least one list must be non-empty."""
         if not any([
             self.nodes_add,

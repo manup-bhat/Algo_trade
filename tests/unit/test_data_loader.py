@@ -7,8 +7,8 @@ import datetime
 import pytest
 import pytz
 
-from engine.market.candle_builder import Candle
 from engine.backtest.data_loader import load_candles_csv, run_ivbs_backtest
+from engine.market.candle_builder import Candle
 
 IST = pytz.timezone("Asia/Kolkata")
 

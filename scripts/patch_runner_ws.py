@@ -1,5 +1,6 @@
 """Patch runner.py: fix subscribe-before-connect WS crash."""
-import pathlib, sys
+import pathlib
+import sys
 
 path = pathlib.Path("engine/runner.py")
 content = path.read_text(encoding="utf-8")

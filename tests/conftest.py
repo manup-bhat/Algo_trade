@@ -36,7 +36,7 @@ def paper_trade_mode(monkeypatch):
     Ensure settings.is_paper_trade is True for every test.
     Patches both the field and the lru_cache'd property.
     """
-    from app.core.config import get_settings, settings
+    from app.core.config import settings
     monkeypatch.setattr(settings, "PAPER_TRADE", True)
     yield
 

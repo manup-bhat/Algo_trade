@@ -49,8 +49,8 @@ class BaseStrategy(ABC):
     def __init__(
         self,
         strategy_id: str,
-        redis_store: "RedisStore",
-        db_writer: "DbWriter",
+        redis_store: RedisStore,
+        db_writer: DbWriter,
     ) -> None:
         self.strategy_id = strategy_id
         self._redis = redis_store
@@ -59,10 +59,10 @@ class BaseStrategy(ABC):
         self.config: dict[str, Any] = load_strategy_config(strategy_id)
 
         # Wired later by inject_execution() (after auth). None in warmup/paper-only.
-        self._order_service: "OrderService | None" = None
-        self._order_tracker: "OrderTracker | None" = None
-        self._fill_timeout: "FillTimeoutManager | None" = None
-        self._kite: "AsyncKiteClient | None" = None
+        self._order_service: OrderService | None = None
+        self._order_tracker: OrderTracker | None = None
+        self._fill_timeout: FillTimeoutManager | None = None
+        self._kite: AsyncKiteClient | None = None
 
         # STOP/START gate for fresh entries (managing existing positions continues).
         self._accept_new_entries: bool = True
@@ -71,10 +71,10 @@ class BaseStrategy(ABC):
 
     def inject_execution(
         self,
-        order_service: "OrderService",
-        order_tracker: "OrderTracker",
-        fill_timeout_manager: "FillTimeoutManager",
-        kite: "AsyncKiteClient | None" = None,
+        order_service: OrderService,
+        order_tracker: OrderTracker,
+        fill_timeout_manager: FillTimeoutManager,
+        kite: AsyncKiteClient | None = None,
     ) -> None:
         """Wire live-execution dependencies. Called once after auth succeeds."""
         self._order_service = order_service
@@ -101,8 +101,8 @@ class BaseStrategy(ABC):
     async def on_candle(
         self,
         symbol: str,
-        candle: "Candle",
-        builder: "CandleBuilder",
+        candle: Candle,
+        builder: CandleBuilder,
         instrument_token: int,
     ) -> None:
         """Called for every completed 1-minute candle for every universe symbol."""
@@ -140,7 +140,7 @@ class BaseStrategy(ABC):
         self,
         symbol: str,
         ltp: float,
-        exchange_ts: "datetime.datetime",
+        exchange_ts: datetime.datetime,
     ) -> None:
         """Per-tick hook for active (MANAGING) symbols only. Default: no-op."""
         return None

@@ -18,12 +18,11 @@ import pytest
 from engine.core.capability_registry import MarketContext
 from engine.market.capabilities.greeks_provider import (
     GreeksProvider,
-    _bs_price,
     _bs_greeks,
+    _bs_price,
     _implied_volatility,
     _norm_cdf,
 )
-
 
 # ── Low-level function tests ──────────────────────────────────────────────────
 

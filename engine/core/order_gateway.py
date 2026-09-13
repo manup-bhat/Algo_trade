@@ -16,24 +16,24 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from engine.core.instrument import Instrument, Product
 
 
-class OrderSide(str, Enum):
+class OrderSide(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     SL = "SL"      # stop-loss limit
     SL_M = "SL-M"  # stop-loss market
 
 
-class OrderValidity(str, Enum):
+class OrderValidity(StrEnum):
     DAY = "DAY"
     IOC = "IOC"
     TTL = "TTL"

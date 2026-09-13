@@ -14,5 +14,4 @@ from engine.strategies.ivbs.scanner import (  # noqa: F401
     update_market_gate,
 )
 
-
 __all__ = ["ImpactCandle", "evaluate", "update_market_gate"]

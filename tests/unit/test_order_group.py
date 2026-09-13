@@ -21,8 +21,12 @@ Tests cover:
 from __future__ import annotations
 
 import pytest
+
 from engine.orders.order_group import (
-    GroupStatus, OnUnhedged, OrderGroup, OrderLeg,
+    GroupStatus,
+    OnUnhedged,
+    OrderGroup,
+    OrderLeg,
 )
 
 

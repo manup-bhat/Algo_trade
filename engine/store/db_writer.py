@@ -12,7 +12,6 @@ import json
 from typing import Any
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db.daily_pnl import DailyPnl
 from app.models.db.order_event import OrderEvent
@@ -106,7 +105,7 @@ class DbWriter:
             snapshot = SignalSnapshot(
                 signal_id=signal_id,
                 symbol=symbol,
-                snapshot_time=datetime.datetime.now(datetime.timezone.utc),
+                snapshot_time=datetime.datetime.now(datetime.UTC),
                 event_type=event_type,
                 context_data=context_data,
             )

@@ -5,16 +5,16 @@ tests/unit/test_broker_registry.py — Tests for Broker Registry and Broker Adap
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
+
 import pytest
 
+from engine.core.broker_adapters.paper_adapter import PaperBrokerAdapter
+from engine.core.broker_adapters.zerodha_adapter import ZerodhaBrokerAdapter
 from engine.core.broker_registry import (
-    BrokerAdapter,
     broker_registry,
     get_broker_adapter,
 )
-from engine.core.broker_adapters.paper_adapter import PaperBrokerAdapter
-from engine.core.broker_adapters.zerodha_adapter import ZerodhaBrokerAdapter
-from engine.core.instrument import AssetClass, Exchange, Instrument, OptionType, Product
+from engine.core.instrument import AssetClass, Exchange, Instrument, Product
 from engine.core.order_gateway import OrderRequest, OrderSide, OrderType, OrderValidity
 
 

@@ -31,27 +31,27 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-import structlog
 
 log = structlog.get_logger(__name__)
 
-from app.core.config import settings
+from app.api.agent_router import router as agent_router
+from app.api.builder_router import router as builder_router
 from app.api.dashboard_router import router as dashboard_router
 from app.api.v1.routes.auth import router as auth_router
-from app.api.builder_router import router as builder_router
-from app.api.agent_router import router as agent_router
+from app.core.config import settings
 
 _ENGINE_AUTOSTART_LOCK_KEY = "engine:autostart:backend"
 _ENGINE_AUTOSTART_LOCK_TTL_SECONDS = 60
@@ -73,8 +73,8 @@ def _is_fresh_engine_status(status_payload: dict, max_age_seconds: int = 10) -> 
     try:
         ts = datetime.fromisoformat(str(raw_ts))
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - ts.astimezone(timezone.utc)).total_seconds() <= max_age_seconds
+            ts = ts.replace(tzinfo=UTC)
+        return (datetime.now(UTC) - ts.astimezone(UTC)).total_seconds() <= max_age_seconds
     except Exception:
         return False
 
@@ -212,7 +212,7 @@ async def _maybe_start_engine_subprocess() -> None:
         )
         await redis_store.set_engine_status({
             "status": "STARTING",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         started = True
         log.info(
@@ -319,14 +319,14 @@ async def lifespan(app: FastAPI):
     # re-write its status within its next heartbeat (every 5s).
     try:
         from app.store.redis_client import get_redis as _get_redis_now
-        from engine.store.redis_store import RedisStore as _RS
         from engine.core.metrics import metrics_registry
+        from engine.store.redis_store import RedisStore as _RS
         _rc = _get_redis_now()
         metrics_registry.set_redis(_rc)
         _rs_tmp = _RS(_rc)
         await _rs_tmp.set_engine_status({
             "status": "OFFLINE",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
         # Also clear the heartbeat so the heartbeat guard doesn't fire
         await _rc.delete("engine:runner:heartbeat")
@@ -365,8 +365,11 @@ app = FastAPI(
 
 # ── Metrics Middleware ────────────────────────────────────────────────────────
 import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from engine.core.metrics import metrics_registry
+
 
 class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):

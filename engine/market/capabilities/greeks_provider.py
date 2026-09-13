@@ -37,7 +37,7 @@ from typing import Any
 
 import structlog
 
-from engine.core.capability_registry import CapabilityProvider, MarketContext
+from engine.core.capability_registry import MarketContext
 
 log = structlog.get_logger(__name__)
 

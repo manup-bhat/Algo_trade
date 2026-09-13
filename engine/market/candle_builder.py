@@ -26,7 +26,7 @@ from __future__ import annotations
 import datetime
 import statistics
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pytz
 import structlog

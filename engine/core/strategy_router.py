@@ -175,10 +175,10 @@ class StrategyRouter:
 
     def inject_execution(
         self,
-        order_service: "OrderService",
-        order_tracker: "OrderTracker",
-        fill_timeout_manager: "FillTimeoutManager",
-        kite: "AsyncKiteClient | None" = None,
+        order_service: OrderService,
+        order_tracker: OrderTracker,
+        fill_timeout_manager: FillTimeoutManager,
+        kite: AsyncKiteClient | None = None,
     ) -> None:
         for strat in self._strategies.values():
             strat.inject_execution(order_service, order_tracker, fill_timeout_manager, kite)
@@ -192,8 +192,8 @@ class StrategyRouter:
     async def on_candle(
         self,
         symbol: str,
-        candle: "Candle",
-        builder: "CandleBuilder",
+        candle: Candle,
+        builder: CandleBuilder,
         instrument_token: int,
     ) -> None:
         for strat in self._strategies.values():
@@ -210,7 +210,7 @@ class StrategyRouter:
         self,
         symbol: str,
         ltp: float,
-        exchange_ts: "datetime.datetime",
+        exchange_ts: datetime.datetime,
     ) -> None:
         for strat in self._strategies.values():
             # Only forward ticks to strategies actively managing this symbol.

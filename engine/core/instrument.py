@@ -20,16 +20,16 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class AssetClass(str, Enum):
+class AssetClass(StrEnum):
     EQUITY = "EQUITY"
     FUTURE = "FUTURE"
     OPTION = "OPTION"
 
 
-class Exchange(str, Enum):
+class Exchange(StrEnum):
     NSE = "NSE"
     BSE = "BSE"
     NFO = "NFO"   # NSE F&O
@@ -38,14 +38,14 @@ class Exchange(str, Enum):
     MCX = "MCX"
 
 
-class Product(str, Enum):
+class Product(StrEnum):
     CNC = "CNC"    # equity delivery
     NRML = "NRML"  # F&O overnight / carry
     MIS = "MIS"    # margin intraday square-off
     MTF = "MTF"    # margin trading facility
 
 
-class OptionType(str, Enum):
+class OptionType(StrEnum):
     CE = "CE"  # call
     PE = "PE"  # put
 
@@ -139,7 +139,7 @@ class Instrument:
     # ── Construction from a Kite instrument-dump row ─────────────────────────
 
     @classmethod
-    def from_kite_dict(cls, row: dict) -> "Instrument":
+    def from_kite_dict(cls, row: dict) -> Instrument:
         """Build an Instrument from one row of kite.instruments(<exchange>)."""
         itype = str(row.get("instrument_type", "")).upper()
         if itype == "FUT":

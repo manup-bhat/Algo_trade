@@ -22,7 +22,7 @@ from engine.strategies.ivbs.ivbs_config import cfg
 
 if TYPE_CHECKING:
     from engine.orders.order_service import OrderService
-    from engine.strategy.state_machine import StrategyState, SymbolStateMachine
+    from engine.strategy.state_machine import SymbolStateMachine
 
 log = structlog.get_logger(__name__)
 
@@ -45,8 +45,8 @@ class FillTimeoutManager:
     def start_timeout(
         self,
         order_id: str,
-        sm: "SymbolStateMachine",
-        order_service: "OrderService",
+        sm: SymbolStateMachine,
+        order_service: OrderService,
     ) -> asyncio.Task:
         """
         Start a background timeout task for an entry order.
@@ -70,8 +70,8 @@ class FillTimeoutManager:
     async def _timeout_handler(
         self,
         order_id: str,
-        sm: "SymbolStateMachine",
-        order_service: "OrderService",
+        sm: SymbolStateMachine,
+        order_service: OrderService,
     ) -> None:
         """
         Background task: wait for timeout then cancel if unfilled.
@@ -124,7 +124,7 @@ class FillTimeoutManager:
 
     def cancel_all(self) -> None:
         """Cancel all pending timeouts. Called on emergency stop / squareoff."""
-        for order_id, task in list(self._tasks.items()):
+        for _order_id, task in list(self._tasks.items()):
             if not task.done():
                 task.cancel()
         self._tasks.clear()

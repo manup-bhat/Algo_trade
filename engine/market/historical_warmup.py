@@ -153,9 +153,9 @@ class _CandleLike:
 async def _fetch_and_process_symbol(
     symbol: str,
     instrument_token: int,
-    builder: "object",  # CandleBuilder
-    kite: "AsyncKiteClient",
-    redis_store: "RedisStore | None",
+    builder: object,  # CandleBuilder
+    kite: AsyncKiteClient,
+    redis_store: RedisStore | None,
     from_dt: datetime.datetime,
     to_dt: datetime.datetime,
     recent_candles_limit: int,
@@ -227,9 +227,9 @@ async def _fetch_and_process_symbol(
 
 
 async def _run_batch(
-    symbols_batch: list[tuple[str, int, "object"]],
-    kite: "AsyncKiteClient",
-    redis_store: "RedisStore | None",
+    symbols_batch: list[tuple[str, int, object]],
+    kite: AsyncKiteClient,
+    redis_store: RedisStore | None,
     from_dt: datetime.datetime,
     to_dt: datetime.datetime,
     recent_limit: int,
@@ -275,9 +275,9 @@ async def _run_batch(
 
 
 async def warmup_from_historical(
-    coordinator: "Coordinator",
-    kite: "AsyncKiteClient",
-    redis_store: "RedisStore | None" = None,
+    coordinator: Coordinator,
+    kite: AsyncKiteClient,
+    redis_store: RedisStore | None = None,
     symbols_subset: list[str] | None = None,
 ) -> None:
     """
@@ -416,7 +416,7 @@ async def warmup_from_historical(
     )
 
     # Process ALL symbols: load_sma=True for unwarmed, False (candles-only) for warmed
-    all_symbols: list[tuple[str, int, "object"]] = needs_warmup + already_warmed
+    all_symbols: list[tuple[str, int, object]] = needs_warmup + already_warmed
 
     warmed_ok = partial = errors = 0
     for i in range(0, len(all_symbols), concurrency):
@@ -469,7 +469,7 @@ async def warmup_from_historical(
         await coordinator.persist_sma_histories()
 
 
-async def _log_final_counts(builders: dict, coordinator: "Coordinator") -> None:
+async def _log_final_counts(builders: dict, coordinator: Coordinator) -> None:
     """Update Redis scanner counts and log summary."""
     total_warmed = sum(1 for b in builders.values() if b.is_warmed_up)
     total_warming = len(builders) - total_warmed

@@ -19,7 +19,8 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -107,7 +108,7 @@ class BacktestEngine:
         self,
         build_strategies: BuildStrategies,
         starting_capital: float = 500000.0,
-        redis_store: "RedisStore | None" = None,
+        redis_store: RedisStore | None = None,
     ) -> None:
         self.portfolio = BacktestPortfolio(starting_capital)
         self._starting_capital = starting_capital
@@ -122,7 +123,7 @@ class BacktestEngine:
         self.tokens: dict[str, int] = {}
 
     @staticmethod
-    def _make_fake_redis() -> "RedisStore":
+    def _make_fake_redis() -> RedisStore:
         import fakeredis.aioredis  # lazy: test/analysis-only dependency
 
         from engine.store.redis_store import RedisStore
@@ -159,7 +160,7 @@ class BacktestEngine:
     async def squareoff(self) -> None:
         await self.router.on_squareoff()
 
-    async def feed_candle(self, candle: "Candle", *, intrabar_sl_target: bool = True) -> None:
+    async def feed_candle(self, candle: Candle, *, intrabar_sl_target: bool = True) -> None:
         """Replay one completed candle: route it, then simulate intrabar SL/target ticks."""
         symbol = candle.symbol
         await self.redis.set_last_ltp(symbol, candle.close)
@@ -176,7 +177,7 @@ class BacktestEngine:
             await self.feed_tick(symbol, candle.low, candle.timestamp)
             await self.feed_tick(symbol, candle.high, candle.timestamp)
 
-    async def feed_tick(self, symbol: str, price: float, ts: "datetime.datetime") -> None:
+    async def feed_tick(self, symbol: str, price: float, ts: datetime.datetime) -> None:
         await self.redis.set_last_ltp(symbol, price)
         if self.router.any_strategy_has_active_symbol(symbol):
             await self.router.on_tick(symbol, price, ts)
@@ -185,7 +186,7 @@ class BacktestEngine:
 
     async def run(
         self,
-        candles: list["Candle"],
+        candles: list[Candle],
         warmup_volumes: list[int] | None = None,
         token: int = 0,
     ) -> dict[str, Any]:

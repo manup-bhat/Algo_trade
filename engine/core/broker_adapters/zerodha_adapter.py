@@ -24,10 +24,10 @@ class ZerodhaBrokerAdapter:
 
     key = "zerodha"
 
-    def __init__(self, kite_client: "AsyncKiteClient | None" = None) -> None:
+    def __init__(self, kite_client: AsyncKiteClient | None = None) -> None:
         self._kite = kite_client
 
-    def set_client(self, kite_client: "AsyncKiteClient") -> None:
+    def set_client(self, kite_client: AsyncKiteClient) -> None:
         self._kite = kite_client
 
     async def place_order(self, request: OrderRequest) -> OrderResult:

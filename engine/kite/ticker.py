@@ -52,7 +52,7 @@ class AsyncKiteTicker:
         api_key: str,
         access_token: str,
         loop: asyncio.AbstractEventLoop,
-        coordinator: "Coordinator",
+        coordinator: Coordinator,
     ) -> None:
         self._api_key = api_key
         self._access_token = access_token

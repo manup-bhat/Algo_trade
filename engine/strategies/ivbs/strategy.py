@@ -20,6 +20,7 @@ IVBSStrategy instance so behavior is unchanged.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -47,8 +48,8 @@ class IVBSStrategy(BaseStrategy):
     def __init__(
         self,
         strategy_id: str,
-        redis_store: "RedisStore",
-        db_writer: "DbWriter",
+        redis_store: RedisStore,
+        db_writer: DbWriter,
     ) -> None:
         super().__init__(strategy_id, redis_store, db_writer)
         # Per-symbol state machines (one per active setup).
@@ -66,8 +67,8 @@ class IVBSStrategy(BaseStrategy):
     async def on_candle(
         self,
         symbol: str,
-        candle: "Candle",
-        builder: "CandleBuilder",
+        candle: Candle,
+        builder: CandleBuilder,
         instrument_token: int,
     ) -> None:
         if symbol not in self.active_state_machines:
@@ -142,12 +143,10 @@ class IVBSStrategy(BaseStrategy):
                 await sm.on_scan_hit(impact)
 
                 if sm._signal_id:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._db.update_signal_progression(
                             sm._signal_id, progressed_to_monitor=True
                         )
-                    except Exception:
-                        pass
         else:
             # ── Non-IDLE path: route to existing SM ──
             sm = self.active_state_machines[symbol]
@@ -170,7 +169,7 @@ class IVBSStrategy(BaseStrategy):
         self,
         symbol: str,
         ltp: float,
-        exchange_ts: "datetime.datetime",
+        exchange_ts: datetime.datetime,
     ) -> None:
         sm = self.active_state_machines.get(symbol)
         if sm is not None and sm.state == StrategyState.MANAGING:
@@ -182,7 +181,7 @@ class IVBSStrategy(BaseStrategy):
         self,
         symbol: str,
         instrument_token: int,
-        builder: "CandleBuilder | None",
+        builder: CandleBuilder | None,
         is_second_spike: bool = False,
     ) -> SymbolStateMachine:
         """Create a SymbolStateMachine with all execution dependencies wired."""
@@ -205,7 +204,7 @@ class IVBSStrategy(BaseStrategy):
         self,
         second: SecondSpikeEntry,
         instrument_token: int,
-        builder: "CandleBuilder | None",
+        builder: CandleBuilder | None,
     ) -> None:
         """Direct entry path for second-spike signals (v3). Bypasses dry-up cycle."""
         symbol = second.symbol
@@ -246,9 +245,9 @@ class IVBSStrategy(BaseStrategy):
         self,
         symbol: str,
         instrument_token: int,
-        candle: "Candle",
+        candle: Candle,
         rec: AbandonedRecord,
-        builder: "CandleBuilder | None",
+        builder: CandleBuilder | None,
     ) -> None:
         """Direct entry path for re-entry after an abandoned setup (v3)."""
         if symbol in self.active_state_machines:

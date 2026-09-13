@@ -14,7 +14,6 @@ from sqlalchemy.orm import sessionmaker
 from app.models.db.base import Base
 from app.models.db.strategy_manifest import StrategyManifest
 
-
 # ── Per-test client with fresh in-memory DB ───────────────────────────────────
 
 @pytest.fixture()

@@ -18,7 +18,7 @@ Tests cover:
 from __future__ import annotations
 
 import pytest
-import fakeredis.aioredis as fakeredis
+
 from engine.risk.capital_allocator import CapitalAllocator
 from engine.store.redis_store import RedisStore
 

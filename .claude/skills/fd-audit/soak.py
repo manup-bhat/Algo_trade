@@ -29,10 +29,10 @@ aim it at an order endpoint.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import platform
-import re
 import shlex
 import statistics
 import subprocess
@@ -41,7 +41,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 IS_LINUX = platform.system() == "Linux"
@@ -186,10 +186,8 @@ def drive_http(url: str, payload: dict | None, api_key: str | None,
             resp.read()
             return True, str(resp.status)
     except urllib.error.HTTPError as e:
-        try:
+        with contextlib.suppress(Exception):
             e.read()
-        except Exception:
-            pass
         return False, f"HTTP {e.code}"
     except Exception as e:
         return False, type(e).__name__
@@ -218,7 +216,7 @@ def slope_per_iter(xs: list[float], ys: list[float]) -> tuple[float, float]:
     sxx = sum((x - mx) ** 2 for x in xs)
     if sxx == 0:
         return 0.0, 0.0
-    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=False))
     slope = sxy / sxx
     syy = sum((y - my) ** 2 for y in ys)
     r2 = (sxy ** 2) / (sxx * syy) if syy > 0 else 0.0
@@ -294,7 +292,7 @@ def main():
     total = args.iterations if not passive else args.samples
     every = max(1, total // max(args.samples, 1))
 
-    print(f"OpenAlgo soak test -- {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    print(f"OpenAlgo soak test -- {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     print(f"  target PID : {pid}")
     if passive:
         print(f"  mode       : passive watch, {args.duration}s")

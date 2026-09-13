@@ -21,7 +21,6 @@ import pytest
 from engine.risk.rules.base import OrderContext
 from engine.risk.rules.mis_intraday_rule import MISIntradayRule
 
-
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 # Representative IST times for test scenarios
@@ -31,16 +30,16 @@ _POST_CLOSE = datetime.datetime(2026, 9, 11, 15, 25, tzinfo=IST)  # 15:25 — po
 
 
 def _ctx(**kw) -> OrderContext:
-    defaults = dict(
-        symbol="RELIANCE",
-        strategy_id="test",
-        limit_price=500.0,
-        stop_loss=460.0,
-        is_paper_trade=False,
-        is_backtest=False,
-        computed_quantity=10,
-        extra={"exchange": "NSE", "product": "MIS"},
-    )
+    defaults = {
+        "symbol": "RELIANCE",
+        "strategy_id": "test",
+        "limit_price": 500.0,
+        "stop_loss": 460.0,
+        "is_paper_trade": False,
+        "is_backtest": False,
+        "computed_quantity": 10,
+        "extra": {"exchange": "NSE", "product": "MIS"},
+    }
     defaults.update(kw)
     return OrderContext(**defaults)
 

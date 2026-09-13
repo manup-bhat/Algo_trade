@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -87,13 +86,13 @@ class HistoricalDataService:
         loaded = await service.warmup_volume_sma("RELIANCE", builder)
     """
 
-    def __init__(self, kite: "AsyncKiteClient | None" = None) -> None:
+    def __init__(self, kite: AsyncKiteClient | None = None) -> None:
         self._kite = kite
         # Token bucket: semaphore caps burst + asyncio.sleep enforces rate
         self._semaphore = asyncio.Semaphore(_BURST_CAPACITY)
         self._last_request_time: float = 0.0
 
-    def set_kite(self, kite: "AsyncKiteClient") -> None:
+    def set_kite(self, kite: AsyncKiteClient) -> None:
         """Wire kite client after auth (called from runner.py post-login)."""
         self._kite = kite
 
@@ -164,7 +163,7 @@ class HistoricalDataService:
     async def warmup_volume_sma(
         self,
         symbol: str,
-        builder: "CandleBuilder",
+        builder: CandleBuilder,
         required_candles: int = 500,
     ) -> int:
         """
@@ -315,13 +314,13 @@ class HistoricalDataService:
         if not path.exists():
             return None
 
-        mtime = datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.timezone.utc)
-        age_hours = (datetime.datetime.now(datetime.timezone.utc) - mtime).total_seconds() / 3600
+        mtime = datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.UTC)
+        age_hours = (datetime.datetime.now(datetime.UTC) - mtime).total_seconds() / 3600
         if age_hours > _CACHE_MAX_AGE_HOURS:
             return None
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
         except Exception as exc:
             log.warning("historical_cache_read_error", path=str(path), error=str(exc))

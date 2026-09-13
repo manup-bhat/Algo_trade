@@ -11,15 +11,15 @@ from __future__ import annotations
 import datetime
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
+
 import pytest
 import pytz
 
 from engine.market.candle_aggregator import CandleAggregator
 from engine.market.market_data_gateway import MarketDataGateway
 from engine.risk.capital_allocator import CapitalAllocator
-from engine.risk.pre_trade_checks import PreTradeChecks
-from engine.risk.rules.base import OrderContext, RiskResult
+from engine.risk.rules.base import OrderContext
 from engine.risk.rules.freeze_quantity_rule import FreezeQuantityRule
 from engine.risk.rules.mis_intraday_rule import MISIntradayRule
 
@@ -29,7 +29,7 @@ IST_TZ = pytz.timezone("Asia/Kolkata")
 @pytest.fixture
 def sample_ticks():
     fixture_path = Path(__file__).resolve().parent.parent / "fixtures" / "sample_ticks.json"
-    with open(fixture_path, "r", encoding="utf-8") as f:
+    with open(fixture_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -70,7 +70,7 @@ def test_candle_aggregator_determinism(sample_ticks):
             candles2.append(c2)
 
     assert len(candles1) == len(candles2)
-    for c1, c2 in zip(candles1, candles2):
+    for c1, c2 in zip(candles1, candles2, strict=False):
         assert c1.symbol == c2.symbol
         assert c1.open == c2.open
         assert c1.high == c2.high

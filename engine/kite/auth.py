@@ -35,7 +35,7 @@ def load_token_from_file(token_path: str = ".kite_token") -> dict | None:
 
 async def load_token(
     token_path: str = ".kite_token",
-    redis_store: "RedisStore | None" = None,
+    redis_store: RedisStore | None = None,
 ) -> str | None:
     """
     Load the Kite access_token.
@@ -83,7 +83,7 @@ def validate_token(kite: object, token: str) -> bool:
 async def save_token(
     token_data: dict,
     token_path: str = ".kite_token",
-    redis_store: "RedisStore | None" = None,
+    redis_store: RedisStore | None = None,
 ) -> None:
     """
     Persist token to both file and Redis.

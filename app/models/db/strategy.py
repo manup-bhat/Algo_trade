@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Boolean, DateTime, JSON, Text, func, text
+from sqlalchemy import JSON, Boolean, DateTime, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base

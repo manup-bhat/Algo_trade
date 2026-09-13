@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import functools
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -57,8 +56,12 @@ def _get_kite_exceptions() -> tuple[type, ...]:
     """Import kite exception classes lazily — returns empty tuple if not installed."""
     try:
         from kiteconnect.exceptions import (
-            InputException, PermissionException, OrderException,
-            NetworkException, GeneralException, TokenException,
+            GeneralException,
+            InputException,
+            NetworkException,
+            OrderException,
+            PermissionException,
+            TokenException,
         )
         return (
             InputException, PermissionException, OrderException,
@@ -69,7 +72,7 @@ def _get_kite_exceptions() -> tuple[type, ...]:
 
 
 async def _call_with_retry(
-    kite: "AsyncKiteClient",
+    kite: AsyncKiteClient,
     method_name: str,
     *args: Any,
     **kwargs: Any,
@@ -86,8 +89,12 @@ async def _call_with_retry(
     # Lazy import of kite exceptions to allow dev/test without kiteconnect installed
     try:
         from kiteconnect.exceptions import (
-            InputException, PermissionException, OrderException,
-            NetworkException, GeneralException, TokenException,
+            GeneralException,
+            InputException,
+            NetworkException,
+            OrderException,
+            PermissionException,
+            TokenException,
         )
         has_kite_exc = True
     except ImportError:
@@ -170,10 +177,10 @@ class OrderService:
     Paper mode: simulates fills immediately without calling Kite API.
     """
 
-    def __init__(self, kite: "AsyncKiteClient | None" = None) -> None:
+    def __init__(self, kite: AsyncKiteClient | None = None) -> None:
         self._kite = kite
 
-    def set_kite(self, kite: "AsyncKiteClient") -> None:
+    def set_kite(self, kite: AsyncKiteClient) -> None:
         """Wire in the Kite client (called after auth at startup)."""
         self._kite = kite
 
@@ -184,7 +191,7 @@ class OrderService:
         symbol: str,
         limit_price: float,
         quantity: int,
-        sm: "SymbolStateMachine | None" = None,
+        sm: SymbolStateMachine | None = None,
         exchange: str = "NSE",
         product: str = "MIS",
         tag: str = "IVBS",
@@ -251,7 +258,7 @@ class OrderService:
         symbol: str,
         limit_price: float,
         quantity: int,
-        sm: "SymbolStateMachine | None",
+        sm: SymbolStateMachine | None,
     ) -> str | None:
         """
         Simulate a fill using REAL market data.
@@ -277,8 +284,8 @@ class OrderService:
         try:
             # Redis is injected into the module via the engine runner startup.
             # Import here to avoid circular dependency at module load time.
-            from engine.store.redis_store import RedisStore
             from app.store.redis_client import get_redis
+            from engine.store.redis_store import RedisStore
             redis_client = get_redis()
             if redis_client is not None:
                 rs = RedisStore(redis_client)
@@ -411,7 +418,7 @@ class OrderService:
         order_id: str,
         new_trigger: float,
         symbol: str = "",
-        sm: "SymbolStateMachine | None" = None,
+        sm: SymbolStateMachine | None = None,
     ) -> bool:
         """
         Modify the trigger price of an existing SL-M order.
@@ -466,7 +473,7 @@ class OrderService:
         self,
         order_id: str,
         symbol: str,
-        sm: "SymbolStateMachine",
+        sm: SymbolStateMachine,
     ) -> None:
         """Check if SL was already triggered when modify failed."""
         try:
@@ -688,9 +695,9 @@ class OrderService:
 
     async def place_order_group(
         self,
-        group: "OrderGroup",
+        group: OrderGroup,
         db_writer: Any = None,
-    ) -> "OrderGroup":
+    ) -> OrderGroup:
         """
         Place all legs of an OrderGroup sequentially and track status.
 
@@ -706,7 +713,7 @@ class OrderService:
         Returns:
             The same OrderGroup with legs' order_ids and statuses updated.
         """
-        from engine.orders.order_group import OnUnhedged, GroupStatus
+        from engine.orders.order_group import OnUnhedged
 
         # Sort: BUY legs first (reduces unhedged window for spreads)
         ordered = sorted(group.legs, key=lambda l: (0 if l.side == "BUY" else 1))
@@ -742,8 +749,8 @@ class OrderService:
                     unhedged_leg_indices=unhedged,
                     policy=group.on_unhedged,
                 )
-                from engine.store.redis_store import RedisStore
                 from app.core.config import settings
+                from engine.store.redis_store import RedisStore
                 r = RedisStore(host=settings.REDIS_HOST)
                 await r.publish_alert({
                     "level": "error",
@@ -760,7 +767,7 @@ class OrderService:
         return group
 
     async def _place_single_leg(
-        self, leg: "OrderLeg", group_id: str
+        self, leg: OrderLeg, group_id: str
     ) -> str | None:
         """Place one leg of a group. Returns order_id or None."""
         if settings.is_paper_trade:
@@ -779,17 +786,17 @@ class OrderService:
             log.error("order_service_no_kite_client", method="_place_single_leg")
             return None
 
-        kwargs: dict[str, Any] = dict(
-            variety=leg.variety,
-            tradingsymbol=leg.symbol,
-            exchange=leg.exchange,
-            transaction_type=leg.side,
-            order_type=leg.order_type,
-            product=leg.product,
-            validity="DAY",
-            quantity=leg.quantity,
-            tag=(leg.tag or group_id[:8])[:20],
-        )
+        kwargs: dict[str, Any] = {
+            "variety": leg.variety,
+            "tradingsymbol": leg.symbol,
+            "exchange": leg.exchange,
+            "transaction_type": leg.side,
+            "order_type": leg.order_type,
+            "product": leg.product,
+            "validity": "DAY",
+            "quantity": leg.quantity,
+            "tag": (leg.tag or group_id[:8])[:20],
+        }
         if leg.order_type in ("LIMIT", "SL") and leg.price is not None:
             kwargs["price"] = leg.price
         if leg.order_type in ("SL-M", "SL") and leg.trigger_price is not None:
@@ -799,7 +806,7 @@ class OrderService:
 
     async def _flatten_unhedged(
         self,
-        group: "OrderGroup",
+        group: OrderGroup,
         unhedged_indices: list[int],
     ) -> None:
         """Auto-flatten legs that are filled but whose counterpart failed."""

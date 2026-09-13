@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.db.base import Base
 
 
-class TradeStatus(str, enum.Enum):
+class TradeStatus(enum.StrEnum):
     OPEN = "OPEN"
     CLOSED_TARGET = "CLOSED_TARGET"       # Hit 1:4 target
     CLOSED_STOPLOSS = "CLOSED_STOPLOSS"   # SL triggered, no trailing

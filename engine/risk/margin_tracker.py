@@ -32,12 +32,12 @@ class MarginTracker:
         ok = await margin_tracker.check_available(new_required, kite, redis_store)
     """
 
-    async def increment(self, amount: float, redis_store: "RedisStore") -> None:
+    async def increment(self, amount: float, redis_store: RedisStore) -> None:
         """Add margin blocked by a new entry fill."""
         await redis_store.increment_blocked_margin(amount)
         log.debug("margin_blocked", amount=amount)
 
-    async def decrement(self, amount: float, redis_store: "RedisStore") -> None:
+    async def decrement(self, amount: float, redis_store: RedisStore) -> None:
         """Release margin when a position closes."""
         await redis_store.decrement_blocked_margin(amount)
         log.debug("margin_released", amount=amount)
@@ -45,7 +45,7 @@ class MarginTracker:
     async def check_available(
         self,
         new_required: float,
-        redis_store: "RedisStore",
+        redis_store: RedisStore,
         available_balance: float,
     ) -> tuple[bool, str]:
         """
@@ -84,8 +84,8 @@ class MarginTracker:
 
     async def refresh_from_broker(
         self,
-        kite: "AsyncKiteClient",
-        redis_store: "RedisStore",
+        kite: AsyncKiteClient,
+        redis_store: RedisStore,
     ) -> None:
         """
         Refresh blocked margin from broker positions every 30 minutes.

@@ -47,9 +47,11 @@ router = APIRouter()
 def _default_session_factory():
     """Create a SQLAlchemy sync session for the configured DB."""
     import os
+
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import NullPool
+
     from app.models.db.base import Base
 
     db_url = os.environ.get("DATABASE_URL", "sqlite:///./trading_bot.db")
@@ -155,6 +157,7 @@ async def propose_mutation(body: ProposeRequest) -> dict[str, Any]:
         400: If the strategy doesn't exist or the mutated graph fails graph validation.
     """
     import asyncio
+
     from engine.agent.agent_loop import AgentLoopService
 
     def _sync_propose():
@@ -197,6 +200,7 @@ async def run_backtest(proposal_id: str, body: BacktestRequest = BacktestRequest
         400: If proposal is not in PENDING_BACKTEST state.
     """
     import asyncio
+
     from engine.agent.agent_loop import AgentLoopService
 
     def _sync_backtest():
@@ -239,6 +243,7 @@ async def list_proposals(
 
     def _sync_list():
         from sqlalchemy import select
+
         from app.models.db.agent_proposal import AgentProposal
         session = _session_factory()
         try:
@@ -269,6 +274,7 @@ async def get_proposal(proposal_id: str) -> dict[str, Any]:
 
     def _sync_get():
         from sqlalchemy import select
+
         from app.models.db.agent_proposal import AgentProposal
         session = _session_factory()
         try:
@@ -293,6 +299,7 @@ async def get_proposal(proposal_id: str) -> dict[str, Any]:
 async def approve_proposal(proposal_id: str, body: ApproveRequest = ApproveRequest()) -> dict[str, Any]:
     """Human gate 1: approve a backtest_done proposal for paper trading."""
     import asyncio
+
     from engine.agent.agent_loop import AgentLoopService
 
     def _sync_approve():
@@ -322,6 +329,7 @@ async def approve_proposal(proposal_id: str, body: ApproveRequest = ApproveReque
 async def reject_proposal(proposal_id: str, body: RejectRequest) -> dict[str, Any]:
     """Reject a proposal at any non-terminal stage. Requires mandatory reason."""
     import asyncio
+
     from engine.agent.agent_loop import AgentLoopService
 
     def _sync_reject():
@@ -351,6 +359,7 @@ async def reject_proposal(proposal_id: str, body: RejectRequest) -> dict[str, An
 async def promote_paper(proposal_id: str) -> dict[str, Any]:
     """Move a PENDING_PAPER proposal into paper trading (PAPER_DONE)."""
     import asyncio
+
     from engine.agent.agent_loop import AgentLoopService
 
     def _sync_promote():
@@ -380,6 +389,7 @@ async def promote_paper(proposal_id: str) -> dict[str, Any]:
 async def promote_live(proposal_id: str, body: PromoteLiveRequest = PromoteLiveRequest()) -> dict[str, Any]:
     """Human gate 2: promote a PAPER_DONE proposal to live by patching the manifest."""
     import asyncio
+
     from engine.agent.agent_loop import AgentLoopService
 
     def _sync_live():
@@ -422,6 +432,7 @@ async def status_summary(
 
     def _sync_summary():
         from sqlalchemy import func, select
+
         from app.models.db.agent_proposal import AgentProposal
         session = _session_factory()
         try:

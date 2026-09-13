@@ -14,7 +14,7 @@ import datetime
 
 import structlog
 
-from engine.core.instrument import AssetClass, Instrument, OptionType
+from engine.core.instrument import Instrument, OptionType
 
 log = structlog.get_logger(__name__)
 

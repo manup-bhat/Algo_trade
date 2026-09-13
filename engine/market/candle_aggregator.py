@@ -127,7 +127,7 @@ class CandleAggregator:
         ltp: float,
         cum_vol: int,
         exchange_ts: "import datetime; datetime.datetime",
-    ) -> "CandleBuilder | None":
+    ) -> CandleBuilder | None:
         """
         Forward a tick to the appropriate CandleBuilder.
 

@@ -62,9 +62,9 @@ class EODSquareOffService:
 
     def __init__(
         self,
-        order_service: "OrderService | None" = None,
-        redis_store: "RedisStore | None" = None,
-        kite: "AsyncKiteClient | None" = None,
+        order_service: OrderService | None = None,
+        redis_store: RedisStore | None = None,
+        kite: AsyncKiteClient | None = None,
     ) -> None:
         self._order_service = order_service
         self._redis = redis_store
@@ -72,9 +72,9 @@ class EODSquareOffService:
 
     def wire(
         self,
-        order_service: "OrderService",
-        redis_store: "RedisStore",
-        kite: "AsyncKiteClient",
+        order_service: OrderService,
+        redis_store: RedisStore,
+        kite: AsyncKiteClient,
     ) -> None:
         """Wire dependencies after engine startup (called from runner.py)."""
         self._order_service = order_service
@@ -199,22 +199,21 @@ class EODSquareOffService:
                 for pos in (net_pos or []):
                     sym = pos.get("tradingsymbol", "")
                     qty = pos.get("quantity", 0)
-                    if sym and qty and int(qty) != 0:
-                        if sym not in positions:
-                            positions[sym] = {
-                                "symbol": sym,
-                                "quantity": abs(int(qty)),
-                                "strategy_id": "orphan",
-                                "exchange": pos.get("exchange", "NSE"),
-                                "product": pos.get("product", "MIS"),
-                                "source": "kite",
-                            }
-                            log.warning(
-                                "eod_orphan_position_discovered",
-                                symbol=sym,
-                                quantity=qty,
-                                hint="Position in Kite but not in Redis — likely crash-orphaned.",
-                            )
+                    if sym and qty and int(qty) != 0 and sym not in positions:
+                        positions[sym] = {
+                            "symbol": sym,
+                            "quantity": abs(int(qty)),
+                            "strategy_id": "orphan",
+                            "exchange": pos.get("exchange", "NSE"),
+                            "product": pos.get("product", "MIS"),
+                            "source": "kite",
+                        }
+                        log.warning(
+                            "eod_orphan_position_discovered",
+                            symbol=sym,
+                            quantity=qty,
+                            hint="Position in Kite but not in Redis — likely crash-orphaned.",
+                        )
             except Exception as exc:
                 log.error("eod_kite_position_discovery_failed", error=str(exc))
 

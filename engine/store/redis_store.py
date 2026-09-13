@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import json
+from datetime import UTC
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -304,12 +305,12 @@ class RedisStore:
     # ── Strategy State (per active SM) ─────────────────────────────────────
 
     async def set_strategy_state(self, symbol: str, state_dict: dict[str, Any]) -> None:
-        from datetime import datetime, timezone
+        from datetime import datetime
         # Stamp every write with IST date so the dashboard can filter stale cross-day state.
         # 28-hour TTL ensures keys auto-expire overnight even if clear_strategy_state is
         # not called (e.g. crash mid-session).
         stamped = dict(state_dict)
-        stamped["_updated_at"] = datetime.now(timezone.utc).isoformat()
+        stamped["_updated_at"] = datetime.now(UTC).isoformat()
         await self._r.set(f"strategy:state:{symbol}", json.dumps(stamped), ex=28 * 3600)
 
     async def get_strategy_state(self, symbol: str) -> dict[str, Any] | None:
@@ -356,7 +357,7 @@ class RedisStore:
             return {}
         values = await self._r.mget(keys)
         result = {}
-        for key, val in zip(keys, values):
+        for key, val in zip(keys, values, strict=False):
             if val:
                 symbol = key.split(":")[-1]
                 result[symbol] = json.loads(val)
@@ -462,7 +463,7 @@ class RedisStore:
         values = await self._r.mget(selected)
 
         result = []
-        for key, val in zip(selected, values):
+        for key, val in zip(selected, values, strict=False):
             if val:
                 try:
                     data = json.loads(val)
@@ -562,7 +563,7 @@ class RedisStore:
             return {}
         values = await self._r.mget(keys)
         result = {}
-        for key, val in zip(keys, values):
+        for key, val in zip(keys, values, strict=False):
             if val:
                 try:
                     sym = key.split(":", 1)[1] if isinstance(key, str) else key.decode().split(":", 1)[1]

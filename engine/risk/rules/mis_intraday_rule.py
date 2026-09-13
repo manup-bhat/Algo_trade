@@ -22,7 +22,6 @@ Integrated at position 12 in the pre-trade risk pipeline (after FreezeQuantityRu
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 from zoneinfo import ZoneInfo
 

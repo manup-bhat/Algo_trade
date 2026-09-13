@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import DateTime, Integer, Text, JSON
+from sqlalchemy import JSON, DateTime, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import Index
 
 from app.models.db.base import Base
+
 
 class SignalSnapshot(Base):
     __tablename__ = "signal_snapshots"

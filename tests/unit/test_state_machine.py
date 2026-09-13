@@ -12,14 +12,15 @@ Plus: full happy path, abandonment paths, paper-trade trailing.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
+import fakeredis.aioredis
 import pytest
 import pytz
-import fakeredis.aioredis
 
+from engine.store.db_writer import DbWriter
+from engine.store.redis_store import RedisStore
 from engine.strategy.scanner import ImpactCandle
 from engine.strategy.state_machine import (
     ConsolidationData,
@@ -27,8 +28,6 @@ from engine.strategy.state_machine import (
     StrategyState,
     SymbolStateMachine,
 )
-from engine.store.redis_store import RedisStore
-from engine.store.db_writer import DbWriter
 
 IST_TZ = pytz.timezone("Asia/Kolkata")
 
@@ -269,13 +268,13 @@ class TestBugRegressions:
         """
         # Simulate a timedelta of 10 minutes 30 seconds
         delta = datetime.timedelta(minutes=10, seconds=30)
-        
+
         elapsed_via_total = delta.total_seconds() / 60
         elapsed_via_seconds = delta.seconds / 60  # This also works for <24h, but spec mandates total_seconds
-        
+
         assert elapsed_via_total == pytest.approx(10.5, rel=1e-6)
         assert elapsed_via_seconds == pytest.approx(10.5, rel=1e-6)
-        
+
         # The real danger: timedelta > 24h
         delta_large = datetime.timedelta(days=1, minutes=5)
         assert delta_large.total_seconds() / 60 == pytest.approx(24 * 60 + 5)
@@ -338,10 +337,10 @@ class TestStateMachineLifecycle:
         """SCAN_HIT → MONITORING on first candle after scan hit."""
         impact = make_impact(hour=9, minute=15)
         await sm.on_scan_hit(impact)
-        
+
         with patch.object(sm, '_trigger_entry', new_callable=AsyncMock):
             await sm.on_candle(498, 502, 495, 499, 5000, make_ts(9, 16))
-        
+
         assert sm.state == StrategyState.MONITORING
 
     @pytest.mark.asyncio
@@ -355,10 +354,10 @@ class TestStateMachineLifecycle:
         """Second on_scan_hit() is ignored (idempotent)."""
         impact1 = make_impact(close=500.0, hour=9, minute=15)
         impact2 = make_impact(close=510.0, hour=9, minute=16)
-        
+
         await sm.on_scan_hit(impact1)
         await sm.on_scan_hit(impact2)
-        
+
         assert sm.impact_candle.close == 500.0  # First one preserved
 
     @pytest.mark.asyncio
@@ -366,10 +365,10 @@ class TestStateMachineLifecycle:
         """ABANDON when close drops below impact candle low."""
         impact = make_impact(low=495.0, hour=9, minute=15)
         await sm.on_scan_hit(impact)
-        
+
         # Candle close = 494 < impact.low = 495 → abandon
         await sm.on_candle(497, 498, 490, 494, 5000, make_ts(9, 16))
-        
+
         assert sm.state == StrategyState.CLOSED
         assert "price_broke_impact_low" in (sm._abandonment_reason or "")
 
@@ -462,10 +461,10 @@ class TestPaperTrade:
 
         pos = sm.position
         assert pos is not None
-        
+
         # Feed tick at SL level
         await sm.on_tick(pos.current_sl - 0.01, datetime.datetime.now(IST_TZ))
-        
+
         assert sm.state == StrategyState.CLOSED  # SL hit closes via _close_position
 
     @pytest.mark.asyncio
@@ -485,12 +484,11 @@ class TestPaperTrade:
 
         pos = sm.position
         assert pos is not None
-        original_sl = pos.current_sl
-        
+
         # Feed tick at target_1r2 (but not yet 1r4 to avoid closing)
         tick_price = pos.target_1r2 + 0.01
         await sm.on_tick(tick_price, datetime.datetime.now(IST_TZ))
-        
+
         # If position is still open (not at 1r4 yet)
         if sm.state == StrategyState.MANAGING:
             assert pos.cost_trailed is True

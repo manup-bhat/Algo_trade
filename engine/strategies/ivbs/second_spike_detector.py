@@ -32,7 +32,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 import structlog
 
@@ -119,9 +118,8 @@ class SecondSpikeDetector:
         the Wyckoff structure low — if this level fails, both waves failed.
         """
         record = self._records.get(symbol)
-        if record is not None:
-            if candle_low < record.inter_spike_low:
-                record.inter_spike_low = candle_low
+        if record is not None and candle_low < record.inter_spike_low:
+            record.inter_spike_low = candle_low
 
     def evaluate_second_spike(
         self,
@@ -133,7 +131,7 @@ class SecondSpikeDetector:
         candle_time: datetime,
         volume_sma: float,
         tick_size: float,
-    ) -> Optional[SecondSpikeEntry]:
+    ) -> SecondSpikeEntry | None:
         """
         Evaluate a new scan-level volume spike against the stored prior spike
         for this symbol. Returns a SecondSpikeEntry if all conditions pass,

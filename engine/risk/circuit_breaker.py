@@ -34,7 +34,7 @@ class CircuitBreaker:
     def __init__(self) -> None:
         self._tripped: bool = False  # In-memory fast path
 
-    async def check(self, redis_store: "RedisStore") -> tuple[bool, str]:
+    async def check(self, redis_store: RedisStore) -> tuple[bool, str]:
         """
         Returns (True, "") if trading may proceed.
         Returns (False, reason) if breaker is tripped.
@@ -68,13 +68,13 @@ class CircuitBreaker:
 
         return True, ""
 
-    async def trip(self, redis_store: "RedisStore", reason: str = "") -> None:
+    async def trip(self, redis_store: RedisStore, reason: str = "") -> None:
         """Trip the circuit breaker and persist to Redis."""
         self._tripped = True
         await redis_store.set_circuit_breaker(True)
         log.critical("circuit_breaker_tripped", reason=reason)
 
-    async def reset(self, redis_store: "RedisStore") -> None:
+    async def reset(self, redis_store: RedisStore) -> None:
         """Reset at 9:00 AM for a new trading day."""
         self._tripped = False
         await redis_store.set_circuit_breaker(False)

@@ -101,8 +101,8 @@ class OrderTracker:
     async def on_postback(
         self,
         message: dict[str, Any],
-        coordinator: "Coordinator",
-        db_writer: "DbWriter",
+        coordinator: Coordinator,
+        db_writer: DbWriter,
     ) -> None:
         """
         Route an order postback from AsyncKiteTicker.on_order_update().
@@ -168,7 +168,7 @@ class OrderTracker:
         order_id: str,
         status: str,
         message: dict[str, Any],
-        coordinator: "Coordinator",
+        coordinator: Coordinator,
     ) -> None:
         """Route entry order postback to correct SM method."""
         symbol = self.entry_order_registry.get(order_id)
@@ -242,7 +242,7 @@ class OrderTracker:
         order_id: str,
         status: str,
         message: dict[str, Any],
-        coordinator: "Coordinator",
+        coordinator: Coordinator,
     ) -> None:
         """Route SL order postback to correct SM method."""
         symbol = self.sl_order_registry.get(order_id)
@@ -294,7 +294,7 @@ class OrderTracker:
         order_id: str,
         status: str,
         message: dict[str, Any],
-        coordinator: "Coordinator",
+        coordinator: Coordinator,
     ) -> None:
         """Route MARKET exit postbacks to SM close path."""
         meta = self.exit_order_registry.get(order_id)

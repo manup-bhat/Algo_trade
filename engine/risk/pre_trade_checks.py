@@ -32,17 +32,17 @@ import structlog
 
 from app.core.config import settings
 from engine.risk.rules.base import OrderContext, run_risk_pipeline
+from engine.risk.rules.capital_allocator_rule import CapitalAllocatorRule
 from engine.risk.rules.circuit_breaker_rule import CircuitBreakerRule
 from engine.risk.rules.concurrent_positions_rule import ConcurrentPositionsRule
 from engine.risk.rules.entry_cutoff_rule import EntryCutoffRule
-from engine.risk.rules.market_hours_rule import MarketHoursRule
+from engine.risk.rules.freeze_quantity_rule import FreezeQuantityRule
 from engine.risk.rules.margin_availability_rule import MarginAvailabilityRule
+from engine.risk.rules.market_hours_rule import MarketHoursRule
+from engine.risk.rules.mis_intraday_rule import MISIntradayRule
 from engine.risk.rules.quantity_rule import QuantityRule
 from engine.risk.rules.risk_per_share_rule import RiskPerShareRule
 from engine.risk.rules.sma_warmup_rule import SmaWarmupRule
-from engine.risk.rules.capital_allocator_rule import CapitalAllocatorRule
-from engine.risk.rules.freeze_quantity_rule import FreezeQuantityRule
-from engine.risk.rules.mis_intraday_rule import MISIntradayRule
 from engine.risk.rules.stale_data_rule import StaleDataRule
 
 if TYPE_CHECKING:
@@ -86,10 +86,10 @@ class PreTradeChecks:
     10th check without breaking any existing call sites that don't pass them.
     """
 
-    def __init__(self, capital_allocator: "CapitalAllocator | None" = None) -> None:
+    def __init__(self, capital_allocator: CapitalAllocator | None = None) -> None:
         self._capital_allocator = capital_allocator
 
-    def set_capital_allocator(self, allocator: "CapitalAllocator") -> None:
+    def set_capital_allocator(self, allocator: CapitalAllocator) -> None:
         """Wire in the capital allocator (called after it's initialized in runner.py)."""
         self._capital_allocator = allocator
 
@@ -98,9 +98,9 @@ class PreTradeChecks:
         symbol: str,
         limit_price: float,
         stop_loss: float,
-        candle_builder: "CandleBuilder | None",
-        redis_store: "RedisStore | None",
-        kite: "AsyncKiteClient | None" = None,
+        candle_builder: CandleBuilder | None,
+        redis_store: RedisStore | None,
+        kite: AsyncKiteClient | None = None,
         *,
         strategy_id: str = "",
         extra: dict[str, Any] | None = None,

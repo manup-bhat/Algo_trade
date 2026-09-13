@@ -16,27 +16,21 @@ Uses fakeredis for in-memory Redis and SQLite in-memory DB.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
-import os
-from pathlib import Path
 
 import fakeredis.aioredis
 import pytest
 import pytz
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
 
-from app.core.config import settings
-from engine.strategies.ivbs.ivbs_config import cfg
-from engine.market.candle_builder import CandleBuilder, Candle
+from engine.market.candle_builder import Candle
 from engine.orders.fill_timeout import FillTimeoutManager
 from engine.orders.order_service import OrderService
 from engine.orders.order_tracker import OrderTracker
-from engine.strategy.scanner import ImpactCandle
-from engine.strategy.state_machine import SymbolStateMachine, StrategyState
-from engine.store.redis_store import RedisStore
 from engine.store.db_writer import DbWriter
+from engine.store.redis_store import RedisStore
+from engine.strategies.ivbs.ivbs_config import cfg
+from engine.strategy.scanner import ImpactCandle
+from engine.strategy.state_machine import StrategyState, SymbolStateMachine
 
 IST_TZ = pytz.timezone("Asia/Kolkata")
 

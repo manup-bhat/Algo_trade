@@ -9,11 +9,11 @@ Prometheus scraping.
 
 from __future__ import annotations
 
-import time
-import json
-from typing import Any
 import statistics
+import time
 from collections import defaultdict
+from typing import Any
+
 
 class MetricsRegistry:
     """
@@ -43,7 +43,7 @@ class MetricsRegistry:
         """Flush latencies to Redis (called periodically by runner)."""
         if not self.redis or not self._local_latencies:
             return
-        
+
         pipe = self.redis.pipeline()
         for name, latencies in self._local_latencies.items():
             if not latencies:
@@ -55,7 +55,7 @@ class MetricsRegistry:
                 pipe.rpush(key, str(val))
             # Trim list to 1000 items
             pipe.ltrim(key, -1000, -1)
-            
+
         await pipe.execute()
         self._local_latencies.clear()
         self._last_flush = time.time()

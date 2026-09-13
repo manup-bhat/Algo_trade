@@ -10,7 +10,7 @@ Tests cover all spec-required scenarios from Section 16.1:
   6. SMA is correct mean after 500 candles
   7. Volume history rolling (oldest dropped at 501)
   8. load_history pre-warms the builder
-  
+
 Plus Bug regression tests:
   - Bug 4: reconnect phantom volume spike prevention
   - Reconnect scenario: full disconnect + reconnect cycle
@@ -74,10 +74,10 @@ class TestNormalTickAccumulation:
         builder.on_tick(100.0, 1000, make_ts(9, 15, 5))   # baseline
         builder.on_tick(102.0, 1200, make_ts(9, 15, 30))  # accumulate
         builder.on_tick(98.0,  1350, make_ts(9, 15, 55))  # accumulate
-        
+
         # This tick is in the 9:16 minute — should emit the 9:15 candle
         candle = builder.on_tick(103.0, 1500, make_ts(9, 16, 10))
-        
+
         assert candle is not None
         assert isinstance(candle, Candle)
         assert candle.symbol == "TEST"
@@ -85,17 +85,17 @@ class TestNormalTickAccumulation:
     def test_candle_ohlcv_correct(self, builder):
         """OHLCV values of the completed candle match the ticks in that minute."""
         t = make_ts(9, 15)
-        
+
         # Baseline tick (no volume credit)
         builder.on_tick(100.0, 1000, t.replace(second=5))
         # In-minute ticks
         builder.on_tick(105.0, 1200, t.replace(second=20))   # high
         builder.on_tick(98.0,  1350, t.replace(second=40))   # low
         builder.on_tick(102.0, 1500, t.replace(second=55))   # close
-        
+
         # Next minute tick emits the candle
         candle = builder.on_tick(101.0, 1600, t.replace(minute=16, second=5))
-        
+
         assert candle is not None
         # Open: first accumulated tick (100.0 set by baseline tick)
         assert candle.open == 100.0
@@ -108,7 +108,7 @@ class TestNormalTickAccumulation:
         builder.on_tick(100.0, 1000, make_ts(9, 15, 10))
         builder.on_tick(101.0, 1100, make_ts(9, 15, 30))
         candle = builder.on_tick(100.5, 1200, make_ts(9, 16, 5))
-        
+
         assert candle is not None
         assert candle.timestamp.second == 0
         assert candle.timestamp.microsecond == 0
@@ -119,7 +119,7 @@ class TestNormalTickAccumulation:
         builder.on_tick(500.0, 10000, make_ts(9, 15, 5))
         builder.on_tick(510.0, 15000, make_ts(9, 15, 30))
         candle = builder.on_tick(505.0, 16000, make_ts(9, 16, 5))
-        
+
         assert candle is not None
         # volume = 15000 - 10000 = 5000 ticks accumulated
         assert candle.volume == 5000
@@ -138,7 +138,7 @@ class TestCumulativeVolumeDelta:
         builder.on_tick(101.0, 5300, make_ts(9, 15, 15))  # delta = 300
         builder.on_tick(102.0, 5700, make_ts(9, 15, 45))  # delta = 400
         candle = builder.on_tick(103.0, 5900, make_ts(9, 16, 5))
-        
+
         assert candle is not None
         # Total volume = 300 + 400 = 700
         assert candle.volume == 700
@@ -148,7 +148,7 @@ class TestCumulativeVolumeDelta:
         builder.on_tick(100.0, 5000, make_ts(9, 15, 5))   # baseline
         builder.on_tick(101.0, 4800, make_ts(9, 15, 30))  # cumulative went DOWN (anomaly)
         candle = builder.on_tick(102.0, 5100, make_ts(9, 16, 5))
-        
+
         assert candle is not None
         # Delta for the bad tick: max(0, 4800-5000) = 0
         # Delta for next tick: 5100 - 4800 = 300; but baseline was reset to 4800
@@ -173,7 +173,7 @@ class TestReconnectHandling:
         builder.on_tick(500.0, 100000, make_ts(9, 15, 30))  # baseline
         builder.on_tick(502.0, 101000, make_ts(9, 15, 45))  # delta = 1000
         candle = builder.on_tick(501.0, 101500, make_ts(9, 16, 5))
-        
+
         assert candle is not None
         # Volume = delta of tick at 9:15:45 only: 101000 - 100000 = 1000
         # The tick at 9:16:05 (cum=101500) triggers the candle close and becomes
@@ -189,11 +189,11 @@ class TestReconnectHandling:
         # First establish normal state
         builder.on_tick(500.0, 100000, make_ts(9, 15, 30))
         builder.on_tick(502.0, 101000, make_ts(9, 15, 45))
-        
+
         assert builder._awaiting_baseline_reset is False, (
             "Should be False after processing ticks normally"
         )
-        
+
         # Simulate WebSocket reconnect
         builder.reset_cumulative_baseline()
         assert builder._awaiting_baseline_reset is True
@@ -203,10 +203,10 @@ class TestReconnectHandling:
         # Normal operation
         builder.on_tick(500.0, 100000, make_ts(9, 15, 30))
         builder.on_tick(502.0, 101000, make_ts(9, 15, 45))
-        
+
         # WS reconnect
         builder.reset_cumulative_baseline()
-        
+
         # First tick after reconnect (cumulative resets to lower value on reconnect)
         result = builder.on_tick(503.0, 80000, make_ts(9, 15, 50))
         assert result is None, "First tick after reconnect must return None"
@@ -228,23 +228,23 @@ class TestReconnectHandling:
         # Build up state pre-reconnect
         builder.on_tick(500.0, 500000, make_ts(9, 30, 5))   # baseline
         builder.on_tick(501.0, 505000, make_ts(9, 30, 30))  # delta = 5000
-        
+
         # Simulate reconnect: exchange resets cumulative (or replays from lower value)
         builder.reset_cumulative_baseline()
-        
+
         # First tick after reconnect — should set baseline, no candle
         tick1 = builder.on_tick(502.0, 50000, make_ts(9, 30, 45))
         assert tick1 is None
-        
+
         # Next tick in same minute — normal operation
         tick2 = builder.on_tick(503.0, 51500, make_ts(9, 30, 55))
         assert tick2 is None
-        
+
         # New minute — emit candle
         candle = builder.on_tick(504.0, 52000, make_ts(9, 31, 5))
         assert candle is not None
-        
-        # Volume should only be the post-reconnect delta: 51500-50000=1500 + 52000-51500=500... 
+
+        # Volume should only be the post-reconnect delta: 51500-50000=1500 + 52000-51500=500...
         # BUT wait: first tick after reconnect (50000) sets baseline
         # Second tick (51500): delta = 51500 - 50000 = 1500
         # Third tick (52000): triggers new candle
@@ -379,7 +379,6 @@ class TestLoadHistory:
         # Simulate a session: load history, run some ticks, take snapshot
         original = [500, 600, 700, 800, 900]
         builder.load_history(original)
-        original_sma = builder.volume_sma
 
         # Complete one more candle
         builder.on_tick(100.0, 0, make_ts(9, 15, 5))
@@ -403,9 +402,9 @@ class TestReset:
         builder.load_history([100, 200, 150, 300, 250])  # warm up
         builder.on_tick(100.0, 5000, make_ts(9, 15, 5))
         builder.on_tick(102.0, 5500, make_ts(9, 15, 30))
-        
+
         builder.reset()
-        
+
         assert builder._current_candle_time is None
         assert builder._candle_volume == 0
         assert builder._awaiting_baseline_reset is True
@@ -414,8 +413,8 @@ class TestReset:
         """reset() does NOT clear the SMA history (continuity across sessions)."""
         builder.load_history([100, 200, 150, 300, 250])
         sma_before = builder.volume_sma
-        
+
         builder.reset()
-        
+
         assert builder.is_warmed_up
         assert builder.volume_sma == sma_before

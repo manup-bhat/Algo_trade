@@ -5,10 +5,9 @@ tests/unit/test_analytics_suite.py — Unit tests for rich analytics computation
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, timezone, timedelta
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.api.dashboard_router import _compute_rich_analytics, _rows_to_csv, _EXPORT_TABLES
+from app.api.dashboard_router import _EXPORT_TABLES, _compute_rich_analytics
 from app.main import app
 
 

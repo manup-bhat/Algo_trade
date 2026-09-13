@@ -32,7 +32,7 @@ Edge cases handled:
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -80,8 +80,8 @@ class MarketDataGateway:
 
     def __init__(
         self,
-        ticker: "AsyncKiteTicker | None" = None,
-        redis_store: "RedisStore | None" = None,
+        ticker: AsyncKiteTicker | None = None,
+        redis_store: RedisStore | None = None,
     ) -> None:
         self._ticker = ticker
         self._redis = redis_store
@@ -96,11 +96,11 @@ class MarketDataGateway:
         # strategy_id → declared mode
         self._strategy_modes: dict[str, str] = {}
 
-    def set_ticker(self, ticker: "AsyncKiteTicker") -> None:
+    def set_ticker(self, ticker: AsyncKiteTicker) -> None:
         """Wire ticker after it's created (called from runner.py)."""
         self._ticker = ticker
 
-    def set_redis(self, redis_store: "RedisStore") -> None:
+    def set_redis(self, redis_store: RedisStore) -> None:
         """Wire redis after it's created (called from runner.py)."""
         self._redis = redis_store
 

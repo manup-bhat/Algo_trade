@@ -49,7 +49,7 @@ class AlertEvent:
     payload: dict[str, Any]
     strategy_id: str = ""
     timestamp: str = dataclasses.field(
-        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
+        default_factory=lambda: datetime.datetime.now(datetime.UTC).isoformat()
     )
 
     def to_dict(self) -> dict[str, Any]:

@@ -6,14 +6,14 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
+
 import pytest
-from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from app.api import dashboard_router
 from app.models.db.daily_pnl import DailyPnl
-from app.store.database import init_db, get_db
-
+from app.store.database import get_db, init_db
 
 # ── Strategies metadata & configs GET/POST ──────────────────────────────────
 
@@ -61,7 +61,7 @@ signal:
 async def test_get_strategies_enriched_metadata(redis_store, mock_strategy_config_dir, monkeypatch):
     dashboard_router.set_dependencies(redis_store, None)
     monkeypatch.setattr(dashboard_router, "_strategy_config_path", mock_strategy_config_dir)
-    
+
     # Overwrite the resolver directory lookup inside _load_all_strategy_configs
     # pointing to our temporary base path instead of the production path
     def mock_load_configs():
@@ -80,12 +80,12 @@ async def test_get_strategies_enriched_metadata(redis_store, mock_strategy_confi
                     "config": raw,
                 })
         return configs
-        
+
     monkeypatch.setattr(dashboard_router, "_load_all_strategy_configs", mock_load_configs)
 
     data = await dashboard_router.get_strategies()
     assert data["count"] == 2
-    
+
     ivbs = next(s for s in data["strategies"] if s["strategy_id"] == "ivbs")
     assert ivbs["name"] == "Institutional Volume Breakout Strategy"
     assert ivbs["asset_class"] == "EQUITY"
@@ -107,7 +107,7 @@ async def test_get_strategy_config_details(redis_store, mock_strategy_config_dir
     assert data["strategy_id"] == "ivbs"
     assert data["asset_class"] == "EQUITY"
     assert data["config"]["scanner"]["volume_spike_multiple"] == 15.0
-    
+
     # Flattened schema check
     spike_field = next(f for f in data["schema"] if f["key"] == "scanner.volume_spike_multiple")
     assert spike_field["value"] == 15.0
@@ -157,7 +157,7 @@ async def test_update_strategy_config_writes_and_reinitializes(redis_store, mock
 async def test_settings_includes_strategy_configs(redis_store, mock_strategy_config_dir, monkeypatch):
     dashboard_router.set_dependencies(redis_store, None)
     monkeypatch.setattr(dashboard_router, "_strategy_config_path", mock_strategy_config_dir)
-    
+
     def mock_load_configs():
         import yaml
         return [{
@@ -178,11 +178,11 @@ async def test_settings_includes_strategy_configs(redis_store, mock_strategy_con
 @pytest.mark.asyncio
 async def test_export_csv_with_strategy_filter(redis_store):
     dashboard_router.set_dependencies(redis_store, None)
-    
+
     # Verify export filename incorporates strategy name when requested
     resp_all = await dashboard_router.export_csv("trades", strategy_id=None)
     assert "trading_trades" in resp_all.headers["content-disposition"]
-    
+
     resp_ivbs = await dashboard_router.export_csv("trades", strategy_id="ivbs")
     assert "trading_ivbs_trades" in resp_ivbs.headers["content-disposition"]
 

@@ -32,7 +32,7 @@ from typing import Any
 
 import structlog
 
-from engine.core.capability_registry import CapabilityProvider, MarketContext
+from engine.core.capability_registry import MarketContext
 from engine.core.instrument import Instrument, OptionType
 
 log = structlog.get_logger(__name__)

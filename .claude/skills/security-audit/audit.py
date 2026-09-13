@@ -17,20 +17,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import stat
 import subprocess
 import sys
 import tempfile
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 # Reports are organised under tmp/security-audits/<YYYY-MM>/ so a year of
 # monthly runs stays browsable. tmp/ is gitignored and holds reports only.
-NOW = datetime.now(timezone.utc)
+NOW = datetime.now(UTC)
 TODAY = NOW.strftime("%Y-%m-%d")
 OUTDIR = REPO / "tmp" / "security-audits" / NOW.strftime("%Y-%m")
 TMP = OUTDIR
@@ -534,7 +533,7 @@ def check_strategy_sandbox():
             "stdout not an unread PIPE")
 
     # Path traversal into the strategy directory.
-    traversal = re.search(r"os\.path\.join\([^)]*request\.|secure_filename", t)
+    re.search(r"os\.path\.join\([^)]*request\.|secure_filename", t)
     add("Strategy host: filename traversal guarded", "HIGH",
         "PASS" if "secure_filename" in t else "REVIEW",
         "secure_filename used" if "secure_filename" in t
@@ -638,7 +637,7 @@ def check_dependency_integrity():
             "an alternate index-url is configured" if alt_index
             else "packages come from PyPI only",
             "An alternate index is a supply-chain path; confirm it is intentional and trusted")
-        unpinned = len(re.findall(r'"[a-zA-Z0-9_.-]+"\s*,', t))
+        len(re.findall(r'"[a-zA-Z0-9_.-]+"\s*,', t))
         loose = len(re.findall(r'">=', t))
         add("Dependencies: version pinning", "MEDIUM", "REVIEW" if loose > 20 else "PASS",
             f"{loose} dependencies use a floating >= constraint",
@@ -1005,7 +1004,7 @@ def write_xlsx(bandit_rows, code_rows, route_rows, fe_rows):
     ws = wb.active
     ws.title = "Summary"
     for row in ([["OpenAlgo Security Audit", ""],
-                 ["Generated (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")],
+                 ["Generated (UTC)", datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")],
                  ["Repository", str(REPO)],
                  ["Git commit", run(["git", "rev-parse", "--short", "HEAD"])[1].strip()],
                  ["Git branch", run(["git", "rev-parse", "--abbrev-ref", "HEAD"])[1].strip()],

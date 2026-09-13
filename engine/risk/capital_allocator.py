@@ -68,7 +68,7 @@ class CapitalAllocator:
             await allocator.credit("ivbs", 15_000)  # on close
     """
 
-    def __init__(self, redis_store: "RedisStore") -> None:
+    def __init__(self, redis_store: RedisStore) -> None:
         self._redis = redis_store
         # In-memory map of strategy_id -> allocated INR (set at startup)
         # This is the static config; the dynamic "used" is in Redis.
@@ -304,7 +304,7 @@ class CapitalAllocator:
         if total_pct_claimed == 0.0:
             # No explicit allocations — equal split across enabled strategies
             equal_pct = 1.0 / len(enabled_ids)
-            per_strategy = {sid: equal_pct for sid in enabled_ids}
+            per_strategy = dict.fromkeys(enabled_ids, equal_pct)
             log.info(
                 "capital_allocator_equal_split",
                 strategy_count=len(enabled_ids),

@@ -16,7 +16,6 @@ Missing conditions 5 and 6 coverage added.
 from __future__ import annotations
 
 import datetime
-from unittest.mock import MagicMock, patch
 
 import pytest
 import pytz
@@ -26,7 +25,6 @@ from engine.strategy.second_spike_detector import (
     SecondSpikeDetector,
     SecondSpikeEntry,
 )
-from app.core.config import settings
 
 IST_TZ = pytz.timezone("Asia/Kolkata")
 

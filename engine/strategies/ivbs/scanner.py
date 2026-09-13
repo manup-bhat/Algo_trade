@@ -73,8 +73,8 @@ class ImpactCandle:
 
 
 def evaluate(
-    candle: "Candle",
-    builder: "CandleBuilder",
+    candle: Candle,
+    builder: CandleBuilder,
     instrument_token: int = 0,
 ) -> ImpactCandle | None:
     """

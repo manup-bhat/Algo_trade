@@ -5,8 +5,8 @@ and print the measured performance (win rate / profit factor / expectancy / max 
 This turns the spec's win-rate *hypothesis* into a *measurement*.
 
 Run from the repo root:
-    .\.venv\Scripts\python.exe scripts\run_backtest.py data\RELIANCE.csv --symbol RELIANCE
-    .\.venv\Scripts\python.exe scripts\run_backtest.py data\RELIANCE.csv --warmup data\RELIANCE_prevday.csv
+    .\\.venv\\Scripts\\python.exe scripts\run_backtest.py data\\RELIANCE.csv --symbol RELIANCE
+    .\\.venv\\Scripts\\python.exe scripts\run_backtest.py data\\RELIANCE.csv --warmup data\\RELIANCE_prevday.csv
 
 CSV columns (header, case-insensitive): timestamp,open,high,low,close,volume[,symbol]
   timestamp: 'YYYY-MM-DD HH:MM' or ISO-8601 (naive is treated as IST).

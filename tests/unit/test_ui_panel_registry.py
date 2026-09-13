@@ -14,17 +14,17 @@ Coverage:
 
 from __future__ import annotations
 
-import pytest
 from typing import Any
 
-from engine.core.ui_panel_registry import (
-    PanelTypeDescriptor,
-    PanelRenderer,
-    ui_panel_registry,
-    register_default_panels,
-)
-from engine.core.registry import Registry
+import pytest
 
+from engine.core.registry import Registry
+from engine.core.ui_panel_registry import (
+    PanelRenderer,
+    PanelTypeDescriptor,
+    register_default_panels,
+    ui_panel_registry,
+)
 
 # ── Built-in panel type constants ──────────────────────────────────────────────
 BUILTIN_PANELS = [

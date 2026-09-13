@@ -21,10 +21,9 @@ Tests cover:
 from __future__ import annotations
 
 import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytz
-import pytest
 
 from engine.market.candle_aggregator import CandleAggregator
 from engine.market.candle_builder import CandleBuilder

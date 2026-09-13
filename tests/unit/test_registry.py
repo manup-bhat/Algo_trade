@@ -15,7 +15,10 @@ Tests cover:
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
+
 from engine.core.registry import Registry
 
 
@@ -75,10 +78,8 @@ def test_original_survives_duplicate_attempt():
     reg = make_registry()
     p1 = FakeProvider("orig")
     reg.register("key", p1)
-    try:
+    with contextlib.suppress(ValueError):
         reg.register("key", FakeProvider("new"))
-    except ValueError:
-        pass
     # Original must still be there
     assert reg.get("key") is p1
 

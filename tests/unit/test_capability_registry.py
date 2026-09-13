@@ -14,12 +14,9 @@ import pytest
 
 from engine.core.capability_registry import (
     MarketContext,
-    CapabilityProvider,
-    capability_registry as _global_registry,
     compute_capabilities,
 )
 from engine.core.registry import Registry
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

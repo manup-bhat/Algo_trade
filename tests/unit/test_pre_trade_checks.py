@@ -1,7 +1,7 @@
 """
 tests/unit/test_pre_trade_checks.py — Unit tests for all 9 PreTradeChecks.
 
-Each test exercises exactly one check failure. The autouse paper_trade_mode 
+Each test exercises exactly one check failure. The autouse paper_trade_mode
 fixture from conftest ensures settings.is_paper_trade=True throughout.
 
 Spec §13.1.
@@ -55,7 +55,7 @@ def live_kite():
 
 async def check(redis_store, builder, kite=None, limit=500.0, sl=460.0):
     """Run PreTradeChecks with patched market-hours datetime.
-    
+
     The conftest autouse fixture sets PAPER_TRADE=True for all tests.
     For live-mode tests, callers must monkeypatch settings.PAPER_TRADE=False.
     """
@@ -68,10 +68,10 @@ async def check(redis_store, builder, kite=None, limit=500.0, sl=460.0):
          patch("engine.risk.rules.mis_intraday_rule.datetime") as mock_mis_dt, \
          patch("engine.risk.rules.stale_data_rule.StaleDataRule.check") as mock_stale, \
          patch("engine.market.calendar.is_market_open", return_value=True):
-        
+
         from engine.risk.rules.base import RiskResult
         mock_stale.return_value = RiskResult.pass_()
-        
+
         mock_dt.datetime.now.return_value = _MARKET_TIME
         mock_mis_dt.datetime.now.return_value = _MARKET_TIME
         c = PreTradeChecks()

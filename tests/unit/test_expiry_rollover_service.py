@@ -15,13 +15,11 @@ Covers:
 from __future__ import annotations
 
 import datetime
-import json
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from engine.orders.expiry_rollover_service import ExpiryRolloverService
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +62,7 @@ def mock_master():
 
 
 def _make_instrument(symbol="NIFTY23SEP19000CE"):
-    from engine.core.instrument import Instrument, AssetClass, OptionType
+    from engine.core.instrument import Instrument, OptionType
     inst = MagicMock(spec=Instrument)
     inst.tradingsymbol = symbol
     inst.is_derivative = True
@@ -141,7 +139,7 @@ class TestRunRollover:
         )
 
         with patch.object(svc, "_discover_expiring_positions", AsyncMock(return_value=[pos])):
-            with patch("engine.orders.expiry_rollover_service.publish_alert", AsyncMock()) as mock_pub:
+            with patch("engine.orders.expiry_rollover_service.publish_alert", AsyncMock()):
                 await svc.run_rollover()
 
         mock_order_service.place_exit_market.assert_called_once()
@@ -259,7 +257,8 @@ class TestNotificationRegistry:
     @pytest.mark.asyncio
     async def test_broken_channel_does_not_block_others(self, monkeypatch):
         from engine.core.notification_registry import (
-            AlertEvent, notification_registry, publish_alert
+            AlertEvent,
+            publish_alert,
         )
         from engine.core.registry import Registry
 

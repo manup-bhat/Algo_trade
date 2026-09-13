@@ -300,7 +300,7 @@ class InstrumentMaster:
             return []
 
         underlying = block.get("underlying", "")
-        expiry_spec = block.get("expiry", "nearest_weekly")
+        block.get("expiry", "nearest_weekly")
         strike_range_pct = float(block.get("strike_range_pct", 5))
 
         if not underlying:

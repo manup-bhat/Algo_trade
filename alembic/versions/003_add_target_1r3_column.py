@@ -12,8 +12,9 @@ written to SQLite, causing the trail to be lost on engine restart.
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "003"
 down_revision = "002"

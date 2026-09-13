@@ -15,12 +15,12 @@ from alembic import context
 
 # Import all models so Alembic can detect them
 from app.models.db.base import Base
-from app.models.db.signal import Signal  # noqa: F401
-from app.models.db.trade import Trade  # noqa: F401
-from app.models.db.order_event import OrderEvent  # noqa: F401
 from app.models.db.daily_pnl import DailyPnl  # noqa: F401
+from app.models.db.order_event import OrderEvent  # noqa: F401
+from app.models.db.signal import Signal  # noqa: F401
 from app.models.db.signal_snapshot import SignalSnapshot  # noqa: F401
 from app.models.db.strategy import Strategy  # noqa: F401
+from app.models.db.trade import Trade  # noqa: F401
 
 config = context.config
 

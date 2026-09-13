@@ -51,7 +51,7 @@ class SimBroker:
         symbol: str,
         limit_price: float,
         quantity: int,
-        sm: "SymbolStateMachine | None" = None,
+        sm: SymbolStateMachine | None = None,
         exchange: str = "NSE",
         product: str = "MIS",
         tag: str = "IVBS",
@@ -90,7 +90,7 @@ class SimBroker:
         order_id: str,
         new_trigger: float,
         symbol: str = "",
-        sm: "SymbolStateMachine | None" = None,
+        sm: SymbolStateMachine | None = None,
     ) -> bool:
         return True
 

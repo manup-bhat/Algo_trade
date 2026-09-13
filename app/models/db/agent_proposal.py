@@ -26,13 +26,13 @@ from __future__ import annotations
 import datetime
 import enum
 
-from sqlalchemy import DateTime, Enum, Integer, JSON, Text, func
+from sqlalchemy import JSON, DateTime, Enum, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.db.base import Base
 
 
-class ProposalStatus(str, enum.Enum):
+class ProposalStatus(enum.StrEnum):
     """
     Lifecycle states of an agent proposal.
 

@@ -20,9 +20,9 @@ Usage:
 
 from __future__ import annotations
 
-import datetime
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
 
@@ -52,12 +52,12 @@ class RiskResult:
     # ── Constructors ──────────────────────────────────────────────────────────
 
     @classmethod
-    def pass_(cls) -> "RiskResult":
+    def pass_(cls) -> RiskResult:
         """Canonical PASS result."""
         return cls(blocked=False, reason="")
 
     @classmethod
-    def block(cls, reason: str) -> "RiskResult":
+    def block(cls, reason: str) -> RiskResult:
         """
         Canonical BLOCK result.
 
@@ -98,9 +98,9 @@ class OrderContext:
     stop_loss: float
 
     # ── Execution dependencies (may be None in paper / test mode) ─────────────
-    redis_store: "RedisStore | None" = None
-    kite: "AsyncKiteClient | None" = None
-    candle_builder: "CandleBuilder | None" = None
+    redis_store: RedisStore | None = None
+    kite: AsyncKiteClient | None = None
+    candle_builder: CandleBuilder | None = None
 
     # ── Pre-computed values (populated lazily by rules that need them) ─────────
     # Filled in by QuantityRule so subsequent rules reuse it without recomputing.

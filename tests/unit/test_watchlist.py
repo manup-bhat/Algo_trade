@@ -21,7 +21,6 @@ from engine.market.watchlist import (
     validate_symbols,
 )
 
-
 # ── validate_symbols / normalize_symbol ─────────────────────────────────────
 
 def test_normalize_symbol_strips_decoration():

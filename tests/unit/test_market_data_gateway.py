@@ -20,9 +20,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from engine.market.market_data_gateway import MarketDataGateway, _ALERT_THRESHOLD
+from engine.market.market_data_gateway import _ALERT_THRESHOLD, MarketDataGateway
 
 
 def make_gateway() -> tuple[MarketDataGateway, MagicMock]:

@@ -12,7 +12,6 @@ Tests all spec-required cases from Section 16.1:
 from __future__ import annotations
 
 import datetime
-from unittest.mock import patch
 
 import pytest
 import pytz

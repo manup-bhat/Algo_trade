@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import structlog
@@ -38,7 +38,7 @@ import structlog
 log = structlog.get_logger(__name__)
 
 
-class GroupStatus(str, Enum):
+class GroupStatus(StrEnum):
     """Lifecycle of an OrderGroup."""
     PENDING   = "PENDING"    # No legs filled yet
     PARTIAL   = "PARTIAL"    # Some legs filled, some pending
@@ -47,7 +47,7 @@ class GroupStatus(str, Enum):
     CANCELLED = "CANCELLED"  # Explicitly cancelled before completion
 
 
-class OnUnhedged(str, Enum):
+class OnUnhedged(StrEnum):
     """What to do when a leg fills but its counterpart fails."""
     FLATTEN    = "flatten"      # Auto-place a market exit for the filled leg
     ALERT_ONLY = "alert_only"   # Log CRITICAL + pub:alerts, hold the position
@@ -128,7 +128,7 @@ class OrderGroup:
         strategy_id: str,
         on_unhedged: OnUnhedged = OnUnhedged.FLATTEN,
         metadata: dict[str, Any] | None = None,
-    ) -> "OrderGroup":
+    ) -> OrderGroup:
         """Create a new OrderGroup with a generated group_id."""
         return cls(
             group_id=str(uuid.uuid4()),
@@ -139,7 +139,7 @@ class OrderGroup:
 
     # ── Leg management ────────────────────────────────────────────────────────
 
-    def add_leg(self, leg: OrderLeg) -> "OrderGroup":
+    def add_leg(self, leg: OrderLeg) -> OrderGroup:
         """Add an OrderLeg. Returns self for chaining."""
         self.legs.append(leg)
         return self
