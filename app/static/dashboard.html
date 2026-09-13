@@ -2762,7 +2762,13 @@ tr[data-drawer-symbol]:focus-visible { outline: none; box-shadow: inset 0 0 0 2p
       </div>
 
 
-    <!-- Phase 3: Builder Tab Panel -->
+    
+      <!-- Exit Reasons & Strategy Breakdown Row -->
+      <div class="anlz-bottom-grid">
+      </div>
+    </div><!-- /tab-analytics -->
+
+<!-- Phase 3: Builder Tab Panel -->
     <div class="tab-panel" id="tab-builder" style="overflow:hidden;flex-direction:row;gap:0;">
       <div id="builder-palette" style="width:200px;min-width:160px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;">
         <div style="padding:10px 12px 6px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
@@ -2831,8 +2837,12 @@ tr[data-drawer-symbol]:focus-visible { outline: none; box-shadow: inset 0 0 0 2p
       </div>
       <div id="agent-action-result" style="flex-shrink:0;padding:10px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);min-height:32px;"></div>
     </div><!-- /tab-agent -->
-      <!-- Exit Reasons & Strategy Breakdown Row -->
-      <div class="anlz-bottom-grid">
+
+  </div> <!-- /app-content -->
+</div> <!-- /dashboard-layout -->
+
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<div class="drawer" id="detail-drawer">
   <div class="drawer-header">
     <div class="drawer-title" id="drawer-title">Symbol Detail</div>
     <button class="icon-btn" id="btn-close-drawer" aria-label="Close detail panel">
