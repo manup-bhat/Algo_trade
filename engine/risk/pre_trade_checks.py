@@ -43,6 +43,7 @@ from engine.risk.rules.sma_warmup_rule import SmaWarmupRule
 from engine.risk.rules.capital_allocator_rule import CapitalAllocatorRule
 from engine.risk.rules.freeze_quantity_rule import FreezeQuantityRule
 from engine.risk.rules.mis_intraday_rule import MISIntradayRule
+from engine.risk.rules.stale_data_rule import StaleDataRule
 
 if TYPE_CHECKING:
     from engine.kite.client import AsyncKiteClient
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 
-# ── Default pipeline (10 rules, same order as the original 9) ─────────────────
+# ── Default pipeline (11 rules, same order as the original 10) ─────────────────
 # Instantiated once at module level — rules are stateless, safe to share.
 _DEFAULT_RULES = [
     CircuitBreakerRule(),          # 1
@@ -67,6 +68,7 @@ _DEFAULT_RULES = [
     CapitalAllocatorRule(),        # 10 (needs capital_allocator in ctx.extra)
     FreezeQuantityRule(),          # 11 (NSE freeze qty — F&O safety)
     MISIntradayRule(),             # 12 (product=MIS, circuit guard, session window)
+    StaleDataRule(),               # 13 (blocks if tick data is missing/stale)
 ]
 
 

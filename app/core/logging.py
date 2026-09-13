@@ -13,6 +13,14 @@ import sys
 import structlog
 
 
+def redact_secrets_processor(logger, log_method, event_dict):
+    """Redact sensitive keys from the log event dictionary."""
+    sensitive_keys = {"app_key", "api_key", "secret", "pepper", "token", "password"}
+    for key in list(event_dict.keys()):
+        if any(s in key.lower() for s in sensitive_keys):
+            event_dict[key] = "[REDACTED]"
+    return event_dict
+
 def configure_logging(level: str = "INFO") -> None:
     """
     Configure structlog for JSON output.
@@ -32,6 +40,7 @@ def configure_logging(level: str = "INFO") -> None:
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_log_level,
             structlog.stdlib.add_logger_name,
+            redact_secrets_processor,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.ExceptionRenderer(),

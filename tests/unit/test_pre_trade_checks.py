@@ -66,7 +66,12 @@ async def check(redis_store, builder, kite=None, limit=500.0, sl=460.0):
     # pass regardless of what hour the test suite is run.
     with patch("engine.risk.rules.entry_cutoff_rule.datetime") as mock_dt, \
          patch("engine.risk.rules.mis_intraday_rule.datetime") as mock_mis_dt, \
+         patch("engine.risk.rules.stale_data_rule.StaleDataRule.check") as mock_stale, \
          patch("engine.market.calendar.is_market_open", return_value=True):
+        
+        from engine.risk.rules.base import RiskResult
+        mock_stale.return_value = RiskResult.pass_()
+        
         mock_dt.datetime.now.return_value = _MARKET_TIME
         mock_mis_dt.datetime.now.return_value = _MARKET_TIME
         c = PreTradeChecks()

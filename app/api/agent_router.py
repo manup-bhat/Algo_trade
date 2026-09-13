@@ -49,13 +49,14 @@ def _default_session_factory():
     import os
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import NullPool
     from app.models.db.base import Base
 
     db_url = os.environ.get("DATABASE_URL", "sqlite:///./trading_bot.db")
     # Strip async prefix if mistakenly set
     if db_url.startswith("sqlite+aiosqlite"):
         db_url = db_url.replace("sqlite+aiosqlite", "sqlite")
-    engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    engine = create_engine(db_url, connect_args={"check_same_thread": False}, poolclass=NullPool)
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     return Session()

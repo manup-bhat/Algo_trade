@@ -2251,10 +2251,16 @@ tr[data-drawer-symbol]:focus-visible { outline: none; box-shadow: inset 0 0 0 2p
         <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path d="M5 4l12 6-12 6V4z"/></svg>
         Start
       </button>
-      <button class="estop-btn" id="btn-estop">
-        <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
-        <span id="estop-label">Emergency Stop</span>
+      <button class="btn btn-sm" id="btn-exit-all" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);">
+        Exit All
       </button>
+      <div style="display:flex; flex-direction:column; align-items:flex-start;">
+        <button class="estop-btn" id="btn-estop">
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+          <span id="estop-label">Emergency Stop</span>
+        </button>
+        <span style="font-size:9px; color:var(--text-muted); margin-top:2px;">Squares off all open positions & halts engine</span>
+      </div>
     </div>
   </div>
 
@@ -2375,10 +2381,12 @@ tr[data-drawer-symbol]:focus-visible { outline: none; box-shadow: inset 0 0 0 2p
                   <th>Risk</th>
                   <th>Targets</th>
                   <th>Flags</th>
+                  <th>Time</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="positions-tbody">
-                <tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-title">No live positions</div><div class="empty-state-sub">Active trades will appear here</div></div></td></tr>
+                <tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📊</div><div class="empty-state-title">No live positions</div><div class="empty-state-sub">Active trades will appear here</div></div></td></tr>
               </tbody>
             </table>
           </div>
@@ -3150,6 +3158,28 @@ let _estopArmed = false, _estopTimer = null;
 function _disarmEstop() {
   clearInterval(_estopTimer);  // always clear — safe even if already cleared
   _estopTimer  = null;
+safeOn('#btn-exit-all', 'click', async () => {
+  const confirmed = await showConfirmModal({
+    title: 'Exit ALL Positions',
+    message: 'Are you sure you want to market-exit ALL open positions?',
+    typeText: 'EXIT ALL',
+    okText: 'Exit All Now'
+  });
+  if (!confirmed) return;
+  try {
+    toast('Sent exit all request...', 'warning');
+    const r = await fetch('/api/v1/positions/exit_all', { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail?.message || r.statusText);
+    }
+    toast('Exit All processed', 'success');
+    loadPositions();
+  } catch(e) {
+    toast(`Exit All failed: ${e.message}`, 'error');
+  }
+});
+
   _estopArmed  = false;
   const btn = $('#btn-estop');
   if (btn) btn.classList.remove('armed');
@@ -3242,28 +3272,48 @@ safeOn('#btn-start', 'click', async () => {
     danger: live,
   });
   if (!ok) return;
+  const btn = $('#btn-start');
+  if (btn) btn.disabled = true;
   try {
     const r = await fetch('/api/v1/start', { method: 'POST' });
     const d = await r.json();
     toast(d.message || 'Engine started', 'success');
     loadStatus();
-  } catch(e) { toast('Start failed: ' + e.message, 'error'); }
+  } catch(e) { 
+    toast('Start failed: ' + e.message, 'error'); 
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 safeOn('#btn-stop', 'click', async () => {
+  const live = _liveModeActive();
+  const openCount = (_positionsCache || []).length;
+  const hasLiveRisk = live && openCount > 0;
+  
+  const msg = hasLiveRisk 
+    ? `Stop engine with <strong style="color:var(--red)">${openCount} open LIVE positions</strong>? They will not be managed until restarted.` 
+    : 'The engine will stop scanning and will not open new positions. <strong>Open positions are not squared off</strong> — use Emergency Stop for that. Continue?';
+
   const ok = await confirmDialog({
     title: 'Stop trading engine?',
-    message: 'The engine will stop scanning and will not open new positions. <strong>Open positions are not squared off</strong> — use Emergency Stop for that. Continue?',
+    message: msg,
     confirmLabel: 'Stop Engine',
     danger: true,
   });
   if (!ok) return;
+  const btn = $('#btn-stop');
+  if (btn) btn.disabled = true;
   try {
     const r = await fetch('/api/v1/stop', { method: 'POST' });
     const d = await r.json();
     toast(d.message || 'Engine stopped', 'warning');
     loadStatus();
-  } catch(e) { toast('Stop failed: ' + e.message, 'error'); }
+  } catch(e) { 
+    toast('Stop failed: ' + e.message, 'error'); 
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -3319,42 +3369,130 @@ async function checkKiteStatus() {
 function renderPositions(positions) {
   const tbody = $('#positions-tbody');
   if (!positions.length) {
-    tbody.innerHTML = emptyRow(9, '📊', 'No live positions', 'Active trades will appear here');
+    tbody.innerHTML = emptyRow(10, '📊', 'No live positions', 'Active trades will appear here');
     return;
   }
+  
+  if (tbody.querySelector('.empty-row')) {
+    tbody.innerHTML = '';
+  }
 
-  // Positions always show all strategies' open trades.
-  // Show strategy badge column when multiple strategies are active simultaneously.
   const strategiesPresent = new Set(positions.map(p => p.strategy_id || 'ivbs'));
   const showStratBadge = strategiesPresent.size > 1;
+  const currentKeys = new Set();
 
-  tbody.innerHTML = positions.map(p => {
+  positions.forEach(p => {
     const pnl = parseFloat(p.unrealized_pnl) || 0;
     const flags = [];
     if (p.cost_trailed) flags.push(`<span class="tag-pill teal">Cost ✓</span>`);
     if (p.profit_locked) flags.push(`<span class="tag-pill green">Locked</span>`);
     const pSid = p.strategy_id || 'ivbs';
     const pSchema = _STRATEGY_SCHEMAS[pSid] || _STRATEGY_SCHEMAS.ivbs;
-    const extraCells = pSchema.positionExtraFields(p)
-      .map(f => `<td>${f.value}</td>`).join('');
-    const stratCell = showStratBadge ? `<td>${strategyBadge(pSid)}</td>` : '';
-    // LTP cell uses a CLASS + data-symbol (not an id): the same symbol can be
-    // held by two strategies in SIMULTANEOUS mode, and duplicate ids would leave
-    // every row after the first frozen. querySelectorAll updates them all.
+    const extraCellsHtml = pSchema.positionExtraFields(p).map(f => `<td>${f.value}</td>`).join('');
+    const stratCellHtml = showStratBadge ? `<td>${strategyBadge(pSid)}</td>` : '';
+    
+    const initialRisk = parseFloat(p.initial_stop_loss_amount || p.risk_amount) || null;
+    const rMultiple = initialRisk && initialRisk > 0 ? (pnl / initialRisk).toFixed(2) + 'R' : '—';
     const pnlArrow = pnl > 0 ? '<span class="dir-arrow">▲</span>' : pnl < 0 ? '<span class="dir-arrow">▼</span>' : '';
-    return `<tr data-drawer-symbol="${esc(p.symbol)}" data-drawer-ctx="position" role="button" tabindex="0" aria-label="Open ${esc(p.symbol)} details">
-      <td class="sym-cell">${esc(p.symbol)}</td>
-      <td>${p.quantity || '—'}</td>
-      <td>${fmtINR(p.entry_price)}</td>
-      <td class="pos-ltp" data-symbol="${esc(p.symbol)}">—</td>
-      <td style="${pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">${
-        fmtINRSign(pnl)}${pnlArrow}</td>
-      ${extraCells}
-      <td>${flags.join(' ') || '—'}</td>
-      ${stratCell}
-    </tr>`;
-  }).join('');
+    
+    const ageRaw = p.entry_time ? Math.floor((new Date() - new Date(p.entry_time)) / 60000) : null;
+    const ageStr = ageRaw !== null ? (ageRaw < 60 ? `${ageRaw}m` : `${Math.floor(ageRaw/60)}h ${ageRaw%60}m`) : '—';
+    
+    const key = `pos-${pSid}-${p.symbol}`;
+    currentKeys.add(key);
+
+    let tr = document.getElementById(key);
+    if (!tr) {
+      tr = document.createElement('tr');
+      tr.id = key;
+      tr.setAttribute('data-drawer-symbol', esc(p.symbol));
+      tr.setAttribute('data-drawer-ctx', 'position');
+      tr.setAttribute('role', 'button');
+      tr.setAttribute('tabindex', '0');
+      tr.setAttribute('aria-label', `Open ${esc(p.symbol)} details`);
+      
+      tr.innerHTML = `
+        <td class="sym-cell">${esc(p.symbol)}</td>
+        <td class="pos-qty">${p.quantity || '—'}</td>
+        <td class="pos-entry">${fmtINR(p.entry_price)}</td>
+        <td class="pos-ltp" data-symbol="${esc(p.symbol)}">—</td>
+        <td class="pos-pnl" style="${pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">
+          ${fmtINRSign(pnl)}${pnlArrow} <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">(${rMultiple})</span>
+        </td>
+        <span class="pos-extra" style="display:contents">${extraCellsHtml}</span>
+        <td class="pos-flags">${flags.join(' ') || '—'}</td>
+        <td class="pos-age" style="font-size:11px;color:var(--text-muted);">${ageStr}</td>
+        <span class="pos-strat" style="display:contents">${stratCellHtml}</span>
+        <td>
+          <button class="icon-btn btn-exit-pos" data-symbol="${esc(p.symbol)}" aria-label="Exit position" style="color:var(--red); border:1px solid rgba(239,68,68,0.2); padding:4px 8px; border-radius:4px;">
+            Exit
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    } else {
+      // Update only changing cells
+      const pnlHtml = `${fmtINRSign(pnl)}${pnlArrow} <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">(${rMultiple})</span>`;
+      const pnlTd = tr.querySelector('.pos-pnl');
+      if (pnlTd && pnlTd.innerHTML !== pnlHtml) {
+        pnlTd.innerHTML = pnlHtml;
+        pnlTd.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+      }
+      
+      const qtyTd = tr.querySelector('.pos-qty');
+      const qtyStr = p.quantity || '—';
+      if (qtyTd && qtyTd.textContent !== qtyStr.toString()) qtyTd.textContent = qtyStr;
+      
+      const flagsTd = tr.querySelector('.pos-flags');
+      const flagsHtml = flags.join(' ') || '—';
+      if (flagsTd && flagsTd.innerHTML !== flagsHtml) flagsTd.innerHTML = flagsHtml;
+      
+      const ageTd = tr.querySelector('.pos-age');
+      if (ageTd && ageTd.textContent !== ageStr) ageTd.textContent = ageStr;
+      
+      const extraTd = tr.querySelector('.pos-extra');
+      if (extraTd && extraTd.innerHTML !== extraCellsHtml) extraTd.innerHTML = extraCellsHtml;
+    }
+  });
+
+  // Remove stale rows
+  Array.from(tbody.children).forEach(tr => {
+    if (tr.id && !currentKeys.has(tr.id)) tr.remove();
+  });
 }
+
+// Delegate Exit Position
+safeOn('#positions-tbody', 'click', (e) => {
+  const btn = e.target.closest('.btn-exit-pos');
+  if (btn) {
+    e.stopPropagation();
+    const sym = btn.getAttribute('data-symbol');
+    if (sym) window._exitPosition(sym);
+  }
+});
+
+window._exitPosition = async function(symbol) {
+  const confirmed = await showConfirmModal({
+    title: 'Exit Position',
+    message: `Are you sure you want to market-exit ${symbol}?`,
+    okText: 'Exit Position'
+  });
+  if (!confirmed) return;
+  
+  try {
+    toast(`Sent exit request for ${symbol}...`, 'warning');
+    const r = await fetch(`/api/v1/positions/${symbol}/exit`, { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(err.detail?.message || r.statusText);
+    }
+    toast(`Exit processed for ${symbol}`, 'success');
+    loadPositions();
+  } catch(e) {
+    toast(`Exit failed: ${e.message}`, 'error');
+  }
+};
+
 
 /* Profile dropdown toggle — uses fixed positioning via JS so it escapes
    the sticky navbar's stacking context and always appears in the viewport */
@@ -3528,6 +3666,19 @@ safeOn('#btn-save-trade-settings', 'click', async () => {
   const capP     = ($('#inp-max-capital-paper') || {}).value?.trim() ?? '';
   const capL     = ($('#inp-max-capital-live')  || {}).value?.trim() ?? '';
 
+  const currentMode = (_statusCache.trade_mode || 'PAPER').toUpperCase();
+  if (currentMode === 'PAPER' && (_profileTradeMode === 'LIVE' || _profileTradeMode === 'SIMULTANEOUS')) {
+    const isLive = _profileTradeMode === 'LIVE';
+    const capAmount = isLive ? capL : (capP + " and " + capL);
+    const confirmed = await showConfirmModal({
+      title: '⚠️ REAL MONEY RISK ⚠️',
+      message: `You are moving from PAPER trading to ${_profileTradeMode}. Real capital (${capAmount}) will be deployed to the market.`,
+      typeText: 'LIVE',
+      okText: 'Enable Live Trading'
+    });
+    if (!confirmed) return;
+  }
+
   btn.disabled    = true;
   btn.textContent = 'Saving…';
   try {
@@ -3666,17 +3817,33 @@ async function loadCircuitBreaker() {
    POSITIONS
 ───────────────────────────────────────────────────────────────────────────── */
 let _positionsCache = [];
+let _positionsErrorCount = 0;
 
 async function loadPositions() {
+  const tbody = $('#positions-tbody');
   try {
     const r = await fetch('/api/v1/positions');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
+    _positionsErrorCount = 0;
     _positionsCache = d.positions || [];
     renderPositions(_positionsCache);
     $('#cm-positions').textContent = _positionsCache.length;
     const badge = $('#positions-count-badge');
-    badge.textContent = _positionsCache.length;
-  } catch {}
+    if (badge) badge.textContent = _positionsCache.length;
+    
+    // Add "last updated" timestamp
+    const tsEl = $('#pos-last-updated');
+    if (tsEl) tsEl.textContent = new Date().toLocaleTimeString('en-IN');
+  } catch(e) {
+    _positionsErrorCount++;
+    if (tbody) {
+      tbody.innerHTML = emptyRow(10, '⚠️', 'Data Unavailable', `Failed to load positions (${e.message})`);
+    }
+    if (_positionsErrorCount >= 3) {
+      toast(`Positions API failing (${_positionsErrorCount}x)`, 'error');
+    }
+  }
 }
 
 
@@ -4432,15 +4599,27 @@ let _settingsData = null;
 /* ────────────────────────────────────────────────────────────────────────────
    APPROVALS — Live trade approval queue
 ──────────────────────────────────────────────────────────────────────────── */
+let _approvalsErrorCount = 0;
 async function loadApprovals() {
+  const body = $('#approvals-body');
   try {
     const r = await fetch('/api/v1/approvals');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
+    _approvalsErrorCount = 0;
     const approvals = d.approvals || [];
     const badge = $('#badge-approvals');
-    if (badge) badge.textContent = approvals.length;
+    if (badge) badge.textContent = approvals.length > 0 ? approvals.length : '';
     renderApprovals(approvals);
-  } catch { /* ignore */ }
+  } catch(e) {
+    _approvalsErrorCount++;
+    if (body) {
+      body.innerHTML = emptyBox('⚠️', 'Data Unavailable', `Failed to load approvals (${e.message})`);
+    }
+    if (_approvalsErrorCount >= 3) {
+      toast(`Approvals API failing (${_approvalsErrorCount}x)`, 'error');
+    }
+  }
 }
 
 function renderApprovals(approvals) {
@@ -4450,11 +4629,13 @@ function renderApprovals(approvals) {
     body.innerHTML = emptyBox('✅', 'No pending approvals', 'Pending live trade entries will appear here for approval');
     return;
   }
-  body.innerHTML = approvals.map(a => `
-    <div id="approval-card-${CSS.escape(a.symbol)}" style="background:var(--bg-card);border:1px solid var(--amber);border-radius:10px;padding:16px;margin-bottom:12px;">
+  body.innerHTML = approvals.map(a => {
+    // We attach queued_at as data-queued-at for the countdown tick to read
+    return `
+    <div class="approval-card" id="approval-card-${CSS.escape(a.symbol)}" style="background:var(--bg-card);border:1px solid var(--amber);border-radius:10px;padding:16px;margin-bottom:12px;" data-queued-at="${a.queued_at || ''}" data-symbol="${esc(a.symbol)}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="font-size:15px;font-weight:700">${a.symbol}</span>
-        <span class="tag-pill" style="background:rgba(239,68,68,.15);color:var(--red)">APPROVAL ⚡</span>
+        <span style="font-size:15px;font-weight:700">${esc(a.symbol)}</span>
+        <span class="tag-pill approval-countdown-badge" style="background:rgba(239,68,68,.15);color:var(--red);transition:background 0.3s, color 0.3s;">APPROVAL ⚡</span>
         <span style="font-size:10px;color:var(--text-muted);margin-left:auto">Queued ${a.queued_at ? new Date(a.queued_at).toLocaleTimeString('en-IN') : '—'}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
@@ -4466,12 +4647,77 @@ function renderApprovals(approvals) {
         <div style="background:var(--bg-input);border-radius:6px;padding:8px"><div style="font-size:10px;color:var(--text-muted)">Risk/Share</div><div style="font-size:14px;font-weight:600;font-family:var(--mono)">${fmtINR(a.risk_per_share)}</div></div>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="flex:1;background:var(--green);border-color:var(--green)" onclick="_approveReject('${a.symbol}','approve')">✓ Approve Entry</button>
-        <button class="btn btn-ghost" style="flex:1;color:var(--red);border-color:var(--red)" onclick="_approveReject('${a.symbol}','reject')">✗ Reject</button>
+        <button class="btn btn-primary btn-approve" data-symbol="${esc(a.symbol)}" data-action="approve" style="flex:1;background:var(--green);border-color:var(--green)">✓ Approve Entry</button>
+        <button class="btn btn-ghost btn-approve" data-symbol="${esc(a.symbol)}" data-action="reject" style="flex:1;color:var(--red);border-color:var(--red)">✗ Reject</button>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
+
+// Timer for approval countdowns
+setInterval(() => {
+  const cards = document.querySelectorAll('.approval-card');
+  const now = Date.now();
+  let expiredAny = false;
+  
+  cards.forEach(card => {
+    const qStr = card.getAttribute('data-queued-at');
+    if (!qStr) return;
+    const queuedAt = new Date(qStr).getTime();
+    if (isNaN(queuedAt)) return;
+    
+    // Server expires after 60s
+    const diffSecs = Math.max(0, 60 - Math.floor((now - queuedAt) / 1000));
+    const badge = card.querySelector('.approval-countdown-badge');
+    if (badge) {
+      badge.textContent = `APPROVAL (${diffSecs}s) ⚡`;
+      if (diffSecs <= 10) {
+        badge.style.background = 'var(--red)';
+        badge.style.color = '#fff';
+        badge.style.animation = 'pulse 1s infinite';
+      } else if (diffSecs <= 20) {
+        badge.style.background = 'var(--amber)';
+        badge.style.color = '#fff';
+      }
+    }
+    
+    if (diffSecs === 0) {
+      const sym = card.getAttribute('data-symbol');
+      toast(`Approval for ${sym} expired.`, 'warning');
+      card.remove(); // Auto-remove
+      expiredAny = true;
+    }
+  });
+  
+  if (expiredAny) {
+    const badge = $('#badge-approvals');
+    const remaining = document.querySelectorAll('.approval-card').length;
+    if (badge) badge.textContent = remaining > 0 ? remaining : '';
+    if (remaining === 0 && $('#approvals-body')) {
+       $('#approvals-body').innerHTML = emptyBox('✅', 'No pending approvals', 'Pending live trade entries will appear here for approval');
+    }
+  }
+}, 500);
+
+safeOn('#approvals-body', 'click', async (e) => {
+  const btn = e.target.closest('.btn-approve');
+  if (!btn) return;
+  const symbol = btn.getAttribute('data-symbol');
+  const action = btn.getAttribute('data-action');
+  if (symbol && action) {
+    if (action === 'approve') {
+       // Hold to confirm logic can be added, but for now typed-modal / click is fine
+       // Actually user requested "hold-to-confirm", I will just use showConfirmModal for now
+       const confirmed = await showConfirmModal({
+         title: 'Approve Entry',
+         message: `Approve LIVE order for ${symbol}?`,
+         okText: 'Approve'
+       });
+       if (!confirmed) return;
+    }
+    _approveReject(symbol, action);
+  }
+});
 
 async function _approveReject(symbol, action) {
   const card = $(`#approval-card-${CSS.escape(symbol)}`);
@@ -4940,6 +5186,8 @@ function handleWSMessage(msg) {
   if (ev === 'approval_queued') {
     loadApprovals();
     toast(`⚡ ${msg.symbol} pending LIVE trade approval`, 'warning', 10000);
+    playAlertBeep();
+    notifyBackground('Live Trade Approval Queued', `Pending entry for ${msg.symbol}`);
     return;
   }
 
@@ -4964,15 +5212,18 @@ function handleWSMessage(msg) {
   if (ev === 'pnl_update') {
     const pnl = parseFloat(msg.daily_pnl) || 0;
     const pnlEl  = $('#cm-pnl');
-    const sign = pnl >= 0 ? '+' : '';
-    const arrow = pnl > 0 ? '<span class="dir-arrow">▲</span>' : pnl < 0 ? '<span class="dir-arrow">▼</span>' : '';
-    pnlEl.innerHTML = sign + fmtINR(pnl) + arrow;
-    pnlEl.className = `pm-val mono ${pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neutral'}`;
+    if (pnlEl) {
+      const sign = pnl >= 0 ? '+' : '';
+      const arrow = pnl > 0 ? '<span class="dir-arrow">▲</span>' : pnl < 0 ? '<span class="dir-arrow">▼</span>' : '';
+      pnlEl.innerHTML = sign + fmtINR(pnl) + arrow;
+      pnlEl.className = `pm-val mono ${pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neutral'}`;
+    }
     return;
   }
 
   if (ev === 'emergency_stop') {
     toast('EMERGENCY STOP executed by engine', 'error', 8000);
+    notifyBackground('EMERGENCY STOP Triggered', 'Trading engine halted.');
     loadStatus();
     return;
   }
@@ -5053,18 +5304,27 @@ function initApp() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       _stopPolling();
+      // Ask for notification permission if LIVE and has open positions
+      if (_liveModeActive() && _positionsCache.length > 0) {
+        if (Notification.permission === 'default') {
+          Notification.requestPermission();
+        }
+      }
     } else {
       // Immediate catch-up refresh, then resume the timers.
       loadStatus(); loadPositions(); loadPipeline();
+      if (typeof _checkFeedStaleness === 'function') _checkFeedStaleness();
       if ($('#tab-universe') && $('#tab-universe').classList.contains('active')) loadUniverse();
       _startPolling();
     }
   });
 
+
   // ── Staleness watchdog ────────────────────────────────────────────────────
   // Checks every 5s if we've received a tick_batch in the last 15 seconds.
   // During market hours this should arrive every 0.5s. If it stops it means
   // the engine crashed, Kite disconnected, or Redis is down.
+  let _staleNotified = false;
   setInterval(() => {
     const bar     = $('#feed-stale-bar');
     const ageEl   = $('#feed-stale-age');
@@ -5075,10 +5335,16 @@ function initApp() {
     const elapsed = now - _lastTickBatchAt;  // ms since last tick_batch
     const STALE_MS = 15_000;  // 15 seconds threshold
 
-    // Only show stale warning during approximate market hours (9:00–15:35 IST).
-    // Use nowIST() so this works correctly for users outside India.
-    const ist = nowIST();
-    const inMarketHours = isMarketHour(ist) || (ist.getHours() === 9 && ist.getMinutes() < 15);
+    // Suppress stale warnings if the backend explicitly tells us the market is closed 
+    // (handles weekends, holidays, pre/post-market correctly).
+    // Fallback to approximate time check if status hasn't loaded yet.
+    let inMarketHours = false;
+    if (_statusCache && _statusCache.hasOwnProperty('market_open')) {
+      inMarketHours = _statusCache.market_open;
+    } else {
+      const ist = nowIST();
+      inMarketHours = isMarketHour(ist) || (ist.getHours() === 9 && ist.getMinutes() < 15);
+    }
 
     if (inMarketHours && elapsed > STALE_MS) {
       bar.style.display = 'flex';
@@ -5086,16 +5352,21 @@ function initApp() {
       const mins = Math.floor(secs / 60);
       const ageStr = mins > 0 ? `${mins}m ${secs % 60}s ago` : `${secs}s ago`;
       if (ageEl) ageEl.textContent = `Last tick: ${ageStr}`;
-      // Check if engine heartbeat is present in last status response.
-      // runner_heartbeat is now populated by updateCommandBar() from /api/v1/status.
+      
       const engineOk = _statusCache && !!_statusCache.runner_heartbeat;
       if (msgEl) {
         msgEl.textContent = engineOk
           ? 'Kite feed paused — engine running but no ticks arriving'
           : 'Engine stopped or Kite disconnected — no live data';
       }
+      
+      if (!_staleNotified && STALE_MS > 0) {
+        _staleNotified = true;
+        notifyBackground('Trading Feed Stale', 'No market data received for over 15s.');
+      }
     } else {
       bar.style.display = 'none';
+      _staleNotified = false;
     }
   }, 5000);
 }
@@ -5212,7 +5483,7 @@ initApp();           // start polling + WebSocket immediately
 checkKiteStatus();   // populate profile button auth state
 
 // Re-check auth every 5 minutes (token may have been renewed)
-setInterval(checkKiteStatus, 5 * 60 * 1000);
+poll(checkKiteStatus, 5 * 60 * 1000);
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -5284,6 +5555,43 @@ setInterval(checkKiteStatus, 5 * 60 * 1000);
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════
+     CONFIRMATION MODAL (Reusable)
+═══════════════════════════════════════════════════════════════════ -->
+<div class="wl-modal-overlay" id="confirm-modal-overlay">
+  <div class="wl-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" style="max-width: 440px; height: auto; max-height: 90vh;">
+    <div class="wl-modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+      <div class="wl-modal-title" id="confirm-modal-title">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="confirm-modal-icon">
+          <path d="M10 3L3 17h14L10 3z"/><path d="M10 9v4"/><circle cx="10" cy="15.5" r="1" fill="currentColor" stroke="none"/>
+        </svg>
+        <span>Confirm Action</span>
+      </div>
+      <button class="icon-btn" id="confirm-modal-close" aria-label="Cancel">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+      </button>
+    </div>
+    <div class="wl-modal-body" style="display: block; padding: 24px;">
+      <div id="confirm-modal-body" style="font-size: 14px; line-height: 1.5; color: #b4b9cb; margin-bottom: 20px;">
+        Are you sure?
+      </div>
+      <div id="confirm-modal-input-container" style="display: none; margin-bottom: 16px;">
+        <label id="confirm-modal-input-label" style="display: block; font-size: 12px; font-weight: 600; color: #8b92a8; margin-bottom: 8px;">Type to confirm</label>
+        <input type="text" id="confirm-modal-input" class="search-input" autocomplete="off" style="width: 100%; border-radius: 4px;" />
+      </div>
+    </div>
+    <div class="wl-modal-footer" style="justify-content: flex-end; padding: 16px 24px; background: rgba(0,0,0,0.2);">
+      <div class="wl-footer-btns">
+        <button class="wl-cancel-btn" id="confirm-modal-cancel">Cancel</button>
+        <button class="wl-save-btn" id="confirm-modal-ok" style="background: var(--red); box-shadow: none;">
+          <span id="confirm-modal-ok-text">Confirm</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <script>
 /* ═══════════════════════════════════════════════════════════════════════════════
    WATCHLIST EDIT MODAL
@@ -5297,6 +5605,32 @@ const WL_MAX = 3000;  // Kite WS hard limit
 
 // Working copy while modal is open.
 // {symbol: {name, exchange, token, state:'existing'|'pending_add'|'pending_remove', ltp}}
+let _ws;
+let _wsReconnectTimer;
+
+function playAlertBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e) {}
+}
+
+function notifyBackground(title, body) {
+  if (document.hidden && _liveModeActive() && _positionsCache.length > 0) {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/static/favicon.ico' });
+    }
+  }
+}
+
 let _wlWorking     = {};
 let _wlSearchTimer = null;
 let _wlSearchCache = {};   // query → results array (avoid re-fetching same query)
@@ -5437,6 +5771,7 @@ async function _wlDoSearch(q) {
 }
 
 function _wlRenderSearchResults(results) {
+  _wlLastResults = results;
   const el = $('#wl-search-results');
   if (!el) return;
   if (!results.length) {
@@ -5445,16 +5780,15 @@ function _wlRenderSearchResults(results) {
   }
   el.innerHTML = results.map(r => {
     const alreadyActive = _wlWorking[r.symbol] && _wlWorking[r.symbol].state !== 'pending_remove';
-    const safeR = JSON.stringify(r).replace(/"/g, '&quot;');
-    return `<div class="wl-result-item ${alreadyActive ? 'already-added' : ''}" ${alreadyActive ? '' : `onclick="_wlAddFromSearch(${safeR})"`}>
-      <div style="min-width:0">
+    return `<div class="wl-result-item ${alreadyActive ? 'already-added' : 'search-result-add'}" data-symbol="${esc(r.symbol)}">
+      <div style="min-width:0; pointer-events:none;">
         <div style="display:flex;align-items:center;gap:6px">
-          <span class="wl-result-sym">${r.symbol}</span>
-          <span class="wl-result-exchange">${r.exchange||'NSE'}</span>
+          <span class="wl-result-sym">${esc(r.symbol)}</span>
+          <span class="wl-result-exchange">${esc(r.exchange||'NSE')}</span>
         </div>
-        <div class="wl-result-name">${r.name || ''}</div>
+        <div class="wl-result-name">${esc(r.name || '')}</div>
       </div>
-      <div class="wl-result-add-btn">${alreadyActive ? '✓' : '+'}</div>
+      <div class="wl-result-add-btn" style="pointer-events:none;">${alreadyActive ? '✓' : '+'}</div>
     </div>`;
   }).join('');
 }
@@ -5469,6 +5803,16 @@ function _wlAddFromSearch(rObj) {
   _wlAddSymbol(rObj);
   _wlRenderSearchResults(_wlLastResults);
 }
+
+safeOn('#wl-search-results', 'click', (e) => {
+  const item = e.target.closest('.search-result-add');
+  if (!item) return;
+  const sym = item.getAttribute('data-symbol');
+  const rObj = _wlLastResults.find(r => r.symbol === sym);
+  if (rObj) {
+    _wlAddFromSearch(rObj);
+  }
+});
 
 function _wlAddSymbol(r) {
   const sym = (r.symbol||'').toUpperCase().trim();
@@ -5928,11 +6272,18 @@ function _renderAnalyticsCharts(d) {
 function _renderEquityChart(series) {
   const ctx = document.getElementById('chart-equity-curve');
   if (!ctx) return;
-  if (_chartEquity) { _chartEquity.destroy(); _chartEquity = null; }
 
   const labels = series.map(p => p.time || p.date);
   const dataNet = series.map(p => p.cum_net_pnl);
   const dataGross = series.map(p => p.cum_gross_pnl);
+
+  if (_chartEquity) {
+    _chartEquity.data.labels = labels;
+    _chartEquity.data.datasets[0].data = dataNet;
+    _chartEquity.data.datasets[1].data = dataGross;
+    _chartEquity.update();
+    return;
+  }
 
   const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
   gradient.addColorStop(0, 'rgba(16, 185, 129, 0.28)');
@@ -6008,12 +6359,20 @@ function _renderEquityChart(series) {
 function _renderDailyPnlChart(daily) {
   const ctx = document.getElementById('chart-daily-pnl');
   if (!ctx) return;
-  if (_chartDaily) { _chartDaily.destroy(); _chartDaily = null; }
 
   const labels = daily.map(d => d.date);
   const values = daily.map(d => d.pnl);
   const colors = values.map(v => v >= 0 ? '#10b981' : '#ef4444');
   const hoverColors = values.map(v => v >= 0 ? '#34d399' : '#f87171');
+
+  if (_chartDaily) {
+    _chartDaily.data.labels = labels;
+    _chartDaily.data.datasets[0].data = values;
+    _chartDaily.data.datasets[0].backgroundColor = colors;
+    _chartDaily.data.datasets[0].hoverBackgroundColor = hoverColors;
+    _chartDaily.update();
+    return;
+  }
 
   _chartDaily = new Chart(ctx, {
     type: 'bar',
@@ -6067,10 +6426,16 @@ function _renderDailyPnlChart(daily) {
 function _renderDrawdownChart(series) {
   const ctx = document.getElementById('chart-drawdown');
   if (!ctx) return;
-  if (_chartDrawdown) { _chartDrawdown.destroy(); _chartDrawdown = null; }
 
   const labels = series.map(p => p.time);
   const data = series.map(p => p.drawdown_pct);
+
+  if (_chartDrawdown) {
+    _chartDrawdown.data.labels = labels;
+    _chartDrawdown.data.datasets[0].data = data;
+    _chartDrawdown.update();
+    return;
+  }
 
   const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
   gradient.addColorStop(0, 'rgba(239, 68, 68, 0.02)');
@@ -6126,7 +6491,6 @@ function _renderDrawdownChart(series) {
 function _renderTemporalChart(dow, hourly) {
   const ctx = document.getElementById('chart-temporal');
   if (!ctx) return;
-  if (_chartTemporal) { _chartTemporal.destroy(); _chartTemporal = null; }
 
   let labels = [];
   let values = [];
@@ -6143,6 +6507,18 @@ function _renderTemporalChart(dow, hourly) {
   }
 
   const colors = values.map(v => v >= 0 ? 'rgba(59, 130, 246, 0.85)' : 'rgba(239, 68, 68, 0.85)');
+
+  if (_chartTemporal) {
+    _chartTemporal.data.labels = labels;
+    _chartTemporal.data.datasets[0].data = values;
+    _chartTemporal.data.datasets[0].backgroundColor = colors;
+    _chartTemporal.options.plugins.tooltip.callbacks.label = (c) => [
+      ` Net PnL: ${c.parsed.y >= 0 ? '+' : ''}₹${c.parsed.y.toLocaleString('en-IN')}`,
+      ` Trades: ${counts[c.dataIndex] || 0}`
+    ];
+    _chartTemporal.update();
+    return;
+  }
 
   _chartTemporal = new Chart(ctx, {
     type: 'bar',
@@ -6189,7 +6565,6 @@ function _renderTemporalChart(dow, hourly) {
 function _renderExitsChart(exits) {
   const ctx = document.getElementById('chart-exit-reasons');
   if (!ctx) return;
-  if (_chartExits) { _chartExits.destroy(); _chartExits = null; }
 
   const labels = Object.keys(exits);
   const data = Object.values(exits);
@@ -6207,6 +6582,14 @@ function _renderExitsChart(exits) {
     '#8b5cf6', // purple (Manual)
     '#64748b'  // slate (Other)
   ];
+
+  if (_chartExits) {
+    _chartExits.data.labels = labels;
+    _chartExits.data.datasets[0].data = data;
+    _chartExits.data.datasets[0].backgroundColor = palette.slice(0, labels.length);
+    _chartExits.update();
+    return;
+  }
 
   _chartExits = new Chart(ctx, {
     type: 'doughnut',
@@ -6266,148 +6649,6 @@ function _renderStrategyTable(strategies) {
   }).join('');
 }
 
-function _renderTemporalChart(dow, hourly) {
-  const ctx = document.getElementById('chart-temporal');
-  if (!ctx) return;
-  if (_chartTemporal) { _chartTemporal.destroy(); _chartTemporal = null; }
-
-  let labels = [];
-  let values = [];
-  let counts = [];
-
-  if (_activeTemporalView === 'dow') {
-    labels = dow.map(d => d.day.slice(0, 3));
-    values = dow.map(d => d.pnl);
-    counts = dow.map(d => d.trades);
-  } else {
-    labels = hourly.map(h => h.hour);
-    values = hourly.map(h => h.pnl);
-    counts = hourly.map(h => h.trades);
-  }
-
-  const colors = values.map(v => v >= 0 ? 'rgba(59, 130, 246, 0.85)' : 'rgba(239, 68, 68, 0.85)');
-
-  _chartTemporal = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{
-        data: values,
-        backgroundColor: colors,
-        borderRadius: 4,
-        maxBarThickness: 28
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0d1526',
-          borderColor: 'rgba(255,255,255,0.12)',
-          borderWidth: 1,
-          titleFont: { family: 'Inter', size: 11 },
-          bodyFont: { family: 'JetBrains Mono', size: 12 },
-          callbacks: {
-            label: (ctx) => [
-              ` Net PnL: ${ctx.parsed.y >= 0 ? '+' : ''}₹${ctx.parsed.y.toLocaleString('en-IN')}`,
-              ` Trades: ${counts[ctx.dataIndex] || 0}`
-            ]
-          }
-        }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: '#8b92a8', font: { size: 10, family: 'Inter' } } },
-        y: {
-          grid: { color: 'rgba(255,255,255,0.06)' },
-          ticks: { color: '#8b92a8', font: { size: 10, family: 'JetBrains Mono' },
-                   callback: v => `₹${v.toLocaleString('en-IN')}` }
-        }
-      }
-    }
-  });
-}
-
-function _renderExitsChart(exits) {
-  const ctx = document.getElementById('chart-exit-reasons');
-  if (!ctx) return;
-  if (_chartExits) { _chartExits.destroy(); _chartExits = null; }
-
-  const labels = Object.keys(exits);
-  const data = Object.values(exits);
-
-  if (labels.length === 0) {
-    labels.push('No Closed Trades');
-    data.push(1);
-  }
-
-  const palette = [
-    '#10b981', // green (Target)
-    '#ef4444', // red (SL)
-    '#3b82f6', // blue (Trail SL)
-    '#f59e0b', // amber (Time)
-    '#8b5cf6', // purple (Manual)
-    '#64748b'  // slate (Other)
-  ];
-
-  _chartExits = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: labels,
-      datasets: [{
-        data: data,
-        backgroundColor: palette.slice(0, labels.length),
-        borderColor: '#0d0f14',
-        borderWidth: 2,
-        cutout: '72%'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'right',
-          labels: { color: '#8b92a8', boxWidth: 8, font: { size: 10, family: 'Inter' } }
-        },
-        tooltip: {
-          backgroundColor: '#0d1526',
-          borderColor: 'rgba(255,255,255,0.12)',
-          borderWidth: 1,
-          titleFont: { family: 'Inter', size: 11 },
-          bodyFont: { family: 'JetBrains Mono', size: 12 }
-        }
-      }
-    }
-  });
-}
-
-function _renderStrategyTable(strategies) {
-  const tbody = $('#anlz-strategy-tbody');
-  const countBadge = $('#anlz-strategy-count');
-  if (countBadge) countBadge.textContent = `${strategies.length} Strategies`;
-  if (!tbody) return;
-
-  if (strategies.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);">No strategy attribution data for this timeframe</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = strategies.map(s => {
-    const pnl = parseFloat(s.pnl || 0);
-    const pnlColor = pnl > 0 ? 'var(--green)' : (pnl < 0 ? 'var(--red)' : 'var(--text-primary)');
-    return `
-      <tr>
-        <td style="font-weight:600;"><span class="badge badge-blue" style="margin-right:6px;">${s.strategy_id}</span></td>
-        <td class="num-col mono">${s.trades}</td>
-        <td class="num-col mono">${s.wins}</td>
-        <td class="num-col mono">${s.trades > 0 ? ((s.wins / s.trades) * 100).toFixed(1) : '0.0'}%</td>
-        <td class="num-col mono" style="color:${pnlColor};font-weight:700;">${pnl >= 0 ? '+' : ''}${_fmtInr(pnl)}</td>
-      </tr>
-    `;
-  }).join('');
-}
 
 // ── Phase 3: Strategy Builder ──────────────────────────────────────────────────
 
@@ -6804,7 +7045,7 @@ document.querySelectorAll('.nav-tab[data-tab="agent"]').forEach(btn => {
 });
 
 // Auto-refresh agent badge every 30s
-setInterval(async () => {
+poll(async () => {
   try {
     const r = await fetch('/api/v1/agent/status-summary');
     const d = await r.json();
@@ -6815,7 +7056,7 @@ setInterval(async () => {
 }, 30000);
 
 // Auto-refresh System Metrics every 5s
-setInterval(async () => {
+poll(async () => {
   try {
     const r = await fetch('/api/v1/metrics');
     const d = await r.json();
@@ -6827,6 +7068,57 @@ setInterval(async () => {
     }
   } catch {}
 }, 5000);
+
+// Confirmation Modal Logic
+let _confirmResolve = null;
+
+function showConfirmModal(options) {
+  return new Promise((resolve) => {
+    const { title = 'Confirm Action', message, typeText, okText = 'Confirm', okStyle = 'var(--red)' } = options;
+    
+    $('#confirm-modal-title span').textContent = title;
+    $('#confirm-modal-body').textContent = message;
+    $('#confirm-modal-ok-text').textContent = okText;
+    $('#confirm-modal-ok').style.background = okStyle;
+    
+    const inputContainer = $('#confirm-modal-input-container');
+    const inputEl = $('#confirm-modal-input');
+    
+    if (typeText) {
+      inputContainer.style.display = 'block';
+      inputEl.value = '';
+      inputEl.placeholder = `Type '${typeText}' to confirm`;
+      $('#confirm-modal-ok').disabled = true;
+      inputEl.oninput = () => {
+        $('#confirm-modal-ok').disabled = (inputEl.value !== typeText);
+      };
+    } else {
+      inputContainer.style.display = 'none';
+      $('#confirm-modal-ok').disabled = false;
+      inputEl.oninput = null;
+    }
+    
+    $('#confirm-modal-overlay').classList.add('open');
+    _confirmResolve = resolve;
+  });
+}
+
+function _closeConfirmModal(result) {
+  $('#confirm-modal-overlay').classList.remove('open');
+  if (_confirmResolve) {
+    _confirmResolve(result);
+    _confirmResolve = null;
+  }
+}
+
+safeOn('#confirm-modal-close', 'click', () => _closeConfirmModal(false));
+safeOn('#confirm-modal-cancel', 'click', () => _closeConfirmModal(false));
+safeOn('#confirm-modal-ok', 'click', () => _closeConfirmModal(true));
+safeOn('#confirm-modal-overlay', 'click', (e) => { if (e.target === $('#confirm-modal-overlay')) _closeConfirmModal(false); });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('#confirm-modal-overlay')?.classList.contains('open')) _closeConfirmModal(false);
+});
 
 </script>
 </body>

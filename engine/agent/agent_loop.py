@@ -243,7 +243,7 @@ class AgentLoopService:
 
         proposal.backtest_metrics = metrics
         proposal.status = ProposalStatus.BACKTEST_DONE.value
-        proposal.updated_at = datetime.datetime.utcnow()
+        proposal.updated_at = datetime.datetime.now(datetime.UTC)
 
         log.info(
             "agent_proposal_backtest_done",
@@ -286,7 +286,7 @@ class AgentLoopService:
 
         proposal.status = ProposalStatus.PENDING_PAPER.value
         proposal.approved_by = approved_by
-        proposal.updated_at = datetime.datetime.utcnow()
+        proposal.updated_at = datetime.datetime.now(datetime.UTC)
 
         log.info(
             "agent_proposal_approved_for_paper",
@@ -325,7 +325,7 @@ class AgentLoopService:
 
         proposal.status = ProposalStatus.REJECTED.value
         proposal.rejection_reason = reason
-        proposal.updated_at = datetime.datetime.utcnow()
+        proposal.updated_at = datetime.datetime.now(datetime.UTC)
 
         log.info(
             "agent_proposal_rejected",
@@ -365,7 +365,7 @@ class AgentLoopService:
             )
 
         proposal.status = ProposalStatus.PAPER_DONE.value
-        proposal.updated_at = datetime.datetime.utcnow()
+        proposal.updated_at = datetime.datetime.now(datetime.UTC)
 
         log.info("agent_proposal_paper_started", proposal_id=proposal_id)
         return proposal
@@ -431,17 +431,17 @@ class AgentLoopService:
             "proposal_id": proposal.proposal_id,
             "agent_run_id": proposal.agent_run_id,
             "version": manifest.version,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             "summary": proposal.mutation_summary or "",
         }
         current_lineage: list = manifest.agent_lineage or []
         manifest.agent_lineage = current_lineage + [lineage_entry]
-        manifest.updated_at = datetime.datetime.utcnow()
+        manifest.updated_at = datetime.datetime.now(datetime.UTC)
 
         # Mark proposal approved
         proposal.status = ProposalStatus.APPROVED.value
         proposal.approved_by = approved_by
-        proposal.updated_at = datetime.datetime.utcnow()
+        proposal.updated_at = datetime.datetime.now(datetime.UTC)
 
         log.info(
             "agent_proposal_promoted_to_live",

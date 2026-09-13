@@ -381,7 +381,7 @@ async def backtest_graph(body: BacktestRequest) -> BacktestResponse:
         # and lookback window; stable for the same graph + lookback.
         import hashlib, json as _json
         graph_hash = int(
-            hashlib.md5(
+            hashlib.sha256(
                 _json.dumps(graph_dict, sort_keys=True).encode()
             ).hexdigest()[:8],
             16,

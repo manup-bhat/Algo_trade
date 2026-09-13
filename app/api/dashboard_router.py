@@ -344,6 +344,39 @@ async def get_positions(strategy_id: str | None = None):
         log.error("dashboard_positions_error", error=str(exc))
         return {"positions": [], "count": 0, "error": str(exc)}
 
+@router.post("/positions/{symbol}/exit")
+async def manual_exit_position(symbol: str):
+    import time, json
+    rs = _rs()
+    if not rs:
+        return {"status": "error", "message": "Redis store unavailable"}
+    
+    # Publish to alerts or a specific commands channel
+    # Usually we can publish to pub:commands, let's just use pub:alerts for now or directly use _r
+    try:
+        payload = {"type": "manual_exit", "symbol": symbol.upper(), "timestamp": time.time(), "source": "dashboard"}
+        await rs._r.publish("pub:commands", json.dumps(payload))
+        # Also log it
+        log.warning("manual_position_exit", symbol=symbol.upper())
+        return {"status": "success", "message": f"Exit request sent for {symbol}"}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+@router.post("/positions/exit_all")
+async def manual_exit_all_positions():
+    import time, json
+    rs = _rs()
+    if not rs:
+        return {"status": "error", "message": "Redis store unavailable"}
+    
+    try:
+        payload = {"type": "manual_exit", "symbol": "ALL", "timestamp": time.time(), "source": "dashboard"}
+        await rs._r.publish("pub:commands", json.dumps(payload))
+        log.warning("manual_position_exit_all")
+        return {"status": "success", "message": "Exit all request sent"}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
 
 # ── /signals (legacy) ───────────────────────────────────────────────────────────
 

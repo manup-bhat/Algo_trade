@@ -374,15 +374,41 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         process_time_ms = (time.time() - start_time) * 1000
         metrics_registry.observe_latency("api_latency", process_time_ms)
-        # Flush here if it's the API process, since runner flushes its own.
-        # But wait, dashboard API doesn't have a background loop to flush latencies.
-        # We can flush latencies synchronously here periodically, or just fire-and-forget.
-        # A simpler way is to just call increment directly (it's fast).
         await metrics_registry.increment("api_requests")
         asyncio.create_task(metrics_registry.flush_latencies())
         return response
 
 app.add_middleware(MetricsMiddleware)
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data:; connect-src 'self' ws: wss: http: https:;"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+class SecureCookiesMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        cookies = response.headers.getlist("set-cookie")
+        if cookies:
+            del response.headers["set-cookie"]
+            for cookie in cookies:
+                if "Secure" not in cookie:
+                    cookie += "; Secure"
+                if "HttpOnly" not in cookie:
+                    cookie += "; HttpOnly"
+                if "SameSite" not in cookie:
+                    cookie += "; SameSite=Lax"
+                response.headers.append("set-cookie", cookie)
+        return response
+
+app.add_middleware(SecureCookiesMiddleware)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────────────
 # Fix (A): allow_origins=["*"] + allow_credentials=True is a hard CORS spec

@@ -328,7 +328,7 @@ class RedisStore:
 
         Returns the number of stale keys removed.
         """
-        keys = await self._r.keys("strategy:state:*")
+        keys = [key async for key in self._r.scan_iter("strategy:state:*")]
         if not keys:
             return 0
         removed = 0
@@ -351,7 +351,7 @@ class RedisStore:
 
     async def get_all_strategy_states(self) -> dict[str, dict[str, Any]]:
         """Fetch all active strategy state keys (for dashboard polling)."""
-        keys = await self._r.keys("strategy:state:*")
+        keys = [key async for key in self._r.scan_iter("strategy:state:*")]
         if not keys:
             return {}
         values = await self._r.mget(keys)
@@ -454,7 +454,7 @@ class RedisStore:
             return result[:limit] if limit is not None else result
 
         # Fallback: legacy KEYS scan for first run / migration (before hash is populated)
-        keys = await self._r.keys("livetick:*")
+        keys = [key async for key in self._r.scan_iter("livetick:*")]
         if not keys:
             return []
 
@@ -557,7 +557,7 @@ class RedisStore:
                     pass
             return result
         # Fallback: legacy KEYS scan for first run / migration
-        keys = await self._r.keys("livetick:*")
+        keys = [key async for key in self._r.scan_iter("livetick:*")]
         if not keys:
             return {}
         values = await self._r.mget(keys)
