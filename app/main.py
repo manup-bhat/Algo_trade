@@ -309,6 +309,11 @@ async def lifespan(app: FastAPI):
     try:
         from app.store.redis_client import get_redis
         redis_client_for_cleanup = get_redis()
+        # Defensively suppress Memurai (Windows) RDB save errors from blocking the API
+        try:
+            await redis_client_for_cleanup.config_set("stop-writes-on-bgsave-error", "no")
+        except Exception as _cfg_exc:
+            log.warning("redis_config_suppression_failed", error=str(_cfg_exc))
     except Exception as exc:
         log.warning("lifespan_redis_capture_failed", error=str(exc))
 
