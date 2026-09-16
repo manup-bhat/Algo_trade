@@ -7078,7 +7078,7 @@ poll(async () => {
 }, 5000);
 
 // Confirmation Modal Logic
-let _confirmResolve = null;
+let _showConfirmResolve = null;
 
 function showConfirmModal(options) {
   return new Promise((resolve) => {
@@ -7107,15 +7107,15 @@ function showConfirmModal(options) {
     }
     
     $('#confirm-modal-overlay').classList.add('open');
-    _confirmResolve = resolve;
+    _showConfirmResolve = resolve;
   });
 }
 
 function _closeConfirmModal(result) {
   $('#confirm-modal-overlay').classList.remove('open');
-  if (_confirmResolve) {
-    _confirmResolve(result);
-    _confirmResolve = null;
+  if (_showConfirmResolve) {
+    _showConfirmResolve(result);
+    _showConfirmResolve = null;
   }
 }
 
